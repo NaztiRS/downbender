@@ -20,13 +20,17 @@ public enum FormatParser {
 
         let approxSizeBytes = computeApproxSizeBytes(raw.formats, heights: heights)
 
+        // live_chat is a live-chat JSON stream, not a subtitle; it would break --embed-subs.
+        let subtitleLanguages = (raw.subtitles ?? [:]).keys.filter { $0 != "live_chat" }.sorted()
+
         return ProbeResult(
             videoID: raw.id,
             title: raw.title,
             thumbnailURL: raw.thumbnail.flatMap { URL(string: $0) },
             durationSeconds: raw.duration,
             availableFormats: formats,
-            approxSizeBytes: approxSizeBytes
+            approxSizeBytes: approxSizeBytes,
+            subtitleLanguages: subtitleLanguages
         )
     }
 

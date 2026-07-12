@@ -17,10 +17,18 @@ struct RawFormat: Decodable {
     }
 }
 
+/// Decodes ANYTHING and keeps nothing: for dictionaries where only the keys matter
+/// and the value shape varies across sites.
+struct RawIgnoredValue: Decodable {
+    init(from decoder: Decoder) throws {}
+}
+
 struct RawProbe: Decodable {
     let id: String
     let title: String
     let thumbnail: String?
     let duration: Double?
     let formats: [RawFormat]
+    /// Creator-uploaded tracks only; `automatic_captions` is deliberately NOT decoded.
+    let subtitles: [String: RawIgnoredValue]?
 }

@@ -13,5 +13,13 @@
     {"format_id":"401","height":2160,"vcodec":"av01","acodec":"none","ext":"mp4","tbr":12000.0,"protocol":"https"},
     {"format_id":"271","height":1440,"vcodec":"vp9","acodec":"none","ext":"webm","tbr":6000.0,"filesize_approx":120000000,"protocol":"https"},
     {"format_id":"140","height":null,"vcodec":"none","acodec":"mp4a","ext":"m4a","tbr":129.0,"filesize":3400000,"protocol":"https"}
-  ]
+  ],
+  "subtitles": {
+    "es": [{"ext": "vtt", "url": "https://example.com/es.vtt"}],
+    "en": [{"ext": "vtt", "url": "https://example.com/en.vtt"}],
+    "live_chat": [{"ext": "json", "url": "https://example.com/chat.json"}]
+  },
+  "automatic_captions": {
+    "fr": [{"ext": "vtt", "url": "https://example.com/fr.vtt"}]
+  }
 }

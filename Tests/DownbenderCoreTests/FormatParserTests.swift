@@ -105,3 +105,28 @@ import Foundation
 
     #expect(result.approxSizeBytes[.video(height: 360)] == 1_000_000)
 }
+
+// MARK: - Subtitles (creator-uploaded only)
+
+@Test func formatParserExtractsRealSubtitleLanguagesSorted() throws {
+    let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
+    let result = try FormatParser.parse(try Data(contentsOf: url))
+    // live_chat is chat JSON, not a subtitle; automatic_captions ("fr") are excluded by design.
+    #expect(result.subtitleLanguages == ["en", "es"])
+}
+
+@Test func formatParserReturnsEmptyLanguagesWithoutSubtitlesField() throws {
+    let json = """
+    {"id": "x1", "title": "No subs", "formats": [{"format_id": "1", "height": 360, "vcodec": "avc1", "acodec": "mp4a"}]}
+    """
+    let result = try FormatParser.parse(Data(json.utf8))
+    #expect(result.subtitleLanguages == [])
+}
+
+@Test func formatParserIgnoresAutomaticCaptionsOnly() throws {
+    let json = """
+    {"id": "x2", "title": "Auto only", "formats": [{"format_id": "1", "height": 360, "vcodec": "avc1", "acodec": "mp4a"}], "subtitles": {}, "automatic_captions": {"en": [{"ext": "vtt"}]}}
+    """
+    let result = try FormatParser.parse(Data(json.utf8))
+    #expect(result.subtitleLanguages == [])
+}
