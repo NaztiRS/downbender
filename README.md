@@ -75,8 +75,20 @@ Requires macOS 26+ with Command Line Tools (full Xcode not needed).
 ./scripts/bundle.sh && open Downbender.app
 ```
 
-With [pnpm](https://pnpm.io) installed, the same tasks read shorter:
-`pnpm build`, `pnpm test`, `pnpm lint`, `pnpm format`, `pnpm bundle`, `pnpm dmg`.
+With [pnpm](https://pnpm.io) installed, every task is one short command:
+
+| Command | What it does |
+| --- | --- |
+| `pnpm check` | Lint, build and run the tests — the same gate CI enforces |
+| `pnpm build` | Compile the package (`swift build`) |
+| `pnpm test` | Run the test suite (CLT-safe wrapper around `swift test`) |
+| `pnpm lint` | SwiftFormat in lint mode + SwiftLint, no changes applied |
+| `pnpm format` | Apply SwiftFormat fixes in place |
+| `pnpm bundle` | Build `Downbender.app` |
+| `pnpm dmg` | Build the distributable DMG and the self-updater zip |
+| `pnpm release` | Cut a full release: tests → DMG/zip → tag → GitHub release → cask bump |
+| `pnpm cask` | Sync the Homebrew cask with the published release |
+| `pnpm binaries` | Download yt-dlp, FFmpeg and Deno (first-time setup) |
 
 Tests: `./scripts/test.sh` (plain `swift test` silently runs 0 tests with
 Command Line Tools only).

@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.8.0",
   "scripts": {
+    "check": "pnpm lint && pnpm build && pnpm test",
     "build": "swift build",
     "test": "scripts/test.sh",
     "lint": "scripts/lint.sh",
