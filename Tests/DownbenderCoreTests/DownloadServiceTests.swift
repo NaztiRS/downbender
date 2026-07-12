@@ -87,3 +87,21 @@ import Foundation
         try await service.download(url: "u", format: .audioMP3, destination: URL(fileURLWithPath: "/d"), tmpDirectory: URL(fileURLWithPath: "/t"), onProgress: { _ in })
     }
 }
+
+@Test func downloadServicePassesSubtitleFlagsThrough() async throws {
+    let runner = FakeProcessRunner(stdoutLines: ["DBPATH /tmp/out/video.mp4"], exitCode: 0)
+    let service = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"),
+        ffmpegDirectory: URL(fileURLWithPath: "/app/ff")
+    )
+    _ = try await service.download(
+        url: "https://youtu.be/abc123",
+        format: .video(height: 720),
+        destination: URL(fileURLWithPath: "/tmp/dest"),
+        tmpDirectory: URL(fileURLWithPath: "/tmp/work"),
+        includeSubtitles: true,
+        onProgress: { _ in }
+    )
+    #expect(runner.recordedArguments.arguments.contains("--embed-subs"))
+}

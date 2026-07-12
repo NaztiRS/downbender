@@ -272,3 +272,25 @@ final class SpyNotifier: CompletionNotifying {
     #expect(spy.events.count == 1)
     #expect(spy.events[0].success == false)
 }
+
+// MARK: - Subtitles
+
+@MainActor
+@Test func chooseWithSubtitlesDownloadsWithEmbedFlags() async throws {
+    let runner = FakeProcessRunner(replays: [
+        .init(stdoutLines: [try probeFixtureJSON()], exitCode: 0),
+        .init(stdoutLines: ["DBPATH /tmp/dest/Test video.mp4"], exitCode: 0),
+    ])
+    let model = makeModel(runner: runner)
+    model.addURL("https://youtu.be/abc123")
+    let item = model.queue.items[0]
+    await waitWhileProbing(item)
+
+    model.choose(.video(height: 1080), includeSubtitles: true, for: item)
+    await waitUntilFinished(item)
+
+    #expect(item.state == .done)
+    #expect(item.includeSubtitles)
+    // allArguments: the last call is the ffprobe honesty check, not yt-dlp.
+    #expect(runner.recordedArguments.allArguments.contains { $0.contains("--embed-subs") })
+}

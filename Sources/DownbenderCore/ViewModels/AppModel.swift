@@ -99,8 +99,9 @@ public final class AppModel {
         }
     }
 
-    public func choose(_ format: DownloadFormat, for item: DownloadItem) {
+    public func choose(_ format: DownloadFormat, includeSubtitles: Bool = false, for item: DownloadItem) {
         item.format = format
+        item.includeSubtitles = includeSubtitles
         item.destination = destination
         item.expectedTotalBytes = item.probe?.approxSizeBytes[format]
         queue.start(item)

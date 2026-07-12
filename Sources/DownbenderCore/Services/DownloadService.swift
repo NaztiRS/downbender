@@ -44,6 +44,7 @@ public struct DownloadService: Sendable {
         tmpDirectory: URL,
         useTVClient: Bool = false,
         cookiesBrowser: String? = nil,
+        includeSubtitles: Bool = false,
         expectedTotalBytes: Int64? = nil,
         onProgress: @Sendable @escaping (DownloadProgress) -> Void,
         onMerging: @Sendable @escaping () -> Void = {}
@@ -51,7 +52,8 @@ public struct DownloadService: Sendable {
         let args = DownloadArgsBuilder.arguments(
             url: url, format: format, destination: destination,
             tmpDirectory: tmpDirectory, ffmpegDirectory: ffmpegDirectory,
-            denoURL: denoURL, cookiesBrowser: cookiesBrowser, useTVClient: useTVClient
+            denoURL: denoURL, cookiesBrowser: cookiesBrowser,
+            includeSubtitles: includeSubtitles, useTVClient: useTVClient
         )
         // bv*+ba downloads 2 files, audio-only 1; the tracker fuses the phases into one monotonic bar.
         let tracker = UnifiedProgressTracker(

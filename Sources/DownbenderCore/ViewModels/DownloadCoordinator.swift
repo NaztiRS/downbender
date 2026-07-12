@@ -36,6 +36,7 @@ public final class DownloadCoordinator {
                     // The FINAL attempt escalates to the TV client (dodges the persistent PO-token 403).
                     useTVClient: attempt == maxAttempts,
                     cookiesBrowser: cookiesBrowser,
+                    includeSubtitles: item.includeSubtitles,
                     expectedTotalBytes: item.expectedTotalBytes,
                     onProgress: { progress in
                         Task { @MainActor in

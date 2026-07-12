@@ -22,6 +22,7 @@ public enum DownloadArgsBuilder {
         ffmpegDirectory: URL,
         denoURL: URL? = nil,
         cookiesBrowser: String? = nil,
+        includeSubtitles: Bool = false,
         useTVClient: Bool = false
     ) -> [String] {
         var args = baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser)
@@ -54,6 +55,11 @@ public enum DownloadArgsBuilder {
             // the panel's cap). Falls back to progressive mp4 for rare videos without avc1.
             let selector = "bv*[height=\(height)][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=\(height)][vcodec^=avc1]+ba[ext=m4a]/b[height<=\(height)][ext=mp4]/b[height<=\(height)]"
             args += ["-f", selector, "--merge-output-format", "mp4"]
+            if includeSubtitles {
+                // Creator-uploaded tracks only (never --write-auto-subs). Embedded via the bundled
+                // ffmpeg (mov_text) and sidecars removed. live_chat is chat JSON, not a subtitle.
+                args += ["--embed-subs", "--sub-langs", "all,-live_chat"]
+            }
         case .audioMP3:
             // "ba/b": prefer audio-only; on muxed-only sites (e.g. archive.org) fall back
             // to the best muxed file and let -x extract its audio.

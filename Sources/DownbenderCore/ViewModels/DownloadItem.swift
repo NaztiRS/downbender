@@ -19,6 +19,7 @@ public final class DownloadItem: Identifiable {
     public var title: String
     public var thumbnailURL: URL?
     public var format: DownloadFormat?
+    public var includeSubtitles: Bool = false
     public var destination: URL
     public var state: State
     public var probe: ProbeResult?

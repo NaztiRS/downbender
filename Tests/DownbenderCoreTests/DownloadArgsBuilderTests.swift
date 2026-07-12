@@ -6,6 +6,7 @@ private func args(
     _ format: DownloadFormat,
     denoURL: URL? = nil,
     cookiesBrowser: String? = nil,
+    includeSubtitles: Bool = false,
     useTVClient: Bool = false
 ) -> [String] {
     DownloadArgsBuilder.arguments(
@@ -16,6 +17,7 @@ private func args(
         ffmpegDirectory: URL(fileURLWithPath: "/app/ffmpeg-dir"),
         denoURL: denoURL,
         cookiesBrowser: cookiesBrowser,
+        includeSubtitles: includeSubtitles,
         useTVClient: useTVClient
     )
 }
@@ -195,4 +197,26 @@ private func args(
         return
     }
     #expect(args[fIndex + 1] == "ba/b")
+}
+
+// MARK: - Subtitles
+
+@Test func videoWithSubtitlesEmbedsRealTracksOnly() {
+    let a = args(.video(height: 1080), includeSubtitles: true)
+    #expect(a.contains("--embed-subs"))
+    guard let langsFlagIndex = a.firstIndex(of: "--sub-langs") else {
+        Issue.record("missing --sub-langs")
+        return
+    }
+    #expect(a[langsFlagIndex + 1] == "all,-live_chat")
+    // No sidecars and no auto-captions, by design.
+    #expect(!a.contains("--write-subs"))
+    #expect(!a.contains("--write-auto-subs"))
+}
+
+@Test func subtitleFlagsAbsentByDefaultAndForMP3() {
+    #expect(!args(.video(height: 1080)).contains("--embed-subs"))
+    let mp3 = args(.audioMP3, includeSubtitles: true)
+    #expect(!mp3.contains("--embed-subs"))
+    #expect(!mp3.contains("--sub-langs"))
 }
