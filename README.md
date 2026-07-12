@@ -1,8 +1,17 @@
-# Downbender
-
-[![CI](https://github.com/NaztiRS/downbender/actions/workflows/ci.yml/badge.svg)](https://github.com/NaztiRS/downbender/actions/workflows/ci.yml)
+<h1 align="center">
+  <img src="docs/assets/wordmark.png" alt="Downbender" width="440">
+</h1>
 
 ![Downbender](docs/assets/hero.png)
+
+<p align="center">
+  <a href="https://github.com/NaztiRS/downbender/actions/workflows/ci.yml"><img src="https://github.com/NaztiRS/downbender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/NaztiRS/downbender/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/coverage-86%25-brightgreen" alt="Test coverage"></a>
+  <a href="https://github.com/NaztiRS/downbender/releases/latest"><img src="https://img.shields.io/github/v/release/NaztiRS/downbender?color=3aa0f7&label=release" alt="Latest release"></a>
+  <a href="https://github.com/NaztiRS/downbender#requirements"><img src="https://img.shields.io/badge/macOS-26%2B%20Apple%20Silicon-0b1e38" alt="Supported platform: macOS 26+ on Apple Silicon"></a>
+  <a href="https://swift.org"><img src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white" alt="Swift 6.2"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/NaztiRS/downbender?color=blue" alt="License: GPLv3"></a>
+</p>
 
 *The last download master.* A native macOS app that downloads videos from
 YouTube and many other sites, or extracts their audio as MP3 — powered by
