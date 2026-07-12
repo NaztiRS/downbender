@@ -60,8 +60,8 @@ struct QueueRow: View {
                 FormatPanel(
                     probe: probe,
                     destination: $model.destination,
-                    onConfirm: { format in
-                        model.choose(format, for: item)
+                    onConfirm: { format, includeSubtitles in
+                        model.choose(format, includeSubtitles: includeSubtitles, for: item)
                         choosing = false
                     },
                     onCancel: { choosing = false }

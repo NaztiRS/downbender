@@ -4,10 +4,11 @@ import DownbenderCore
 struct FormatPanel: View {
     let probe: ProbeResult
     @Binding var destination: URL
-    var onConfirm: (DownloadFormat) -> Void
+    var onConfirm: (DownloadFormat, Bool) -> Void
     var onCancel: () -> Void
 
     @State private var selection: DownloadFormat?
+    @State private var includeSubtitles = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -30,6 +31,15 @@ struct FormatPanel: View {
             .labelsHidden()
             .pickerStyle(.radioGroup)
 
+            Toggle(isOn: $includeSubtitles) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Add subtitles")
+                    Text(subtitleDetail).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .disabled(!subtitlesSelectable)
+
             HStack(spacing: 8) {
                 Image(systemName: "folder").foregroundStyle(.secondary)
                 Text(destination.lastPathComponent).lineLimit(1)
@@ -47,7 +57,8 @@ struct FormatPanel: View {
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                 Button("Download") {
-                    if let selection { onConfirm(selection) }
+                    // The box can stay checked while switching to MP3: the gate lives here.
+                    if let selection { onConfirm(selection, includeSubtitles && subtitlesSelectable) }
                 }
                 .buttonStyle(WaveButtonStyle())
                 .disabled(selection == nil)
@@ -62,6 +73,18 @@ struct FormatPanel: View {
                 return false
             }) ?? probe.availableFormats.first
         }
+    }
+
+    private var subtitlesSelectable: Bool {
+        !probe.subtitleLanguages.isEmpty && selection != .audioMP3
+    }
+
+    private var subtitleDetail: String {
+        if probe.subtitleLanguages.isEmpty { return "No subtitles available" }
+        if selection == .audioMP3 { return "Not available for MP3" }
+        let langs = probe.subtitleLanguages
+        let shown = langs.prefix(6).joined(separator: ", ")
+        return langs.count > 6 ? "\(shown), …" : shown
     }
 
     private func pickFolder() {
