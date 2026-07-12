@@ -123,8 +123,10 @@
   .req { margin-top: 22px; font-size: 14px; color: var(--muted); letter-spacing: .2px; }
   .req b { color: var(--ink); font-weight: 600; }
 
-  /* streaks */
+  /* streaks — .streaks lives inside the hero; .sky is a fixed layer under the whole page */
   .streaks { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .sky { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  header, section, footer { position: relative; z-index: 1; }
   .streak {
     position: absolute; height: 1.5px; border-radius: 2px;
     background: linear-gradient(90deg, transparent, var(--glow));
@@ -204,14 +206,16 @@
   .band {
     position: relative; isolation: isolate;
     padding: 130px 0;
+    /* Zoomed and left-anchored: pushes the (image-centered) bending monk to the
+       right of the glass panel, since plain cover leaves no slack to shift him. */
     background:
       linear-gradient(to bottom, var(--deep-0) 0, transparent 18%, transparent 82%, var(--deep-0) 100%),
       linear-gradient(rgba(5,13,31,.35), rgba(5,13,31,.35)),
-      url("assets/bending.png") center / cover no-repeat,
+      url("assets/bending.png") 0% 45% / auto 180% no-repeat,
       var(--deep-1);
   }
   .panel {
-    max-width: 560px;
+    max-width: 680px;
     padding: 40px 42px;
     border-radius: 20px;
     background: rgba(6,15,32,.72);
@@ -233,21 +237,46 @@
   }
   .step p { font-size: 15.5px; color: var(--muted); }
   .step p b { color: var(--ink); font-weight: 600; }
+  .term-label { margin-top: 26px; font-size: 12.5px; color: var(--muted); letter-spacing: .4px; }
   .term {
-    margin-top: 26px;
-    font: 13px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
-    color: var(--glow);
+    margin-top: 8px;
+    display: flex; align-items: center; gap: 14px;
     background: rgba(0,0,0,.4);
     border: 1px solid var(--hairline);
     border-radius: 10px;
-    padding: 12px 16px;
-    overflow-x: auto; white-space: nowrap;
+    padding: 12px 12px 12px 16px;
   }
-  .term .c { color: var(--muted); }
+  .term { overflow-x: auto; }
+  .term code {
+    flex: 1;
+    font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--glow);
+    white-space: nowrap;
+  }
+  .copy {
+    flex: 0 0 auto;
+    font: 600 12.5px/1 -apple-system, sans-serif;
+    color: var(--ink);
+    background: rgba(111,214,255,.12);
+    border: 1px solid rgba(111,214,255,.4);
+    border-radius: 8px;
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: background .2s, transform .15s;
+  }
+  .copy:hover { background: rgba(111,214,255,.22); }
+  .copy:active { transform: scale(.96); }
+  .copy.ok { color: var(--glow); border-color: var(--glow); background: rgba(111,214,255,.22); }
 
   /* footer */
   footer { padding: 90px 0 60px; text-align: center; }
-  footer .monk { width: 190px; margin: 0 auto 8px; filter: drop-shadow(0 0 40px rgba(58,160,247,.25)); }
+  footer .monk {
+    width: 190px;
+    margin: 34px auto -10px;   /* nudged down toward the wordmark */
+    filter: blur(.35px);
+    -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 72%, transparent 100%);
+  }
   footer .fbrand { font-size: 24px; }
   footer .fbrand .down { font-weight: 200; color: var(--muted); }
   footer .fbrand .bender { font-weight: 750; color: var(--accent); }
@@ -269,7 +298,43 @@
     }
     .panel { padding: 32px 26px; }
     nav .links a.hide-m { display: none; }
+    .band {
+      background:
+        linear-gradient(to bottom, var(--deep-0) 0, transparent 18%, transparent 82%, var(--deep-0) 100%),
+        linear-gradient(rgba(5,13,31,.55), rgba(5,13,31,.55)),
+        url("assets/bending.png") center / cover no-repeat,
+        var(--deep-1);
+    }
+    .term code { white-space: normal; word-break: break-all; }
   }
+  /* dev-only tuner (localhost): live knobs for the bending image framing */
+  #tuner {
+    position: fixed; left: 18px; bottom: 18px; z-index: 90;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 16px 18px;
+    background: rgba(6,15,32,.88);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--rim);
+    border-radius: 14px;
+    font-size: 14px;
+  }
+  #tuner .row { display: flex; align-items: center; gap: 10px; }
+  #tuner .row label { width: 64px; color: var(--muted); }
+  #tuner button {
+    width: 40px; height: 34px; border-radius: 9px;
+    font-size: 18px; font-weight: 700; color: var(--ink);
+    background: rgba(111,214,255,.14);
+    border: 1px solid rgba(111,214,255,.4);
+    cursor: pointer;
+  }
+  #tuner button:active { transform: scale(.94); }
+  #tuner .val { min-width: 52px; text-align: center; font-weight: 650; color: var(--glow); }
+  #tuner .out {
+    font: 11.5px/1.5 ui-monospace, Menlo, monospace;
+    color: var(--muted); max-width: 240px; user-select: all;
+  }
+  #tuner .copyvals { width: auto; font-size: 13px; padding: 0 14px; }
+
   @media (prefers-reduced-motion: reduce) {
     .streak, .cta { animation: none; }
     .reveal { opacity: 1; transform: none; transition: none; }
@@ -278,6 +343,15 @@
 </style>
 </head>
 <body>
+
+<div class="sky" aria-hidden="true">
+  <span class="streak" style="top:12%; width:90px;  animation-duration:13s; animation-delay:-5s;  opacity:.24;"></span>
+  <span class="streak" style="top:26%; width:130px; animation-duration:10s; animation-delay:-2s;  opacity:.3;"></span>
+  <span class="streak" style="top:41%; width:60px;  animation-duration:17s; animation-delay:-11s; opacity:.18;"></span>
+  <span class="streak" style="top:57%; width:110px; animation-duration:12s; animation-delay:-7s;  opacity:.26;"></span>
+  <span class="streak" style="top:72%; width:75px;  animation-duration:15s; animation-delay:-4s;  opacity:.2;"></span>
+  <span class="streak" style="top:88%; width:140px; animation-duration:9s;  animation-delay:-1s;  opacity:.3;"></span>
+</div>
 
 <nav>
   <a class="brand" href="#">
@@ -363,7 +437,11 @@
         <div class="n">2</div>
         <p>First launch only: macOS blocks apps not notarized by Apple. Open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
       </div>
-      <div class="term"><span class="c"># terminal alternative:</span> xattr -dr com.apple.quarantine /Applications/Downbender.app</div>
+      <div class="term-label">Terminal alternative:</div>
+      <div class="term">
+        <code id="qcmd">xattr -dr com.apple.quarantine /Applications/Downbender.app</code>
+        <button class="copy" id="copybtn" type="button">Copy</button>
+      </div>
     </div>
   </div>
 </section>
@@ -380,12 +458,67 @@
   </div>
 </footer>
 
+<div id="tuner">
+  <div class="row"><label>Zoom</label>
+    <button data-k="zoom" data-d="-5">−</button>
+    <span class="val" id="vZoom">120%</span>
+    <button data-k="zoom" data-d="5">+</button>
+  </div>
+  <div class="row"><label>Altura</label>
+    <button data-k="y" data-d="-5">−</button>
+    <span class="val" id="vY">50%</span>
+    <button data-k="y" data-d="5">+</button>
+  </div>
+  <div class="row">
+    <button class="copyvals" id="copyVals">Copiar valores</button>
+  </div>
+  <div class="out" id="tunerOut"></div>
+</div>
+
 <script>
   const io = new IntersectionObserver(
     entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
     { threshold: 0.15 }
   );
   document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+
+  const copyBtn = document.getElementById("copybtn");
+  copyBtn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(document.getElementById("qcmd").textContent.trim()); } catch {}
+    copyBtn.textContent = "Copied ✓";
+    copyBtn.classList.add("ok");
+    setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.classList.remove("ok"); }, 1800);
+  });
+
+  // Dev-only framing tuner: never ships to visitors.
+  const tuner = document.getElementById("tuner");
+  if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
+    tuner.remove();
+  } else {
+    const band = document.querySelector(".band");
+    const state = { zoom: 180, y: 45 };
+    const cssLine = () => `url("assets/bending.png") 0% ${state.y}% / auto ${state.zoom}% no-repeat,`;
+    const apply = () => {
+      band.style.backgroundPosition = `center, center, 0% ${state.y}%, center`;
+      band.style.backgroundSize = `auto, auto, auto ${state.zoom}%, auto`;
+      document.getElementById("vZoom").textContent = state.zoom + "%";
+      document.getElementById("vY").textContent = state.y + "%";
+      document.getElementById("tunerOut").textContent = cssLine();
+    };
+    tuner.querySelectorAll("button[data-k]").forEach(b =>
+      b.addEventListener("click", () => {
+        state[b.dataset.k] = Math.max(5, state[b.dataset.k] + Number(b.dataset.d));
+        apply();
+      })
+    );
+    document.getElementById("copyVals").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(cssLine()); } catch {}
+      const btn = document.getElementById("copyVals");
+      btn.textContent = "Copiado ✓";
+      setTimeout(() => { btn.textContent = "Copiar valores"; }, 1500);
+    });
+    apply();
+  }
 </script>
 </body>
 </html>
