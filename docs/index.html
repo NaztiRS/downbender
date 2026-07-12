@@ -466,10 +466,15 @@
         <div class="n">2</div>
         <p>First launch only: macOS blocks apps not notarized by Apple. Open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
       </div>
-      <div class="term-label">Terminal alternative:</div>
+      <div class="term-label">Or install with Homebrew:</div>
       <div class="term">
-        <code id="qcmd">xattr -dr com.apple.quarantine /Applications/Downbender.app</code>
-        <button class="copy" id="copybtn" type="button">Copy</button>
+        <code>brew install --cask naztirs/tap/downbender</code>
+        <button class="copy" type="button">Copy</button>
+      </div>
+      <div class="term-label">Terminal alternative to "Open Anyway":</div>
+      <div class="term">
+        <code>xattr -dr com.apple.quarantine /Applications/Downbender.app</code>
+        <button class="copy" type="button">Copy</button>
       </div>
     </div>
   </div>
@@ -511,12 +516,14 @@
   );
   document.querySelectorAll(".reveal").forEach(el => io.observe(el));
 
-  const copyBtn = document.getElementById("copybtn");
-  copyBtn.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(document.getElementById("qcmd").textContent.trim()); } catch {}
-    copyBtn.textContent = "Copied ✓";
-    copyBtn.classList.add("ok");
-    setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.classList.remove("ok"); }, 1800);
+  document.querySelectorAll(".copy").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const code = btn.parentElement.querySelector("code");
+      try { await navigator.clipboard.writeText(code.textContent.trim()); } catch {}
+      btn.textContent = "Copied ✓";
+      btn.classList.add("ok");
+      setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("ok"); }, 1800);
+    });
   });
 
   // Dev-only framing tuner: never ships to visitors.

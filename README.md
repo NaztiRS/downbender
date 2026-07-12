@@ -33,6 +33,14 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 
 ## Install
 
+With [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask naztirs/tap/downbender
+```
+
+Or manually:
+
 1. Download **[Downbender.dmg](https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg)** (or grab it from the [website](https://naztirs.github.io/downbender/)).
 2. Open the DMG and drag **Downbender** into **Applications**.
 3. First launch: Downbender is not notarized by Apple (no paid developer
