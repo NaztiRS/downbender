@@ -56,6 +56,9 @@ struct RootView: View {
                 }
             }
         }
+        // Title bar in the app's own deep blue instead of the system gray.
+        .toolbarBackground(Color.adaptive(light: 0xEDF5FD, dark: 0x0B1E38), for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
     }
 
     /// Never blocks: the card appears instantly and the probe runs in the background.
