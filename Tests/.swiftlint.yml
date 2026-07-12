@@ -1,0 +1,5 @@
+# Test-only relaxations: force_try keeps fixtures terse where a failure should
+# crash the test anyway, and helper tuples may carry more than two values.
+disabled_rules:
+  - force_try
+  - large_tuple

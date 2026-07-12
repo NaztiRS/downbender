@@ -1,0 +1,19 @@
+{
+  "name": "downbender",
+  "private": true,
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "build": "swift build",
+    "test": "scripts/test.sh",
+    "lint": "scripts/lint.sh",
+    "format": "swiftformat .",
+    "bundle": "scripts/bundle.sh",
+    "dmg": "scripts/make-dmg.sh",
+    "release": "scripts/release.sh",
+    "binaries": "scripts/fetch-binaries.sh",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

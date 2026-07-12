@@ -1,5 +1,7 @@
 # Downbender
 
+[![CI](https://github.com/NaztiRS/downbender/actions/workflows/ci.yml/badge.svg)](https://github.com/NaztiRS/downbender/actions/workflows/ci.yml)
+
 ![Downbender](docs/assets/hero.png)
 
 *The last download master.* A native macOS app that downloads videos from
@@ -56,8 +58,15 @@ Requires macOS 26+ with Command Line Tools (full Xcode not needed).
 ./scripts/bundle.sh && open Downbender.app
 ```
 
+With [pnpm](https://pnpm.io) installed, the same tasks read shorter:
+`pnpm build`, `pnpm test`, `pnpm lint`, `pnpm format`, `pnpm bundle`, `pnpm dmg`.
+
 Tests: `./scripts/test.sh` (plain `swift test` silently runs 0 tests with
 Command Line Tools only).
+
+Contributing? Run `pnpm install` once — [husky](https://typicode.github.io/husky/)
+wires the git hooks: lint + build on every commit, the test suite on every
+push (linters via `brew install swiftformat swiftlint`).
 
 ## Responsible use
 

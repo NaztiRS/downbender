@@ -1,0 +1,30 @@
+excluded:
+  - .build
+  - docs
+
+analyzer_rules: []
+
+disabled_rules:
+  # The codebase favors expressive one-liners, long descriptive test names
+  # and trailing commas in multiline literals.
+  - line_length
+  - identifier_name
+  - function_body_length
+  - type_body_length
+  - file_length
+  - cyclomatic_complexity
+  - todo
+  - trailing_comma
+  # House style: `else`/`catch` start a new line in compact if/else chains.
+  - statement_position
+  # Small nested helper types are a deliberate design choice.
+  - nesting
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - contains_over_first_not_nil
+  - redundant_nil_coalescing
+
+trailing_whitespace:
+  ignores_empty_lines: true

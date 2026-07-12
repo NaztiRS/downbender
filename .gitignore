@@ -20,3 +20,4 @@ Downbender.zip
 
 # Stray images dropped at repo root (icon experiments etc.) stay untracked
 /*.png
+node_modules/

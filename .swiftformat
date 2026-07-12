@@ -1,0 +1,11 @@
+# Formatting hygiene only: the enabled rules validate the existing style
+# instead of imposing a new one, so diffs stay reviewable.
+--swiftversion 6.2
+
+--rules indent,trailingSpace,linebreakAtEndOfFile,semicolons,duplicateImports,consecutiveBlankLines,blankLinesAtStartOfScope,linebreaks
+
+--indent 4
+--semicolons inline
+--linebreaks lf
+
+--exclude .build
