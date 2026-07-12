@@ -43,16 +43,6 @@ gh release upload "$TAG" Downbender.zip --clobber
 gh release edit "$TAG" --draft=false
 
 # Point the Homebrew tap at the new version so `brew install` serves it.
-SHA256=$(shasum -a 256 Downbender.dmg | cut -d' ' -f1)
-TAP=$(mktemp -d)
-git clone -q --depth 1 "https://github.com/NaztiRS/homebrew-tap.git" "$TAP"
-sed -i '' \
-  -e "s/version \".*\"/version \"$VERSION\"/" \
-  -e "s/sha256 \".*\"/sha256 \"$SHA256\"/" \
-  "$TAP/Casks/downbender.rb"
-git -C "$TAP" -c user.name="Rey" -c user.email="reynaldosuarezprieto@gmail.com" \
-  commit -aqm "downbender $VERSION"
-git -C "$TAP" push -q origin main
-echo "Homebrew tap bumped to $VERSION"
+scripts/update-cask.sh
 
 echo "Release $TAG published: $(gh release view "$TAG" --json url --jq .url)"

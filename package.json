@@ -10,6 +10,7 @@
     "bundle": "scripts/bundle.sh",
     "dmg": "scripts/make-dmg.sh",
     "release": "scripts/release.sh",
+    "cask": "scripts/update-cask.sh",
     "binaries": "scripts/fetch-binaries.sh",
     "prepare": "husky"
   },
