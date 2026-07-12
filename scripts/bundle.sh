@@ -18,6 +18,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/$BIN_NAME"
 
+# GPL compliance travels inside the bundle, keeping the DMG window clean.
+cp LICENSE NOTICE "$APP/Contents/Resources/"
+
 for b in yt-dlp_macos ffmpeg ffprobe deno; do
   if [ -f "Resources/binaries/$b" ]; then
     cp "Resources/binaries/$b" "$APP/Contents/Resources/$b"
