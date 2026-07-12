@@ -165,13 +165,30 @@
   .shot-frame {
     margin: 54px auto 0;
     max-width: 980px;
-    border-radius: 18px;
+    /* Outer radius = video radius + padding, so both curves nest evenly. */
+    border-radius: calc(clamp(10px, 2.7vw, 28px) + 10px);
     border: 1px solid var(--rim);
     background: linear-gradient(to bottom, rgba(255,255,255,.10), rgba(255,255,255,.02));
     padding: 10px;
     box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 90px rgba(58,160,247,.16);
   }
-  .shot-frame img { border-radius: 10px; }
+  /* The window in the demo video has macOS' own rounded corners; the video's
+     radius follows that curve so no desktop slivers peek out at the corners. */
+  .shot-frame img, .shot-frame video {
+    display: block; width: 100%;
+    border-radius: clamp(10px, 2.7vw, 28px);
+  }
+  /* Opaque bezel drawn on top: it overlaps the video edge a couple of pixels,
+     hiding the recording's uneven window rim on every side equally. */
+  .shot-frame { position: relative; }
+  .shot-frame::after {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border: 4px solid #46586f;
+    border-radius: clamp(12px, calc(2.7vw + 2px), 30px);
+    pointer-events: none;
+  }
 
   /* features */
   .features { padding: 110px 0; }
@@ -403,7 +420,11 @@
     <h2>Paste a link. Pick a quality. Done.</h2>
     <p class="sub">A download queue with real progress, pause &amp; resume, clipboard detection and a glance-friendly deep-water look.</p>
     <div class="shot-frame">
-      <img src="assets/screenshot.png" alt="Downbender main window showing a download queue" loading="lazy">
+      <video autoplay muted loop playsinline preload="metadata" poster="assets/demo-poster.jpg"
+             aria-label="Downbender downloading a YouTube link, then the video playing">
+        <source src="assets/demo.mp4" type="video/mp4">
+        <img src="assets/demo-poster.jpg" alt="Downbender main window ready to download a video" loading="lazy">
+      </video>
     </div>
   </div>
 </section>
