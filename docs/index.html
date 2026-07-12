@@ -3,98 +3,389 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Downbender — video downloader for macOS</title>
-<meta name="description" content="Free, open-source, native macOS app to download videos or extract MP3 from YouTube and many other sites.">
+<title>Downbender — the last download master</title>
+<meta name="description" content="Free, open-source, native macOS app to download videos or extract MP3 — YouTube first and foremost, plus many other sites. Powered by yt-dlp.">
+<meta property="og:title" content="Downbender — the last download master">
+<meta property="og:description" content="Download videos or extract MP3, natively on your Mac. Free & open source.">
+<meta property="og:image" content="https://naztirs.github.io/downbender/assets/hero.png">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="assets/AppIcon.png">
 <style>
   :root {
-    --bg-top: #0B1E38; --bg-bottom: #07111F;
-    --accent: #3AA0F7; --glow: #6FD6FF;
-    --text: #E8F2FB; --muted: #93A9BD;
-    --surface: rgba(255,255,255,.05); --hairline: rgba(255,255,255,.10);
+    --deep-0: #050d1f;
+    --deep-1: #081426;
+    --deep-2: #0b1e38;
+    --accent: #3aa0f7;
+    --glow: #6fd6ff;
+    --ink: #eaf4fe;
+    --muted: #8fa9c4;
+    --surface: rgba(255,255,255,.05);
+    --hairline: rgba(255,255,255,.10);
+    --rim: rgba(255,255,255,.22);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
-    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-    color: var(--text);
-    background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom)) fixed;
-    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
-    padding: 64px 24px;
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--deep-0);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 760px; width: 100%; text-align: center; }
-  .brand { font-size: 44px; letter-spacing: -0.5px; }
+  a { color: var(--glow); text-decoration: none; }
+  img { max-width: 100%; display: block; }
+
+  /* ---------- nav ---------- */
+  nav {
+    position: fixed; inset: 0 0 auto 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px;
+    background: rgba(5,13,31,.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; color: var(--ink); }
+  .brand img { width: 30px; height: 30px; }
   .brand .down { font-weight: 200; color: var(--muted); }
-  .brand .bender { font-weight: 700; color: var(--accent); }
-  .tagline { color: var(--muted); margin-top: 6px; font-size: 19px; }
+  .brand .bender { font-weight: 750; color: var(--accent); }
+  nav .links { display: flex; gap: 22px; font-size: 14.5px; }
+  nav .links a { color: var(--muted); transition: color .2s; }
+  nav .links a:hover { color: var(--glow); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    position: relative;
+    min-height: 100svh;
+    display: flex; align-items: center;
+    isolation: isolate;
+  }
+  .hero-art {
+    position: absolute; inset: 0; z-index: -2;
+    background:
+      linear-gradient(to top, var(--deep-0) 0, transparent 26%),
+      linear-gradient(100deg, var(--deep-0) 22%, rgba(5,13,31,.45) 48%, transparent 70%),
+      url("assets/hero-wide.png") right center / cover no-repeat,
+      var(--deep-1);
+  }
+  .hero-inner {
+    width: min(1180px, 92vw);
+    margin: 0 auto;
+    padding: 120px 0 90px;
+  }
+  .eyebrow {
+    font-size: 13px; font-weight: 650; letter-spacing: 2.6px;
+    color: var(--glow); text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  h1.wordmark {
+    font-size: clamp(56px, 9vw, 112px);
+    line-height: 1.02;
+    letter-spacing: -2px;
+  }
+  h1 .down { font-weight: 150; color: var(--muted); }
+  h1 .bender {
+    font-weight: 800; color: var(--accent);
+    text-shadow: 0 0 44px rgba(111,214,255,.35);
+  }
+  .tagline {
+    margin-top: 22px;
+    max-width: 520px;
+    font-size: clamp(18px, 2.2vw, 21px);
+    color: var(--muted);
+  }
+  .tagline strong { color: var(--ink); font-weight: 600; }
+  .cta-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 40px; }
   .cta {
-    display: inline-block; margin: 34px 0 10px;
-    padding: 14px 30px; border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent), var(--glow));
+    position: relative;
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 17px 34px;
+    border-radius: 999px;
+    font-size: 18.5px; font-weight: 650; color: #fff;
+    background: linear-gradient(100deg, var(--accent), var(--glow));
     background-size: 200% 100%;
-    color: #fff; font-weight: 600; font-size: 18px; text-decoration: none;
-    box-shadow: 0 4px 24px rgba(111, 214, 255, .35);
-    transition: filter .15s ease;
+    box-shadow: 0 6px 34px rgba(111,214,255,.38), inset 0 1px 0 rgba(255,255,255,.45);
     animation: flow 6s ease-in-out infinite;
+    transition: transform .18s ease, box-shadow .18s ease;
   }
-  @keyframes flow {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 12px 44px rgba(111,214,255,.55), inset 0 1px 0 rgba(255,255,255,.5); }
+  .cta svg { width: 21px; height: 21px; }
+  @keyframes flow { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+  .ghost {
+    padding: 15px 26px; border-radius: 999px;
+    font-size: 16px; font-weight: 550; color: var(--ink);
+    border: 1px solid var(--hairline);
+    background: var(--surface);
+    backdrop-filter: blur(8px);
+    transition: border-color .2s, background .2s;
   }
-  @media (prefers-reduced-motion: reduce) { .cta { animation: none; } }
-  .cta:hover { filter: brightness(1.08); }
-  .req { color: var(--muted); font-size: 14px; margin-bottom: 36px; }
-  .shot {
-    width: 100%; border-radius: 14px; border: 1px solid var(--hairline);
-    box-shadow: 0 20px 60px rgba(0,0,0,.5); margin-bottom: 44px;
+  .ghost:hover { border-color: var(--glow); background: rgba(111,214,255,.08); }
+  .req { margin-top: 22px; font-size: 14px; color: var(--muted); letter-spacing: .2px; }
+  .req b { color: var(--ink); font-weight: 600; }
+
+  /* streaks */
+  .streaks { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .streak {
+    position: absolute; height: 1.5px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--glow));
+    opacity: .35;
+    animation: drift linear infinite;
   }
-  section {
-    background: var(--surface); border: 1px solid var(--hairline);
-    border-radius: 14px; padding: 26px 30px; text-align: left; margin-bottom: 20px;
+  .streak::after {
+    content: ""; position: absolute; right: -3px; top: -2.2px;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--glow);
+    box-shadow: 0 0 10px 2px rgba(111,214,255,.8);
   }
-  h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1.4px;
-       color: var(--accent); margin-bottom: 12px; }
-  ol { padding-left: 22px; } li { margin-bottom: 8px; }
-  ul { padding-left: 22px; list-style: "· "; }
-  code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; font-size: 14px; }
-  strong { color: var(--text); }
-  section, .req, footer { color: var(--muted); }
-  footer { margin-top: 28px; font-size: 14px; }
-  a { color: var(--glow); }
+  @keyframes drift {
+    from { transform: translateX(-220px); }
+    to   { transform: translateX(calc(100vw + 220px)); }
+  }
+
+  /* ---------- sections ---------- */
+  section { position: relative; }
+  .wrap { width: min(1180px, 92vw); margin: 0 auto; }
+  .kicker {
+    text-align: center; font-size: 13px; font-weight: 650;
+    letter-spacing: 2.6px; text-transform: uppercase; color: var(--glow);
+  }
+  h2 {
+    text-align: center;
+    font-size: clamp(30px, 4.4vw, 46px);
+    font-weight: 750; letter-spacing: -1px;
+    margin-top: 10px;
+  }
+  .sub { text-align: center; color: var(--muted); max-width: 560px; margin: 14px auto 0; }
+
+  /* screenshot */
+  .shot-section { padding: 110px 0 40px; }
+  .shot-frame {
+    margin: 54px auto 0;
+    max-width: 980px;
+    border-radius: 18px;
+    border: 1px solid var(--rim);
+    background: linear-gradient(to bottom, rgba(255,255,255,.10), rgba(255,255,255,.02));
+    padding: 10px;
+    box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 90px rgba(58,160,247,.16);
+  }
+  .shot-frame img { border-radius: 10px; }
+
+  /* features */
+  .features { padding: 110px 0; }
+  .grid {
+    margin-top: 56px;
+    display: grid; gap: 22px;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .card {
+    padding: 34px 30px;
+    border-radius: 18px;
+    background: linear-gradient(to bottom, rgba(255,255,255,.075), rgba(255,255,255,.025));
+    border: 1px solid var(--hairline);
+    border-top-color: var(--rim);
+    box-shadow: 0 14px 40px rgba(0,0,0,.35);
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .card:hover { transform: translateY(-5px); box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 50px rgba(58,160,247,.12); }
+  .card .ico {
+    width: 52px; height: 52px; border-radius: 14px;
+    display: grid; place-items: center;
+    background: radial-gradient(circle at 35% 30%, rgba(111,214,255,.35), rgba(58,160,247,.12));
+    border: 1px solid rgba(111,214,255,.35);
+    box-shadow: 0 0 26px rgba(111,214,255,.25);
+    margin-bottom: 22px;
+  }
+  .card .ico svg { width: 26px; height: 26px; stroke: var(--glow); }
+  .card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+  .card p { font-size: 15.5px; color: var(--muted); }
+  .card p b { color: var(--ink); font-weight: 600; }
+
+  /* bending band / install */
+  .band {
+    position: relative; isolation: isolate;
+    padding: 130px 0;
+    background:
+      linear-gradient(to bottom, var(--deep-0) 0, transparent 18%, transparent 82%, var(--deep-0) 100%),
+      linear-gradient(rgba(5,13,31,.35), rgba(5,13,31,.35)),
+      url("assets/bending.png") center / cover no-repeat,
+      var(--deep-1);
+  }
+  .panel {
+    max-width: 560px;
+    padding: 40px 42px;
+    border-radius: 20px;
+    background: rgba(6,15,32,.72);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--hairline);
+    border-top-color: var(--rim);
+    box-shadow: 0 30px 90px rgba(0,0,0,.55);
+  }
+  .panel h2 { text-align: left; font-size: 30px; }
+  .panel .kicker { text-align: left; }
+  .step { display: flex; gap: 16px; margin-top: 26px; }
+  .step .n {
+    flex: 0 0 34px; height: 34px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-weight: 700; font-size: 15px; color: var(--deep-0);
+    background: linear-gradient(135deg, var(--accent), var(--glow));
+    box-shadow: 0 0 18px rgba(111,214,255,.45);
+  }
+  .step p { font-size: 15.5px; color: var(--muted); }
+  .step p b { color: var(--ink); font-weight: 600; }
+  .term {
+    margin-top: 26px;
+    font: 13px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--glow);
+    background: rgba(0,0,0,.4);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 12px 16px;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .term .c { color: var(--muted); }
+
+  /* footer */
+  footer { padding: 90px 0 60px; text-align: center; }
+  footer .monk { width: 190px; margin: 0 auto 8px; filter: drop-shadow(0 0 40px rgba(58,160,247,.25)); }
+  footer .fbrand { font-size: 24px; }
+  footer .fbrand .down { font-weight: 200; color: var(--muted); }
+  footer .fbrand .bender { font-weight: 750; color: var(--accent); }
+  footer p { color: var(--muted); font-size: 14px; max-width: 520px; margin: 14px auto 0; }
+  footer .links { display: flex; justify-content: center; gap: 26px; margin-top: 26px; font-size: 14.5px; }
+
+  /* reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s ease, transform .8s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 880px) {
+    .grid { grid-template-columns: 1fr; }
+    .hero-art {
+      background:
+        linear-gradient(to top, var(--deep-0) 0, transparent 30%),
+        linear-gradient(rgba(5,13,31,.62), rgba(5,13,31,.62)),
+        url("assets/hero-wide.png") 72% center / cover no-repeat,
+        var(--deep-1);
+    }
+    .panel { padding: 32px 26px; }
+    nav .links a.hide-m { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .streak, .cta { animation: none; }
+    .reveal { opacity: 1; transform: none; transition: none; }
+    html { scroll-behavior: auto; }
+  }
 </style>
 </head>
 <body>
-<main>
-  <h1 class="brand"><span class="down">Down</span><span class="bender">bender</span></h1>
-  <p class="tagline">The last download master. Download videos or extract MP3 — natively on your Mac.</p>
 
-  <a class="cta" href="https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg">⬇&nbsp; Download for Mac</a>
-  <p class="req">Free &amp; open source · macOS 26+ · Apple Silicon</p>
+<nav>
+  <a class="brand" href="#">
+    <img src="assets/AppIcon.png" alt="">
+    <span><span class="down">Down</span><span class="bender">bender</span></span>
+  </a>
+  <div class="links">
+    <a href="#features" class="hide-m">Features</a>
+    <a href="#install" class="hide-m">Install</a>
+    <a href="https://github.com/NaztiRS/downbender">GitHub</a>
+  </div>
+</nav>
 
-  <img class="shot" src="assets/screenshot.png" alt="Downbender main window with a download queue">
+<header class="hero">
+  <div class="hero-art"></div>
+  <div class="streaks" aria-hidden="true">
+    <span class="streak" style="top:16%; width:120px; animation-duration:11s; animation-delay:-3s;"></span>
+    <span class="streak" style="top:30%; width:70px;  animation-duration:14s; animation-delay:-9s; opacity:.22;"></span>
+    <span class="streak" style="top:47%; width:150px; animation-duration:9s;  animation-delay:-1s;"></span>
+    <span class="streak" style="top:63%; width:60px;  animation-duration:16s; animation-delay:-12s; opacity:.2;"></span>
+    <span class="streak" style="top:78%; width:100px; animation-duration:12s; animation-delay:-6s; opacity:.28;"></span>
+  </div>
+  <div class="hero-inner">
+    <div class="eyebrow">Free &amp; open source · for macOS</div>
+    <h1 class="wordmark"><span class="down">Down</span><span class="bender">bender</span></h1>
+    <p class="tagline"><strong>The last download master.</strong> Bend videos down to your Mac — up to 1080p, or extract the audio as MP3. YouTube first and foremost, plus many other sites.</p>
+    <div class="cta-row">
+      <a class="cta" href="https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>
+        Download for Mac
+      </a>
+      <a class="ghost" href="https://github.com/NaztiRS/downbender">View source</a>
+    </div>
+    <p class="req"><b>macOS 26+</b> · Apple Silicon · GPLv3 · no account, no ads, no tricks</p>
+  </div>
+</header>
 
-  <section>
-    <h2>Install</h2>
-    <ol>
-      <li>Open <strong>Downbender.dmg</strong> and drag Downbender into <strong>Applications</strong>.</li>
-      <li>First launch only: macOS blocks apps that are not notarized by Apple.
-          Go to <strong>System Settings → Privacy &amp; Security</strong> and click
-          <strong>Open Anyway</strong>.</li>
-    </ol>
-  </section>
+<section class="shot-section">
+  <div class="wrap reveal">
+    <div class="kicker">One window, zero friction</div>
+    <h2>Paste a link. Pick a quality. Done.</h2>
+    <p class="sub">A download queue with real progress, pause &amp; resume, clipboard detection and a glance-friendly deep-water look.</p>
+    <div class="shot-frame">
+      <img src="assets/screenshot.png" alt="Downbender main window showing a download queue" loading="lazy">
+    </div>
+  </div>
+</section>
 
-  <section>
-    <h2>What it does</h2>
-    <ul>
-      <li>Video up to 1080p (MP4) or MP3 audio — YouTube first and foremost, plus <a href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md">many other sites</a> (still maturing).</li>
-      <li>Download queue with progress, pause/resume, clipboard detection.</li>
-      <li>Self-contained: the download engine ships inside the app and can update itself.</li>
-    </ul>
-  </section>
+<section class="features" id="features">
+  <div class="wrap">
+    <div class="kicker reveal">What it bends</div>
+    <h2 class="reveal">Everything a downloader should master</h2>
+    <div class="grid">
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></div>
+        <h3>1080p video or clean MP3</h3>
+        <p>Crisp <b>MP4 (H.264)</b> up to 1080p that plays everywhere, or one-tap <b>MP3 extraction</b> at top quality.</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c3 3 3 16 0 19-3-3-3-16 0-19z"/></svg></div>
+        <h3>YouTube &amp; beyond</h3>
+        <p>Battle-tested on <b>YouTube</b>, and speaks yt-dlp's language for <b>many other sites</b> — X, Vimeo, TikTok and friends (still maturing).</p>
+      </div>
+      <div class="card reveal">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg></div>
+        <h3>Updates itself</h3>
+        <p>One click updates <b>both the app and its engine</b>. yt-dlp, FFmpeg and Deno ship inside — nothing else to install, ever.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
-  <footer>
-    <a href="https://github.com/NaztiRS/downbender">Source on GitHub</a> ·
-    GPLv3 · Powered by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a> ·
-    Use responsibly: downloading may violate some platforms' terms of service.
-  </footer>
-</main>
+<section class="band" id="install">
+  <div class="wrap">
+    <div class="panel reveal">
+      <div class="kicker">Two moves</div>
+      <h2>Install it like a master</h2>
+      <div class="step">
+        <div class="n">1</div>
+        <p><b>Download the DMG</b> and drag Downbender into <b>Applications</b>.</p>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <p>First launch only: macOS blocks apps not notarized by Apple. Open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
+      </div>
+      <div class="term"><span class="c"># terminal alternative:</span> xattr -dr com.apple.quarantine /Applications/Downbender.app</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <img class="monk" src="assets/monk-portrait.png" alt="" loading="lazy">
+  <div class="fbrand"><span class="down">Down</span><span class="bender">bender</span></div>
+  <p>Free software under <a href="https://github.com/NaztiRS/downbender/blob/main/LICENSE">GPLv3</a>. Powered by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>, FFmpeg and Deno.
+     Download responsibly: some platforms' terms restrict downloading.</p>
+  <div class="links">
+    <a href="https://github.com/NaztiRS/downbender">GitHub</a>
+    <a href="https://github.com/NaztiRS/downbender/releases">Releases</a>
+    <a href="https://github.com/NaztiRS/downbender/blob/main/NOTICE">Notice</a>
+  </div>
+</footer>
+
+<script>
+  const io = new IntersectionObserver(
+    entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
+    { threshold: 0.15 }
+  );
+  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
+</script>
 </body>
 </html>
