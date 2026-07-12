@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050d1f">
 <title>Downbender — the last download master</title>
 <meta name="description" content="Free, open-source, native macOS app to download videos or extract MP3 — YouTube first and foremost, plus many other sites. Powered by yt-dlp.">
 <meta property="og:title" content="Downbender — the last download master">
@@ -298,14 +299,21 @@
     }
     .panel { padding: 32px 26px; }
     nav .links a.hide-m { display: none; }
+    /* The panel covers the section on narrow screens, so the bending monk
+       anchors to the bottom padding where nothing sits on top of him. */
     .band {
+      padding: 90px 0 360px;
       background:
-        linear-gradient(to bottom, var(--deep-0) 0, transparent 18%, transparent 82%, var(--deep-0) 100%),
-        linear-gradient(rgba(5,13,31,.55), rgba(5,13,31,.55)),
-        url("assets/bending.png") center / cover no-repeat,
+        linear-gradient(to bottom, var(--deep-0) 0, transparent 12%),
+        linear-gradient(to top, var(--deep-0) 0, transparent 6%),
+        url("assets/bending.png") center calc(100% + 30px) / auto 560px no-repeat,
         var(--deep-1);
     }
-    .term code { white-space: normal; word-break: break-all; }
+    .term code { white-space: normal; word-break: normal; }
+  }
+
+  @media (max-width: 620px) {
+    .term code { font-size: 12px; }
   }
   /* dev-only tuner (localhost): live knobs for the bending image framing */
   #tuner {
