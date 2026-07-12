@@ -73,7 +73,7 @@ private func tempDir() throws -> URL {
     try makeFakeApp(at: fresh, bundleID: "com.naztirs.downbender", marker: "new")
     try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
     let engine = support.appendingPathComponent("yt-dlp_macos")
-    try "stale".data(using: .utf8)!.write(to: engine)
+    try Data("stale".utf8).write(to: engine)
 
     let updater = AppSelfUpdater(
         runner: FakeProcessRunner(),

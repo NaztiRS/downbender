@@ -34,7 +34,7 @@ struct FakeProcessRunner: ProcessRunning {
     var stderr: String = ""
     var exitCode: Int32 = 0
     /// Per-call results consumed in order (the last one repeats); nil = the flat fields apply to every call.
-    var replays: [Replay]? = nil
+    var replays: [Replay]?
     var recordedArguments = ArgumentRecorder()
     var calls = CallCounter()
 

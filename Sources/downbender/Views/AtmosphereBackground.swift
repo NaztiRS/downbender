@@ -41,6 +41,8 @@ private struct DataStreaks: View {
     }
 
     // Sparse and staggered on purpose: atmosphere, not a screensaver.
+    // Columns are space-aligned to read as a table.
+    // swiftlint:disable comma
     private let streaks: [Streak] = [
         .init(y: 0.14, length: 70,  duration: 8.0, delay: 0.0, opacity: 0.42),
         .init(y: 0.29, length: 46,  duration: 9.5, delay: 3.4, opacity: 0.26),
@@ -49,6 +51,7 @@ private struct DataStreaks: View {
         .init(y: 0.76, length: 64,  duration: 8.6, delay: 2.5, opacity: 0.30),
         .init(y: 0.9,  length: 52,  duration: 10.0, delay: 6.2, opacity: 0.24),
     ]
+    // swiftlint:enable comma
 
     @State private var go = false
 

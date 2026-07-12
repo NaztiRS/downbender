@@ -83,7 +83,7 @@ public final class UnifiedUpdater {
     public func update() async {
         guard case let .available(appVersion, _, engineLatest) = phase else { return }
         do {
-            if let _ = appVersion {
+            if appVersion != nil {
                 phase = .workingOnApp(0)
                 try await updateApp { [weak self] fraction in
                     Task { @MainActor in
