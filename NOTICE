@@ -1,0 +1,18 @@
+Downbender bundles the following third-party software inside its application bundle:
+
+- yt-dlp (https://github.com/yt-dlp/yt-dlp)
+  Released into the public domain under The Unlicense.
+
+- FFmpeg: ffmpeg and ffprobe (https://ffmpeg.org)
+  GPL-licensed macOS arm64 builds from https://ffmpeg.martin-riedl.de,
+  which publishes the build configuration and corresponding sources for
+  each build. FFmpeg source code is available at https://ffmpeg.org.
+  Because these builds are GPL, Downbender as a whole is distributed
+  under the GNU General Public License v3 (see LICENSE).
+
+- Deno (https://deno.com)
+  MIT License. Bundled as the JavaScript runtime yt-dlp uses to solve
+  YouTube's EJS challenges.
+
+None of these binaries are stored in this repository; scripts/fetch-binaries.sh
+downloads them at build time from the sources above.

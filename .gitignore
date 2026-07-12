@@ -1,0 +1,22 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Binarios embebidos (se descargan con scripts/fetch-binaries.sh)
+Resources/binaries/
+
+# Artefactos de empaquetado
+*.app/
+*.dmg
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Internal working docs (specs/plans) — kept out of the public tree
+docs-dev/
+Downbender.zip
+
+# Stray images dropped at repo root (icon experiments etc.) stay untracked
+/*.png

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Downbender — video downloader for macOS</title>
+<meta name="description" content="Free, open-source, native macOS app to download videos or extract MP3 from YouTube and many other sites.">
+<style>
+  :root {
+    --bg-top: #0B1E38; --bg-bottom: #07111F;
+    --accent: #3AA0F7; --glow: #6FD6FF;
+    --text: #E8F2FB; --muted: #93A9BD;
+    --surface: rgba(255,255,255,.05); --hairline: rgba(255,255,255,.10);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    color: var(--text);
+    background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom)) fixed;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 64px 24px;
+  }
+  main { max-width: 760px; width: 100%; text-align: center; }
+  .brand { font-size: 44px; letter-spacing: -0.5px; }
+  .brand .down { font-weight: 200; color: var(--muted); }
+  .brand .bender { font-weight: 700; color: var(--accent); }
+  .tagline { color: var(--muted); margin-top: 6px; font-size: 19px; }
+  .cta {
+    display: inline-block; margin: 34px 0 10px;
+    padding: 14px 30px; border-radius: 999px;
+    background: linear-gradient(90deg, var(--accent), var(--glow));
+    background-size: 200% 100%;
+    color: #fff; font-weight: 600; font-size: 18px; text-decoration: none;
+    box-shadow: 0 4px 24px rgba(111, 214, 255, .35);
+    transition: filter .15s ease;
+    animation: flow 6s ease-in-out infinite;
+  }
+  @keyframes flow {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  @media (prefers-reduced-motion: reduce) { .cta { animation: none; } }
+  .cta:hover { filter: brightness(1.08); }
+  .req { color: var(--muted); font-size: 14px; margin-bottom: 36px; }
+  .shot {
+    width: 100%; border-radius: 14px; border: 1px solid var(--hairline);
+    box-shadow: 0 20px 60px rgba(0,0,0,.5); margin-bottom: 44px;
+  }
+  section {
+    background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: 14px; padding: 26px 30px; text-align: left; margin-bottom: 20px;
+  }
+  h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1.4px;
+       color: var(--accent); margin-bottom: 12px; }
+  ol { padding-left: 22px; } li { margin-bottom: 8px; }
+  ul { padding-left: 22px; list-style: "· "; }
+  code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; font-size: 14px; }
+  strong { color: var(--text); }
+  section, .req, footer { color: var(--muted); }
+  footer { margin-top: 28px; font-size: 14px; }
+  a { color: var(--glow); }
+</style>
+</head>
+<body>
+<main>
+  <h1 class="brand"><span class="down">Down</span><span class="bender">bender</span></h1>
+  <p class="tagline">The last download master. Download videos or extract MP3 — natively on your Mac.</p>
+
+  <a class="cta" href="https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg">⬇&nbsp; Download for Mac</a>
+  <p class="req">Free &amp; open source · macOS 26+ · Apple Silicon</p>
+
+  <img class="shot" src="assets/screenshot.png" alt="Downbender main window with a download queue">
+
+  <section>
+    <h2>Install</h2>
+    <ol>
+      <li>Open <strong>Downbender.dmg</strong> and drag Downbender into <strong>Applications</strong>.</li>
+      <li>First launch only: macOS blocks apps that are not notarized by Apple.
+          Go to <strong>System Settings → Privacy &amp; Security</strong> and click
+          <strong>Open Anyway</strong>.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <ul>
+      <li>Video up to 1080p (MP4) or MP3 audio — YouTube first and foremost, plus <a href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md">many other sites</a> (still maturing).</li>
+      <li>Download queue with progress, pause/resume, clipboard detection.</li>
+      <li>Self-contained: the download engine ships inside the app and can update itself.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <a href="https://github.com/NaztiRS/downbender">Source on GitHub</a> ·
+    GPLv3 · Powered by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a> ·
+    Use responsibly: downloading may violate some platforms' terms of service.
+  </footer>
+</main>
+</body>
+</html>

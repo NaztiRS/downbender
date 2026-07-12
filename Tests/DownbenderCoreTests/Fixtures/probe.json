@@ -1,0 +1,17 @@
+{
+  "id": "abc123",
+  "title": "Test video",
+  "thumbnail": "https://i.ytimg.com/vi/abc123/hq.jpg",
+  "duration": 212.0,
+  "formats": [
+    {"format_id":"160","height":144,"vcodec":"avc1","acodec":"none","ext":"mp4","tbr":100.0,"filesize_approx":5000000,"protocol":"https"},
+    {"format_id":"134","height":360,"vcodec":"avc1","acodec":"none","ext":"mp4","tbr":600.0,"protocol":"https"},
+    {"format_id":"137","height":1080,"vcodec":"avc1","acodec":"none","ext":"mp4","tbr":2500.0,"filesize":45000000,"protocol":"https"},
+    {"format_id":"248","height":1080,"vcodec":"vp9","acodec":"none","ext":"webm","tbr":2600.0,"filesize":48000000,"protocol":"https"},
+    {"format_id":"299","height":1080,"vcodec":"avc1","acodec":"none","ext":"mp4","tbr":9999.0,"filesize":200000000,"protocol":"m3u8_native"},
+    {"format_id":"22","height":720,"vcodec":"avc1","acodec":"mp4a","ext":"mp4","tbr":1500.0,"filesize":30000000,"protocol":"https"},
+    {"format_id":"401","height":2160,"vcodec":"av01","acodec":"none","ext":"mp4","tbr":12000.0,"protocol":"https"},
+    {"format_id":"271","height":1440,"vcodec":"vp9","acodec":"none","ext":"webm","tbr":6000.0,"filesize_approx":120000000,"protocol":"https"},
+    {"format_id":"140","height":null,"vcodec":"none","acodec":"mp4a","ext":"m4a","tbr":129.0,"filesize":3400000,"protocol":"https"}
+  ]
+}
