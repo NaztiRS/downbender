@@ -20,8 +20,6 @@ public final class DownloadItem: Identifiable {
     public var thumbnailURL: URL?
     public var format: DownloadFormat?
     public var includeSubtitles: Bool = false
-    /// The user asked to expand this watch+list URL into its playlist; survives probe retries.
-    public var expandsPlaylist: Bool = false
     public var destination: URL
     public var state: State
     public var probe: ProbeResult?

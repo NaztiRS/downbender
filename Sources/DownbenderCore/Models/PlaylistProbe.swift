@@ -26,4 +26,9 @@ public struct PlaylistProbe: Equatable, Sendable {
 public enum ProbeOutcome: Equatable, Sendable {
     case video(ProbeResult)
     case playlist(PlaylistProbe)
+
+    public var videoResult: ProbeResult? {
+        guard case .video(let result) = self else { return nil }
+        return result
+    }
 }

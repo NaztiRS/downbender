@@ -131,6 +131,17 @@ import Foundation
     #expect(result.subtitleLanguages == [])
 }
 
+@Test func approxDownloadSizeFallsBackToClosestLowerQuality() throws {
+    let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
+    let result = try FormatParser.parse(try Data(contentsOf: url))
+    // 2160p is not offered (1080 cap), so the request lands on the best listed at or below it.
+    #expect(result.approxDownloadSize(for: .video(height: 2160)) == 51_400_000)
+    #expect(result.approxDownloadSize(for: .video(height: 720)) == 33_400_000)
+    // 360p exists but carries no size: never invented.
+    #expect(result.approxDownloadSize(for: .video(height: 360)) == nil)
+    #expect(result.approxDownloadSize(for: .audioMP3) == nil)
+}
+
 // MARK: - Playlists
 
 @Test func parseOutcomeDetectsFlatPlaylist() throws {

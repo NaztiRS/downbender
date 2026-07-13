@@ -44,17 +44,20 @@ struct RootView: View {
             QueueList(model: model)
                 // Anchored here, not on URLBar: one sheet per view (the clipboard prompt owns that one).
                 .sheet(isPresented: Binding(
-                    get: { model.pendingPlaylist != nil },
-                    set: { if !$0 { model.pendingPlaylist = nil } }
+                    get: { model.playlistAnalysis != nil },
+                    set: { if !$0 { model.dismissPlaylistAnalysis() } }
                 )) {
-                    if let playlist = model.pendingPlaylist {
+                    if let analysis = model.playlistAnalysis {
                         PlaylistPanel(
-                            playlist: playlist,
+                            analysis: analysis,
                             destination: $model.destination,
                             onConfirm: { format, includeSubtitles in
-                                model.acceptPlaylist(playlist, format: format, includeSubtitles: includeSubtitles)
+                                if let playlist = analysis.playlist {
+                                    model.acceptPlaylist(playlist, format: format, includeSubtitles: includeSubtitles)
+                                }
                             },
-                            onCancel: { model.pendingPlaylist = nil }
+                            onCancel: { model.dismissPlaylistAnalysis() },
+                            onRetry: { model.retryPlaylistAnalysis() }
                         )
                     }
                 }

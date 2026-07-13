@@ -280,14 +280,18 @@ private func playlistFixtureJSON() throws -> String {
     return try String(contentsOf: url, encoding: .utf8)
 }
 
-/// The probing card is REMOVED on playlist detection (its state stays .probing), so
-/// waiting on the card would always exhaust the timeout: wait on the published playlist.
-@MainActor private func waitForPendingPlaylist(_ model: AppModel) async {
+@MainActor private func waitUntil(_ condition: () -> Bool) async {
     var waited = 0
-    while model.pendingPlaylist == nil, waited < 400 {
+    while !condition(), waited < 400 {
         waited += 1
         try? await Task.sleep(for: .milliseconds(5))
     }
+}
+
+/// The probing card is REMOVED on playlist detection (its state stays .probing), so
+/// waiting on the card would always exhaust the timeout: wait on the published playlist.
+@MainActor private func waitForPendingPlaylist(_ model: AppModel) async {
+    await waitUntil { model.pendingPlaylist != nil }
 }
 
 @MainActor
@@ -362,17 +366,74 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
-@Test func chooseWholePlaylistExpandsIntoPendingPlaylist() async throws {
+@Test func chooseWholePlaylistOpensPanelInstantlyAndExpandsInBackground() async throws {
     let runner = FakeProcessRunner(stdoutLines: [try playlistFixtureJSON()], exitCode: 0)
     let model = makeModel(runner: runner)
     model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
 
     model.chooseWholePlaylist()
-    await waitForPendingPlaylist(model)
 
+    // The sheet's model exists BEFORE any probe returns: analysis never blocks the UI.
+    #expect(model.playlistAnalysis != nil)
+    #expect(model.pendingPlaylist == nil)
+
+    await waitForPendingPlaylist(model)
     #expect(model.pendingPlaylist?.entries.count == 3)
     #expect(model.queue.items.isEmpty)
-    #expect(!runner.recordedArguments.arguments.contains("--no-playlist"))
+    // The FIRST call is the expansion probe (later background size probes do carry --no-playlist).
+    #expect(runner.recordedArguments.allArguments.first?.contains("--no-playlist") == false)
+}
+
+@MainActor
+@Test func playlistAnalysisAccumulatesSizeEstimatesInBackground() async throws {
+    let runner = FakeProcessRunner(replays: [
+        .init(stdoutLines: [try playlistFixtureJSON()], exitCode: 0),
+        .init(stdoutLines: [try probeFixtureJSON()], exitCode: 0),
+    ])
+    let model = makeModel(runner: runner)
+    model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
+    model.chooseWholePlaylist()
+
+    await waitUntil { model.playlistAnalysis?.analyzedCount == 3 }
+
+    guard let analysis = model.playlistAnalysis else {
+        Issue.record("expected playlistAnalysis")
+        return
+    }
+    #expect(analysis.results.count == 3)
+    // Every entry replays the probe fixture: 3 × the 720p estimate (30M video + 3.4M audio).
+    guard let estimate = analysis.estimatedTotalBytes(for: .video(height: 720)) else {
+        Issue.record("expected a size estimate")
+        return
+    }
+    #expect(estimate.bytes == 100_200_000)
+    #expect(estimate.sizedVideos == 3)
+
+    // Accepting attaches what the estimation already learned to each queued item.
+    model.acceptPlaylist(analysis.playlist!, format: .video(height: 720), includeSubtitles: false)
+    #expect(model.playlistAnalysis == nil)
+    #expect(model.queue.items.count == 3)
+    for item in model.queue.items {
+        #expect(item.expectedTotalBytes == 33_400_000)
+    }
+}
+
+@MainActor
+@Test func failedPlaylistAnalysisShowsFailureAndRetryRecovers() async throws {
+    let runner = FakeProcessRunner(replays: [
+        .init(stderr: "ERROR: boom", exitCode: 1),
+        .init(stdoutLines: [try playlistFixtureJSON()], exitCode: 0),
+    ])
+    let model = makeModel(runner: runner)
+    model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
+    model.chooseWholePlaylist()
+
+    await waitUntil { model.playlistAnalysis?.failure != nil }
+    #expect(model.playlistAnalysis?.failure?.contains("boom") == true)
+
+    model.retryPlaylistAnalysis()
+    await waitForPendingPlaylist(model)
+    #expect(model.pendingPlaylist?.entries.count == 3)
 }
 
 @MainActor

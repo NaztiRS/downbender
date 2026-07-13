@@ -88,13 +88,12 @@ public final class AppModel {
         addVideoURL(url)
     }
 
+    /// Opens the playlist panel IMMEDIATELY (loading state) and analyzes in the background:
+    /// mix/playlist probes can take long and must never block the UI.
     public func chooseWholePlaylist() {
         guard let url = pendingPlaylistChoice else { return }
         pendingPlaylistChoice = nil
-        let item = DownloadItem(url: url, title: url, destination: destination, state: .probing)
-        item.expandsPlaylist = true
-        queue.add(item)
-        runProbe(for: item)
+        startPlaylistAnalysis(url: url)
     }
 
     private func addVideoURL(_ url: String) {
@@ -113,7 +112,7 @@ public final class AppModel {
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
             do {
-                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser, expandPlaylist: item.expandsPlaylist)
+                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser)
                 guard let outcome, !Task.isCancelled else { return }
                 switch outcome {
                 case .video(let result):
@@ -128,7 +127,7 @@ public final class AppModel {
                     }
                     // The probing card becomes the playlist panel: one choice for all entries.
                     self?.queue.remove(item)
-                    self?.pendingPlaylist = playlist
+                    self?.presentAnalysis(url: item.url, playlist: playlist)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -137,11 +136,99 @@ public final class AppModel {
         }
     }
 
-    /// Playlist awaiting the user's single quality/destination choice; RootView presents it as a sheet.
-    public var pendingPlaylist: PlaylistProbe?
+    /// Live playlist analysis behind the panel sheet; non-nil while the sheet is up.
+    public private(set) var playlistAnalysis: PlaylistAnalysis?
+    private var analysisTask: Task<Void, Never>?
 
-    /// Enqueues every entry directly (no per-item probe: the format selector's `height<=H`
-    /// fallback resolves each video, and N concurrent probes would mean N yt-dlp processes).
+    /// Entry list of the analysis, once known (also what the older tests observe).
+    public var pendingPlaylist: PlaylistProbe? { playlistAnalysis?.playlist }
+
+    private func startPlaylistAnalysis(url: String) {
+        analysisTask?.cancel()
+        let analysis = PlaylistAnalysis(url: url)
+        playlistAnalysis = analysis
+        analysisTask = Task { @MainActor [weak self] in
+            await self?.expandAndEstimate(analysis)
+        }
+    }
+
+    /// Pure playlist URLs arrive here with the entries already probed by the card's flat probe.
+    private func presentAnalysis(url: String, playlist: PlaylistProbe) {
+        analysisTask?.cancel()
+        let analysis = PlaylistAnalysis(url: url)
+        analysis.playlist = playlist
+        playlistAnalysis = analysis
+        analysisTask = Task { @MainActor [weak self] in
+            await self?.estimateSizes(analysis)
+        }
+    }
+
+    public func retryPlaylistAnalysis() {
+        guard let stale = playlistAnalysis, stale.failure != nil else { return }
+        startPlaylistAnalysis(url: stale.url)
+    }
+
+    /// Closing the sheet (cancel or accept) stops any in-flight estimation probes.
+    public func dismissPlaylistAnalysis() {
+        analysisTask?.cancel()
+        analysisTask = nil
+        playlistAnalysis = nil
+    }
+
+    private func expandAndEstimate(_ analysis: PlaylistAnalysis) async {
+        do {
+            let outcome = try await probe.probe(url: analysis.url, cookiesBrowser: cookiesBrowser, expandPlaylist: true)
+            guard !Task.isCancelled, playlistAnalysis === analysis else { return }
+            switch outcome {
+            case .playlist(let playlist) where !playlist.entries.isEmpty:
+                analysis.playlist = playlist
+            case .playlist:
+                analysis.failure = "Playlist is empty."
+                return
+            case .video:
+                // The "playlist" resolved to a single video after all: back to the normal card flow.
+                dismissPlaylistAnalysis()
+                addVideoURL(analysis.url)
+                return
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            analysis.failure = error.localizedDescription
+            return
+        }
+        await estimateSizes(analysis)
+    }
+
+    /// Full-probes every entry through a small sliding window (all at once would spawn one
+    /// yt-dlp process per video) purely to refine the panel's size estimate.
+    private func estimateSizes(_ analysis: PlaylistAnalysis) async {
+        guard let entries = analysis.playlist?.entries, !entries.isEmpty else { return }
+        let probe = self.probe
+        let cookies = cookiesBrowser
+        await withTaskGroup(of: (String, ProbeResult?).self) { group in
+            let window = 3
+            var nextIndex = 0
+            while nextIndex < min(window, entries.count) {
+                let url = entries[nextIndex].url
+                nextIndex += 1
+                group.addTask { (url, (try? await probe.probe(url: url, cookiesBrowser: cookies))?.videoResult) }
+            }
+            for await (url, result) in group {
+                guard !Task.isCancelled, playlistAnalysis === analysis else { break }
+                analysis.analyzedCount += 1
+                if let result { analysis.results[url] = result }
+                if nextIndex < entries.count {
+                    let next = entries[nextIndex].url
+                    nextIndex += 1
+                    group.addTask { (next, (try? await probe.probe(url: next, cookiesBrowser: cookies))?.videoResult) }
+                }
+            }
+            group.cancelAll()
+        }
+    }
+
+    /// Enqueues every entry directly (no blocking per-item probe; whatever the background
+    /// estimation already learned travels with the item as its expected size).
     public func acceptPlaylist(_ playlist: PlaylistProbe, format: DownloadFormat, includeSubtitles: Bool = false) {
         for entry in playlist.entries {
             let item = DownloadItem(
@@ -153,9 +240,13 @@ public final class AppModel {
                 state: .queued
             )
             item.includeSubtitles = includeSubtitles
+            if let known = playlistAnalysis?.results[entry.url] {
+                item.probe = known
+                item.expectedTotalBytes = known.approxDownloadSize(for: format)
+            }
             queue.enqueue(item)
         }
-        pendingPlaylist = nil
+        dismissPlaylistAnalysis()
     }
 
     public func choose(_ format: DownloadFormat, includeSubtitles: Bool = false, for item: DownloadItem) {

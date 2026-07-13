@@ -1,13 +1,15 @@
 import SwiftUI
 import DownbenderCore
 
-/// One choice for the whole playlist: entries are enqueued directly (no per-video probe),
-/// so the quality list is fixed and each video resolves to its closest available quality.
+/// One choice for the whole playlist. Opens instantly (loading state) while the entry list
+/// resolves; a background estimation then refines "N videos · ~total" live, so the user can
+/// confirm at any moment without waiting for analysis.
 struct PlaylistPanel: View {
-    let playlist: PlaylistProbe
+    let analysis: PlaylistAnalysis
     @Binding var destination: URL
     var onConfirm: (DownloadFormat, Bool) -> Void
     var onCancel: () -> Void
+    var onRetry: () -> Void
 
     @State private var selection: DownloadFormat = .video(height: 1080)
     @State private var includeSubtitles = false
@@ -17,14 +19,65 @@ struct PlaylistPanel: View {
     ]
 
     var body: some View {
+        Group {
+            if let failure = analysis.failure {
+                failureContent(failure)
+            }
+            else if let playlist = analysis.playlist {
+                panelContent(playlist)
+            }
+            else {
+                loadingContent
+            }
+        }
+        .padding(22)
+        .frame(width: 440)
+        .background(Theme.wash)
+    }
+
+    private var loadingContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("DOWNLOAD PLAYLIST")
+                .font(.caption2.weight(.bold)).tracking(1.2)
+                .foregroundStyle(Theme.accent)
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Analyzing playlist…").font(.callout).foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func failureContent(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Could not load playlist", systemImage: "exclamationmark.triangle")
+                .font(.headline)
+                .foregroundStyle(.orange)
+            Text(message).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                Button("Retry", action: onRetry)
+                    .buttonStyle(WaveButtonStyle())
+            }
+        }
+    }
+
+    private func panelContent(_ playlist: PlaylistProbe) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("DOWNLOAD PLAYLIST")
                     .font(.caption2.weight(.bold)).tracking(1.2)
                     .foregroundStyle(Theme.accent)
                 Text(playlist.title).font(.headline).lineLimit(2)
-                Text("\(playlist.entries.count) videos")
+                Text(summary(playlist))
                     .font(.callout).foregroundStyle(.secondary)
+                    .contentTransition(.numericText())
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -71,9 +124,19 @@ struct PlaylistPanel: View {
                 .buttonStyle(WaveButtonStyle())
             }
         }
-        .padding(22)
-        .frame(width: 430)
-        .background(Theme.wash)
+    }
+
+    /// "44 videos · ~3.2 GB so far · analyzing 21/44…" — refines live, never blocks.
+    private func summary(_ playlist: PlaylistProbe) -> String {
+        var parts = ["\(playlist.entries.count) videos"]
+        if selection != .audioMP3, let estimate = analysis.estimatedTotalBytes(for: selection) {
+            let formatted = estimate.bytes.formatted(.byteCount(style: .file))
+            parts.append(estimate.sizedVideos < playlist.entries.count ? "~\(formatted) so far" : "~\(formatted)")
+        }
+        if analysis.analyzedCount < playlist.entries.count {
+            parts.append("analyzing \(analysis.analyzedCount)/\(playlist.entries.count)…")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var subtitleDetail: String {
