@@ -29,9 +29,12 @@ public struct ProbeService: Sendable {
     }
 
     /// `cookiesBrowser` travels per call (not stored) so a Settings change applies to the next probe.
-    public func probe(url: String, cookiesBrowser: String? = nil) async throws -> ProbeResult {
+    /// --flat-playlist: pure playlist URLs resolve to a light entry list in ONE call instead of
+    /// N full extractions; single videos are unaffected, and --no-playlist (base args) still
+    /// keeps watch?v=X&list=Y URLs as the single video the user pasted.
+    public func probe(url: String, cookiesBrowser: String? = nil) async throws -> ProbeOutcome {
         let acc = Accumulator()
-        let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser) + ["-J", url]
+        let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser) + ["--flat-playlist", "-J", url]
         let result = try await runner.run(
             executableURL: ytdlpURL,
             arguments: args,
@@ -39,6 +42,6 @@ public struct ProbeService: Sendable {
         )
         guard result.exitCode == 0 else { throw ProbeError.ytdlpFailed(result.stderr) }
         guard let data = acc.text.data(using: .utf8), !data.isEmpty else { throw ProbeError.badOutput }
-        return try FormatParser.parse(data)
+        return try FormatParser.parseOutcome(data)
     }
 }

@@ -86,17 +86,49 @@ public final class AppModel {
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
             do {
-                let result = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser)
-                guard let result, !Task.isCancelled else { return }
-                item.title = result.title
-                item.thumbnailURL = result.thumbnailURL
-                item.probe = result
-                item.state = .readyToChoose
+                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser)
+                guard let outcome, !Task.isCancelled else { return }
+                switch outcome {
+                case .video(let result):
+                    item.title = result.title
+                    item.thumbnailURL = result.thumbnailURL
+                    item.probe = result
+                    item.state = .readyToChoose
+                case .playlist(let playlist):
+                    guard !playlist.entries.isEmpty else {
+                        item.state = .probeFailed("Playlist is empty.")
+                        return
+                    }
+                    // The probing card becomes the playlist panel: one choice for all entries.
+                    self?.queue.remove(item)
+                    self?.pendingPlaylist = playlist
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 item.state = .probeFailed(error.localizedDescription)
             }
         }
+    }
+
+    /// Playlist awaiting the user's single quality/destination choice; RootView presents it as a sheet.
+    public var pendingPlaylist: PlaylistProbe?
+
+    /// Enqueues every entry directly (no per-item probe: the format selector's `height<=H`
+    /// fallback resolves each video, and N concurrent probes would mean N yt-dlp processes).
+    public func acceptPlaylist(_ playlist: PlaylistProbe, format: DownloadFormat, includeSubtitles: Bool = false) {
+        for entry in playlist.entries {
+            let item = DownloadItem(
+                url: entry.url,
+                title: entry.title,
+                thumbnailURL: entry.thumbnailURL,
+                format: format,
+                destination: destination,
+                state: .queued
+            )
+            item.includeSubtitles = includeSubtitles
+            queue.enqueue(item)
+        }
+        pendingPlaylist = nil
     }
 
     public func choose(_ format: DownloadFormat, includeSubtitles: Bool = false, for item: DownloadItem) {

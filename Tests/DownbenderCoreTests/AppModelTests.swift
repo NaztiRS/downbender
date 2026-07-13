@@ -273,6 +273,85 @@ final class SpyNotifier: CompletionNotifying {
     #expect(spy.events[0].success == false)
 }
 
+// MARK: - Playlists
+
+private func playlistFixtureJSON() throws -> String {
+    let url = Bundle.module.url(forResource: "playlist", withExtension: "json", subdirectory: "Fixtures")!
+    return try String(contentsOf: url, encoding: .utf8)
+}
+
+/// The probing card is REMOVED on playlist detection (its state stays .probing), so
+/// waiting on the card would always exhaust the timeout: wait on the published playlist.
+@MainActor private func waitForPendingPlaylist(_ model: AppModel) async {
+    var waited = 0
+    while model.pendingPlaylist == nil, waited < 400 {
+        waited += 1
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+}
+
+@MainActor
+@Test func playlistURLRemovesProbingCardAndPublishesPendingPlaylist() async throws {
+    let runner = FakeProcessRunner(stdoutLines: [try playlistFixtureJSON()], exitCode: 0)
+    let model = makeModel(runner: runner)
+
+    model.addURL("https://www.youtube.com/playlist?list=PLtest123")
+    await waitForPendingPlaylist(model)
+
+    #expect(model.queue.items.isEmpty)
+    #expect(model.pendingPlaylist?.title == "Test playlist")
+    #expect(model.pendingPlaylist?.entries.count == 3)
+}
+
+@MainActor
+@Test func acceptPlaylistEnqueuesEveryEntryWithChosenFormat() async throws {
+    let runner = FakeProcessRunner(replays: [
+        .init(stdoutLines: [try playlistFixtureJSON()], exitCode: 0),
+        .init(stdoutLines: ["DBPATH /tmp/dest/out.mp4"], exitCode: 0),
+    ])
+    let model = makeModel(runner: runner)
+    model.addURL("https://www.youtube.com/playlist?list=PLtest123")
+    await waitForPendingPlaylist(model)
+    guard let playlist = model.pendingPlaylist else {
+        Issue.record("expected pendingPlaylist")
+        return
+    }
+
+    model.acceptPlaylist(playlist, format: .video(height: 720), includeSubtitles: true)
+
+    #expect(model.pendingPlaylist == nil)
+    #expect(model.queue.items.count == 3)
+    #expect(model.queue.items[0].title == "First video")
+    for queued in model.queue.items {
+        #expect(queued.format == .video(height: 720))
+        #expect(queued.includeSubtitles)
+    }
+    for queued in model.queue.items {
+        await waitUntilFinished(queued)
+        #expect(queued.state == .done)
+    }
+}
+
+@MainActor
+@Test func emptyPlaylistMarksCardProbeFailed() async throws {
+    let json = """
+    {"_type": "playlist", "title": "Empty", "entries": []}
+    """
+    let runner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)
+    let model = makeModel(runner: runner)
+
+    model.addURL("https://www.youtube.com/playlist?list=PLempty")
+    let item = model.queue.items[0]
+    await waitWhileProbing(item)
+
+    #expect(model.pendingPlaylist == nil)
+    guard case .probeFailed(let message) = item.state else {
+        Issue.record("expected .probeFailed, got \(item.state)")
+        return
+    }
+    #expect(message == "Playlist is empty.")
+}
+
 // MARK: - Subtitles
 
 @MainActor

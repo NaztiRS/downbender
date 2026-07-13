@@ -8,9 +8,29 @@ import Foundation
     let runner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)
     let service = ProbeService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
 
-    let result = try await service.probe(url: "https://youtu.be/abc123")
+    guard case .video(let result) = try await service.probe(url: "https://youtu.be/abc123") else {
+        Issue.record("expected .video")
+        return
+    }
     #expect(result.title == "Test video")
     #expect(result.availableFormats.first == .video(height: 1080))
+
+    // Playlists must resolve in ONE fast call: flat probing is non-negotiable.
+    #expect(runner.recordedArguments.arguments.contains("--flat-playlist"))
+}
+
+@Test func probeServiceDetectsPlaylists() async throws {
+    let url = Bundle.module.url(forResource: "playlist", withExtension: "json", subdirectory: "Fixtures")!
+    let json = try String(contentsOf: url, encoding: .utf8)
+    let runner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)
+    let service = ProbeService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
+
+    guard case .playlist(let playlist) = try await service.probe(url: "https://www.youtube.com/playlist?list=PLtest123") else {
+        Issue.record("expected .playlist")
+        return
+    }
+    #expect(playlist.title == "Test playlist")
+    #expect(playlist.entries.count == 3)
 }
 
 @Test func probeServiceThrowsOnNonZeroExit() async {
