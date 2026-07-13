@@ -59,6 +59,20 @@ struct RootView: View {
                     }
                 }
         }
+        // Anchored to the outer VStack: URLBar owns the clipboard sheet and QueueList the playlist panel.
+        .sheet(isPresented: Binding(
+            get: { model.pendingPlaylistChoice != nil },
+            set: { if !$0 { model.pendingPlaylistChoice = nil } }
+        )) {
+            if let url = model.pendingPlaylistChoice {
+                PlaylistScopePrompt(
+                    url: url,
+                    onVideo: { model.chooseVideoOnly() },
+                    onPlaylist: { model.chooseWholePlaylist() },
+                    onDismiss: { model.pendingPlaylistChoice = nil }
+                )
+            }
+        }
         .task { await model.appUpdate.check() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.clipboard.check(pasteboardString: NSPasteboard.general.string(forType: .string))

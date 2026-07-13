@@ -69,8 +69,35 @@ public final class AppModel {
     /// In-flight probe tasks, per item: cancelled if the user removes the card.
     private var probeTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Watch link that also carries a `list=`: parked here until the user picks video vs playlist.
+    public var pendingPlaylistChoice: String?
+
     /// Creates the card immediately ("probing" state) and probes in a background Task, one per URL.
+    /// Watch+list URLs stop first at a scope prompt (RootView) instead of probing right away.
     public func addURL(_ url: String) {
+        if MediaURL.pointsToVideoInPlaylist(url) {
+            pendingPlaylistChoice = url
+            return
+        }
+        addVideoURL(url)
+    }
+
+    public func chooseVideoOnly() {
+        guard let url = pendingPlaylistChoice else { return }
+        pendingPlaylistChoice = nil
+        addVideoURL(url)
+    }
+
+    public func chooseWholePlaylist() {
+        guard let url = pendingPlaylistChoice else { return }
+        pendingPlaylistChoice = nil
+        let item = DownloadItem(url: url, title: url, destination: destination, state: .probing)
+        item.expandsPlaylist = true
+        queue.add(item)
+        runProbe(for: item)
+    }
+
+    private func addVideoURL(_ url: String) {
         let item = DownloadItem(url: url, title: url, destination: destination, state: .probing)
         queue.add(item)
         runProbe(for: item)
@@ -86,7 +113,7 @@ public final class AppModel {
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
             do {
-                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser)
+                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser, expandPlaylist: item.expandsPlaylist)
                 guard let outcome, !Task.isCancelled else { return }
                 switch outcome {
                 case .video(let result):

@@ -7,8 +7,10 @@ public enum DownloadArgsBuilder {
         "download:\(ProgressParser.templateLinePrefix) %(progress._percent_str)s %(progress.downloaded_bytes)s %(progress.total_bytes,progress.total_bytes_estimate)s %(progress._speed_str)s %(progress._eta_str)s"
 
     /// Flags common to EVERY yt-dlp invocation (probe and download).
-    static func baseArgs(denoURL: URL?, cookiesBrowser: String?) -> [String] {
-        var args = ["--no-config", "--no-playlist"]
+    /// `noPlaylist: false` only when the user explicitly asked to expand a watch+list URL.
+    static func baseArgs(denoURL: URL?, cookiesBrowser: String?, noPlaylist: Bool = true) -> [String] {
+        var args = ["--no-config"]
+        if noPlaylist { args.append("--no-playlist") }
         if let denoURL { args += ["--js-runtimes", "deno:\(denoURL.path)"] }
         if let cookiesBrowser { args += ["--cookies-from-browser", cookiesBrowser] }
         return args

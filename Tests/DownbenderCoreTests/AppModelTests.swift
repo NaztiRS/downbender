@@ -333,6 +333,49 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
+@Test func watchURLWithListAsksForScopeInsteadOfProbing() async throws {
+    let runner = FakeProcessRunner(stdoutLines: [try probeFixtureJSON()], exitCode: 0)
+    let model = makeModel(runner: runner)
+
+    model.addURL("https://www.youtube.com/watch?v=abc123&list=RDabc123")
+
+    #expect(model.queue.items.isEmpty)
+    #expect(model.pendingPlaylistChoice == "https://www.youtube.com/watch?v=abc123&list=RDabc123")
+    // Nothing probed until the user picks a scope.
+    #expect(runner.recordedArguments.allArguments.isEmpty)
+}
+
+@MainActor
+@Test func chooseVideoOnlyProbesTheSingleVideo() async throws {
+    let runner = FakeProcessRunner(stdoutLines: [try probeFixtureJSON()], exitCode: 0)
+    let model = makeModel(runner: runner)
+    model.addURL("https://www.youtube.com/watch?v=abc123&list=RDabc123")
+
+    model.chooseVideoOnly()
+
+    #expect(model.pendingPlaylistChoice == nil)
+    #expect(model.queue.items.count == 1)
+    let item = model.queue.items[0]
+    await waitWhileProbing(item)
+    #expect(item.state == .readyToChoose)
+    #expect(runner.recordedArguments.arguments.contains("--no-playlist"))
+}
+
+@MainActor
+@Test func chooseWholePlaylistExpandsIntoPendingPlaylist() async throws {
+    let runner = FakeProcessRunner(stdoutLines: [try playlistFixtureJSON()], exitCode: 0)
+    let model = makeModel(runner: runner)
+    model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
+
+    model.chooseWholePlaylist()
+    await waitForPendingPlaylist(model)
+
+    #expect(model.pendingPlaylist?.entries.count == 3)
+    #expect(model.queue.items.isEmpty)
+    #expect(!runner.recordedArguments.arguments.contains("--no-playlist"))
+}
+
+@MainActor
 @Test func emptyPlaylistMarksCardProbeFailed() async throws {
     let json = """
     {"_type": "playlist", "title": "Empty", "entries": []}

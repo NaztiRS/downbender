@@ -32,9 +32,10 @@ public struct ProbeService: Sendable {
     /// --flat-playlist: pure playlist URLs resolve to a light entry list in ONE call instead of
     /// N full extractions; single videos are unaffected, and --no-playlist (base args) still
     /// keeps watch?v=X&list=Y URLs as the single video the user pasted.
-    public func probe(url: String, cookiesBrowser: String? = nil) async throws -> ProbeOutcome {
+    /// `expandPlaylist: true` drops --no-playlist so a watch?v=X&list=Y URL resolves to the playlist.
+    public func probe(url: String, cookiesBrowser: String? = nil, expandPlaylist: Bool = false) async throws -> ProbeOutcome {
         let acc = Accumulator()
-        let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser) + ["--flat-playlist", "-J", url]
+        let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser, noPlaylist: !expandPlaylist) + ["--flat-playlist", "-J", url]
         let result = try await runner.run(
             executableURL: ytdlpURL,
             arguments: args,

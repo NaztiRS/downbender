@@ -16,6 +16,20 @@ public enum MediaURL {
         "streamable.com", "www.streamable.com",
     ]
 
+    /// A watch link that ALSO carries a playlist (`v=` + `list=`): the UI asks which one the user meant.
+    public static func pointsToVideoInPlaylist(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let host = url.host?.lowercased(),
+              youtubeHosts.contains(host),
+              let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+        else { return false }
+        func has(_ name: String) -> Bool {
+            query.contains { $0.name == name && $0.value?.isEmpty == false }
+        }
+        let isVideo = host == "youtu.be" ? url.path.count > 1 : has("v")
+        return isVideo && has("list")
+    }
+
     public static func detect(in text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed), let host = url.host?.lowercased() else { return nil }

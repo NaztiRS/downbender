@@ -38,3 +38,17 @@ import Testing
 @Test func ignoresKnownHostWithEmptyPath() {
     #expect(MediaURL.detect(in: "https://vimeo.com/") == nil)
 }
+
+// MARK: - Video-inside-playlist links
+
+@Test func flagsWatchURLsCarryingAPlaylist() {
+    #expect(MediaURL.pointsToVideoInPlaylist("https://www.youtube.com/watch?v=wGWMGJw6cV8&list=RDGMEMgGOgHdkrBSNHvacS9Sp8bg&start_radio=1&rv=hrgsMWRBKa8"))
+    #expect(MediaURL.pointsToVideoInPlaylist("https://youtu.be/abc123?list=PLx"))
+}
+
+@Test func plainVideosAndPurePlaylistsNeedNoScopeChoice() {
+    #expect(!MediaURL.pointsToVideoInPlaylist("https://www.youtube.com/watch?v=abc123"))
+    #expect(!MediaURL.pointsToVideoInPlaylist("https://www.youtube.com/playlist?list=PLx"))
+    #expect(!MediaURL.pointsToVideoInPlaylist("https://www.youtube.com/watch?v=abc&list="))
+    #expect(!MediaURL.pointsToVideoInPlaylist("hola que tal"))
+}

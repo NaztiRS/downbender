@@ -33,6 +33,20 @@ import Foundation
     #expect(playlist.entries.count == 3)
 }
 
+@Test func probeServiceDropsNoPlaylistWhenExpandingPlaylists() async throws {
+    let url = Bundle.module.url(forResource: "playlist", withExtension: "json", subdirectory: "Fixtures")!
+    let json = try String(contentsOf: url, encoding: .utf8)
+    let runner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)
+    let service = ProbeService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
+
+    _ = try await service.probe(url: "https://www.youtube.com/watch?v=a&list=RDx", expandPlaylist: true)
+
+    // Without dropping --no-playlist, a watch?v=X&list=Y URL would resolve to the single video.
+    let recorded = runner.recordedArguments.arguments
+    #expect(!recorded.contains("--no-playlist"))
+    #expect(recorded.contains("--flat-playlist"))
+}
+
 @Test func probeServiceThrowsOnNonZeroExit() async {
     let runner = FakeProcessRunner(stderr: "ERROR: nope", exitCode: 1)
     let service = ProbeService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
