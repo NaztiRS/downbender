@@ -18,14 +18,17 @@ struct PlaylistPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("DOWNLOAD PLAYLIST")
-                    .font(.caption2.weight(.bold)).tracking(1.2)
-                    .foregroundStyle(Theme.accent)
-                Text(analysis.playlist.title).font(.headline).lineLimit(2)
-                Text(summary)
-                    .font(.callout).foregroundStyle(.secondary)
-                    .contentTransition(.numericText())
+            HStack(alignment: .center, spacing: 14) {
+                thumbnailFan
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("DOWNLOAD PLAYLIST")
+                        .font(.caption2.weight(.bold)).tracking(1.2)
+                        .foregroundStyle(Theme.accent)
+                    Text(analysis.playlist.title).font(.headline).lineLimit(2)
+                    Text(summary)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
+                }
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -75,6 +78,30 @@ struct PlaylistPanel: View {
         .padding(22)
         .frame(width: 440)
         .background(Theme.wash)
+    }
+
+    /// Fanned covers of the first entries: instantly says "this is a stack of videos".
+    private var thumbnailFan: some View {
+        let covers = analysis.playlist.entries.prefix(3).compactMap(\.thumbnailURL)
+        return ZStack {
+            ForEach(Array(covers.enumerated()), id: \.offset) { index, url in
+                // Back covers peek out behind the front one, fanned like a hand of cards.
+                let spread = Double(index) - Double(covers.count - 1) / 2
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle().fill(Theme.surface)
+                }
+                .frame(width: 76, height: 44)
+                .clipShape(.rect(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.hairline))
+                .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                .rotationEffect(.degrees(spread * 7))
+                .offset(x: spread * 16, y: abs(spread) * 3)
+                .zIndex(-abs(spread))
+            }
+        }
+        .frame(width: 110, height: 56)
     }
 
     /// "129 videos · ~4.3 GB" — instant, refined silently as the sample calibrates.
