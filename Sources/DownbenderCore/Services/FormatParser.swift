@@ -16,7 +16,8 @@ public enum FormatParser {
             return PlaylistEntry(
                 url: url,
                 title: entry.title ?? url,
-                thumbnailURL: entry.thumbnails?.last?.url.flatMap { URL(string: $0) } ?? youtubeThumbnailURL(entry)
+                thumbnailURL: entry.thumbnails?.last?.url.flatMap { URL(string: $0) } ?? youtubeThumbnailURL(entry),
+                durationSeconds: entry.duration
             )
         }
         return PlaylistProbe(title: raw.title ?? "Playlist", entries: entries)

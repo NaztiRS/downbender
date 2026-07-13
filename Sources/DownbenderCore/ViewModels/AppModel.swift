@@ -88,12 +88,15 @@ public final class AppModel {
         addVideoURL(url)
     }
 
-    /// Opens the playlist panel IMMEDIATELY (loading state) and analyzes in the background:
-    /// mix/playlist probes can take long and must never block the UI.
+    /// Expanding uses the SAME probing card as a single video (familiar feedback, retry
+    /// included); the panel appears once the entry list is known.
     public func chooseWholePlaylist() {
         guard let url = pendingPlaylistChoice else { return }
         pendingPlaylistChoice = nil
-        startPlaylistAnalysis(url: url)
+        let item = DownloadItem(url: url, title: url, destination: destination, state: .probing)
+        item.expandsPlaylist = true
+        queue.add(item)
+        runProbe(for: item)
     }
 
     private func addVideoURL(_ url: String) {
@@ -112,7 +115,7 @@ public final class AppModel {
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
             do {
-                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser)
+                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser, expandPlaylist: item.expandsPlaylist)
                 guard let outcome, !Task.isCancelled else { return }
                 switch outcome {
                 case .video(let result):
@@ -127,7 +130,7 @@ public final class AppModel {
                     }
                     // The probing card becomes the playlist panel: one choice for all entries.
                     self?.queue.remove(item)
-                    self?.presentAnalysis(url: item.url, playlist: playlist)
+                    self?.presentAnalysis(playlist)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -143,66 +146,29 @@ public final class AppModel {
     /// Entry list of the analysis, once known (also what the older tests observe).
     public var pendingPlaylist: PlaylistProbe? { playlistAnalysis?.playlist }
 
-    private func startPlaylistAnalysis(url: String) {
+    private func presentAnalysis(_ playlist: PlaylistProbe) {
         analysisTask?.cancel()
-        let analysis = PlaylistAnalysis(url: url)
+        let analysis = PlaylistAnalysis(playlist: playlist)
         playlistAnalysis = analysis
         analysisTask = Task { @MainActor [weak self] in
-            await self?.expandAndEstimate(analysis)
+            await self?.calibrateEstimate(analysis)
         }
     }
 
-    /// Pure playlist URLs arrive here with the entries already probed by the card's flat probe.
-    private func presentAnalysis(url: String, playlist: PlaylistProbe) {
-        analysisTask?.cancel()
-        let analysis = PlaylistAnalysis(url: url)
-        analysis.playlist = playlist
-        playlistAnalysis = analysis
-        analysisTask = Task { @MainActor [weak self] in
-            await self?.estimateSizes(analysis)
-        }
-    }
-
-    public func retryPlaylistAnalysis() {
-        guard let stale = playlistAnalysis, stale.failure != nil else { return }
-        startPlaylistAnalysis(url: stale.url)
-    }
-
-    /// Closing the sheet (cancel or accept) stops any in-flight estimation probes.
+    /// Closing the sheet (cancel or accept) stops any in-flight calibration probes.
     public func dismissPlaylistAnalysis() {
         analysisTask?.cancel()
         analysisTask = nil
         playlistAnalysis = nil
     }
 
-    private func expandAndEstimate(_ analysis: PlaylistAnalysis) async {
-        do {
-            let outcome = try await probe.probe(url: analysis.url, cookiesBrowser: cookiesBrowser, expandPlaylist: true)
-            guard !Task.isCancelled, playlistAnalysis === analysis else { return }
-            switch outcome {
-            case .playlist(let playlist) where !playlist.entries.isEmpty:
-                analysis.playlist = playlist
-            case .playlist:
-                analysis.failure = "Playlist is empty."
-                return
-            case .video:
-                // The "playlist" resolved to a single video after all: back to the normal card flow.
-                dismissPlaylistAnalysis()
-                addVideoURL(analysis.url)
-                return
-            }
-        } catch {
-            guard !Task.isCancelled else { return }
-            analysis.failure = error.localizedDescription
-            return
-        }
-        await estimateSizes(analysis)
-    }
-
-    /// Full-probes every entry through a small sliding window (all at once would spawn one
-    /// yt-dlp process per video) purely to refine the panel's size estimate.
-    private func estimateSizes(_ analysis: PlaylistAnalysis) async {
-        guard let entries = analysis.playlist?.entries, !entries.isEmpty else { return }
+    /// Fully probes a SMALL sample of entries (sliding window) to replace the nominal
+    /// bytes-per-second rate with a measured one. A sample, not the whole list: on a slow
+    /// connection probing a 129-video mix would take minutes for a number that is an
+    /// estimate anyway. The panel never waits on this.
+    private func calibrateEstimate(_ analysis: PlaylistAnalysis) async {
+        let entries = analysis.playlist.entries.prefix(8)
+        guard !entries.isEmpty else { return }
         let probe = self.probe
         let cookies = cookiesBrowser
         await withTaskGroup(of: (String, ProbeResult?).self) { group in
@@ -215,8 +181,7 @@ public final class AppModel {
             }
             for await (url, result) in group {
                 guard !Task.isCancelled, playlistAnalysis === analysis else { break }
-                analysis.analyzedCount += 1
-                if let result { analysis.results[url] = result }
+                if let result { analysis.sampleResults[url] = result }
                 if nextIndex < entries.count {
                     let next = entries[nextIndex].url
                     nextIndex += 1
@@ -240,7 +205,7 @@ public final class AppModel {
                 state: .queued
             )
             item.includeSubtitles = includeSubtitles
-            if let known = playlistAnalysis?.results[entry.url] {
+            if let known = playlistAnalysis?.sampleResults[entry.url] {
                 item.probe = known
                 item.expectedTotalBytes = known.approxDownloadSize(for: format)
             }

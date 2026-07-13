@@ -52,12 +52,9 @@ struct RootView: View {
                             analysis: analysis,
                             destination: $model.destination,
                             onConfirm: { format, includeSubtitles in
-                                if let playlist = analysis.playlist {
-                                    model.acceptPlaylist(playlist, format: format, includeSubtitles: includeSubtitles)
-                                }
+                                model.acceptPlaylist(analysis.playlist, format: format, includeSubtitles: includeSubtitles)
                             },
-                            onCancel: { model.dismissPlaylistAnalysis() },
-                            onRetry: { model.retryPlaylistAnalysis() }
+                            onCancel: { model.dismissPlaylistAnalysis() }
                         )
                     }
                 }

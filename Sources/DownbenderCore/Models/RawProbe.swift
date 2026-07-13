@@ -50,11 +50,12 @@ struct RawPlaylistEntry: Decodable {
     let id: String?
     let url: String?
     let title: String?
+    let duration: Double?
     let ieKey: String?
     let thumbnails: [RawThumbnail]?
 
     enum CodingKeys: String, CodingKey {
-        case id, url, title, thumbnails
+        case id, url, title, duration, thumbnails
         case ieKey = "ie_key"
     }
 }

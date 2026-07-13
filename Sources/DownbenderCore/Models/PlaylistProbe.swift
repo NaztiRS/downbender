@@ -4,11 +4,14 @@ public struct PlaylistEntry: Equatable, Sendable {
     public let url: String
     public let title: String
     public let thumbnailURL: URL?
+    /// Flat probes carry each entry's duration: the fuel for the instant size estimate.
+    public let durationSeconds: Double?
 
-    public init(url: String, title: String, thumbnailURL: URL? = nil) {
+    public init(url: String, title: String, thumbnailURL: URL? = nil, durationSeconds: Double? = nil) {
         self.url = url
         self.title = title
         self.thumbnailURL = thumbnailURL
+        self.durationSeconds = durationSeconds
     }
 }
 

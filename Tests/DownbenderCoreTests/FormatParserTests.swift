@@ -158,6 +158,7 @@ import Foundation
     #expect(playlist.entries[0].url == "https://www.youtube.com/watch?v=vid1")
     #expect(playlist.entries[0].title == "First video")
     #expect(playlist.entries[0].thumbnailURL?.absoluteString == "https://i.ytimg.com/vi/vid1/hqdefault.jpg")
+    #expect(playlist.entries[0].durationSeconds == 100.0)
 
     // No url in the entry: rebuilt from the YouTube id; thumbnail likewise.
     #expect(playlist.entries[1].url == "https://www.youtube.com/watch?v=vid2")

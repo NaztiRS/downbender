@@ -366,26 +366,26 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
-@Test func chooseWholePlaylistOpensPanelInstantlyAndExpandsInBackground() async throws {
+@Test func chooseWholePlaylistExpandsThroughTheNormalProbingCard() async throws {
     let runner = FakeProcessRunner(stdoutLines: [try playlistFixtureJSON()], exitCode: 0)
     let model = makeModel(runner: runner)
     model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
 
     model.chooseWholePlaylist()
 
-    // The sheet's model exists BEFORE any probe returns: analysis never blocks the UI.
-    #expect(model.playlistAnalysis != nil)
-    #expect(model.pendingPlaylist == nil)
+    // Same feedback as any single video: a probing card, no bespoke loading UI.
+    #expect(model.queue.items.count == 1)
+    #expect(model.queue.items[0].state == .probing)
 
     await waitForPendingPlaylist(model)
     #expect(model.pendingPlaylist?.entries.count == 3)
     #expect(model.queue.items.isEmpty)
-    // The FIRST call is the expansion probe (later background size probes do carry --no-playlist).
+    // The FIRST call is the expansion probe (later calibration probes do carry --no-playlist).
     #expect(runner.recordedArguments.allArguments.first?.contains("--no-playlist") == false)
 }
 
 @MainActor
-@Test func playlistAnalysisAccumulatesSizeEstimatesInBackground() async throws {
+@Test func playlistEstimateIsInstantFromDurationsAndCalibratesFromSample() async throws {
     let runner = FakeProcessRunner(replays: [
         .init(stdoutLines: [try playlistFixtureJSON()], exitCode: 0),
         .init(stdoutLines: [try probeFixtureJSON()], exitCode: 0),
@@ -393,24 +393,28 @@ private func playlistFixtureJSON() throws -> String {
     let model = makeModel(runner: runner)
     model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
     model.chooseWholePlaylist()
-
-    await waitUntil { model.playlistAnalysis?.analyzedCount == 3 }
-
+    await waitForPendingPlaylist(model)
     guard let analysis = model.playlistAnalysis else {
         Issue.record("expected playlistAnalysis")
         return
     }
-    #expect(analysis.results.count == 3)
-    // Every entry replays the probe fixture: 3 × the 720p estimate (30M video + 3.4M audio).
-    guard let estimate = analysis.estimatedTotalBytes(for: .video(height: 720)) else {
-        Issue.record("expected a size estimate")
-        return
-    }
-    #expect(estimate.bytes == 100_200_000)
-    #expect(estimate.sizedVideos == 3)
 
-    // Accepting attaches what the estimation already learned to each queued item.
-    model.acceptPlaylist(analysis.playlist!, format: .video(height: 720), includeSubtitles: false)
+    // INSTANT estimate, before any calibration: durations 100+200 known, third entry counts
+    // as the 150s average → 450s × the nominal 720p rate (200 KB/s).
+    if analysis.sampleResults.isEmpty {
+        #expect(analysis.estimatedTotalBytes(for: .video(height: 720)) == 90_000_000)
+    }
+
+    // Calibration replays the probe fixture for all 3 entries: measured rate replaces nominal.
+    await waitUntil { analysis.sampleResults.count == 3 }
+    // 3 videos × 33.4 MB over 3 × 212 s = 157547.16… B/s → × 450 s of playlist.
+    let measured = Int64(Double(3 * 33_400_000) / (3 * 212.0) * 450.0)
+    #expect(analysis.estimatedTotalBytes(for: .video(height: 720)) == measured)
+    // MP3 stays on the nominal rate (per-video sizes never cover MP3): 450 s × 30 KB/s.
+    #expect(analysis.estimatedTotalBytes(for: .audioMP3) == 13_500_000)
+
+    // Accepting attaches what the calibration already learned to each queued item.
+    model.acceptPlaylist(analysis.playlist, format: .video(height: 720), includeSubtitles: false)
     #expect(model.playlistAnalysis == nil)
     #expect(model.queue.items.count == 3)
     for item in model.queue.items {
@@ -419,7 +423,7 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
-@Test func failedPlaylistAnalysisShowsFailureAndRetryRecovers() async throws {
+@Test func failedPlaylistExpansionLandsOnCardAndRetryRecovers() async throws {
     let runner = FakeProcessRunner(replays: [
         .init(stderr: "ERROR: boom", exitCode: 1),
         .init(stdoutLines: [try playlistFixtureJSON()], exitCode: 0),
@@ -428,10 +432,15 @@ private func playlistFixtureJSON() throws -> String {
     model.addURL("https://www.youtube.com/watch?v=vid1&list=PLtest123")
     model.chooseWholePlaylist()
 
-    await waitUntil { model.playlistAnalysis?.failure != nil }
-    #expect(model.playlistAnalysis?.failure?.contains("boom") == true)
+    let item = model.queue.items[0]
+    await waitWhileProbing(item)
+    guard case .probeFailed = item.state else {
+        Issue.record("expected .probeFailed, got \(item.state)")
+        return
+    }
 
-    model.retryPlaylistAnalysis()
+    // The card remembers it was a playlist expansion: retry expands again, not video-only.
+    model.retryProbe(item)
     await waitForPendingPlaylist(model)
     #expect(model.pendingPlaylist?.entries.count == 3)
 }
