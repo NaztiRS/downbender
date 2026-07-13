@@ -42,6 +42,22 @@ struct RootView: View {
             }
             Divider()
             QueueList(model: model)
+                // Anchored here, not on URLBar: one sheet per view (the clipboard prompt owns that one).
+                .sheet(isPresented: Binding(
+                    get: { model.pendingPlaylist != nil },
+                    set: { if !$0 { model.pendingPlaylist = nil } }
+                )) {
+                    if let playlist = model.pendingPlaylist {
+                        PlaylistPanel(
+                            playlist: playlist,
+                            destination: $model.destination,
+                            onConfirm: { format, includeSubtitles in
+                                model.acceptPlaylist(playlist, format: format, includeSubtitles: includeSubtitles)
+                            },
+                            onCancel: { model.pendingPlaylist = nil }
+                        )
+                    }
+                }
         }
         .task { await model.appUpdate.check() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
