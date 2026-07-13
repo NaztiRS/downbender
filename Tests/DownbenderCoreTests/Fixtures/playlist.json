@@ -1,0 +1,11 @@
+{
+  "_type": "playlist",
+  "id": "PLtest123",
+  "title": "Test playlist",
+  "entries": [
+    {"_type": "url", "ie_key": "Youtube", "id": "vid1", "url": "https://www.youtube.com/watch?v=vid1", "title": "First video", "duration": 100.0, "thumbnails": [{"url": "https://i.ytimg.com/vi/vid1/hqdefault.jpg"}]},
+    {"_type": "url", "ie_key": "Youtube", "id": "vid2", "title": "Second video", "duration": 200.0},
+    {"_type": "url", "ie_key": "Youtube", "id": "vid3", "url": "https://www.youtube.com/watch?v=vid3", "title": null},
+    {"_type": "url", "ie_key": "Other", "title": "No way to resolve"}
+  ]
+}

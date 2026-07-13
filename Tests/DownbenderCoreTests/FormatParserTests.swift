@@ -130,3 +130,38 @@ import Foundation
     let result = try FormatParser.parse(Data(json.utf8))
     #expect(result.subtitleLanguages == [])
 }
+
+// MARK: - Playlists
+
+@Test func parseOutcomeDetectsFlatPlaylist() throws {
+    let url = Bundle.module.url(forResource: "playlist", withExtension: "json", subdirectory: "Fixtures")!
+    let outcome = try FormatParser.parseOutcome(try Data(contentsOf: url))
+    guard case .playlist(let playlist) = outcome else {
+        Issue.record("expected .playlist, got \(outcome)")
+        return
+    }
+    #expect(playlist.title == "Test playlist")
+    // The entry with neither url nor a YouTube id cannot be downloaded: dropped.
+    #expect(playlist.entries.count == 3)
+
+    #expect(playlist.entries[0].url == "https://www.youtube.com/watch?v=vid1")
+    #expect(playlist.entries[0].title == "First video")
+    #expect(playlist.entries[0].thumbnailURL?.absoluteString == "https://i.ytimg.com/vi/vid1/hqdefault.jpg")
+
+    // No url in the entry: rebuilt from the YouTube id; thumbnail likewise.
+    #expect(playlist.entries[1].url == "https://www.youtube.com/watch?v=vid2")
+    #expect(playlist.entries[1].thumbnailURL?.absoluteString == "https://i.ytimg.com/vi/vid2/hqdefault.jpg")
+
+    // Null title (deleted/private): the url beats an empty card.
+    #expect(playlist.entries[2].title == "https://www.youtube.com/watch?v=vid3")
+}
+
+@Test func parseOutcomeReturnsVideoForSingleVideoJSON() throws {
+    let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
+    let outcome = try FormatParser.parseOutcome(try Data(contentsOf: url))
+    guard case .video(let result) = outcome else {
+        Issue.record("expected .video, got \(outcome)")
+        return
+    }
+    #expect(result.title == "Test video")
+}

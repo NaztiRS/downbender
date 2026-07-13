@@ -1,6 +1,38 @@
 import Foundation
 
 public enum FormatParser {
+    public static func parseOutcome(_ data: Data) throws -> ProbeOutcome {
+        if try JSONDecoder().decode(RawTypeProbe.self, from: data).type == "playlist" {
+            return .playlist(try parsePlaylist(data))
+        }
+        return .video(try parse(data))
+    }
+
+    static func parsePlaylist(_ data: Data) throws -> PlaylistProbe {
+        let raw = try JSONDecoder().decode(RawPlaylist.self, from: data)
+        let entries = (raw.entries ?? []).compactMap { entry -> PlaylistEntry? in
+            // An entry we cannot turn into a downloadable URL is useless: dropped.
+            guard let url = entry.url ?? watchURL(entry) else { return nil }
+            return PlaylistEntry(
+                url: url,
+                title: entry.title ?? url,
+                thumbnailURL: entry.thumbnails?.last?.url.flatMap { URL(string: $0) } ?? youtubeThumbnailURL(entry)
+            )
+        }
+        return PlaylistProbe(title: raw.title ?? "Playlist", entries: entries)
+    }
+
+    /// Flat entries may omit `url`; for YouTube the id is enough to rebuild it.
+    private static func watchURL(_ entry: RawPlaylistEntry) -> String? {
+        guard entry.ieKey == "Youtube", let id = entry.id else { return nil }
+        return "https://www.youtube.com/watch?v=\(id)"
+    }
+
+    private static func youtubeThumbnailURL(_ entry: RawPlaylistEntry) -> URL? {
+        guard entry.ieKey == "Youtube", let id = entry.id else { return nil }
+        return URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg")
+    }
+
     public static func parse(_ data: Data) throws -> ProbeResult {
         let raw = try JSONDecoder().decode(RawProbe.self, from: data)
 

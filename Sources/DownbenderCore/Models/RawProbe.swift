@@ -32,3 +32,34 @@ struct RawProbe: Decodable {
     /// Creator-uploaded tracks only; `automatic_captions` is deliberately NOT decoded.
     let subtitles: [String: RawIgnoredValue]?
 }
+
+/// Only sniffs `_type` to route parsing; yt-dlp omits it on plain videos.
+struct RawTypeProbe: Decodable {
+    let type: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type = "_type"
+    }
+}
+
+struct RawThumbnail: Decodable {
+    let url: String?
+}
+
+struct RawPlaylistEntry: Decodable {
+    let id: String?
+    let url: String?
+    let title: String?
+    let ieKey: String?
+    let thumbnails: [RawThumbnail]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, url, title, thumbnails
+        case ieKey = "ie_key"
+    }
+}
+
+struct RawPlaylist: Decodable {
+    let title: String?
+    let entries: [RawPlaylistEntry]?
+}
