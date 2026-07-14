@@ -275,6 +275,8 @@ public final class AppModel {
     }
 
     public func choose(_ format: DownloadFormat, includeSubtitles: Bool = false, for item: DownloadItem) {
+        // Choosing a yt-dlp format means this is the media path (also flips an ambiguous card back).
+        item.source = .media
         item.format = format
         item.includeSubtitles = includeSubtitles
         item.destination = destination

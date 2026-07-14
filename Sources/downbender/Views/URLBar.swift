@@ -9,7 +9,7 @@ struct URLBar: View {
             HStack(spacing: 12) {
                 HStack(spacing: 8) {
                     Image(systemName: "link").foregroundStyle(Theme.accent)
-                    TextField("Paste a video link…", text: $text)
+                    TextField("Paste a link…", text: $text)
                         .textFieldStyle(.plain)
                         .onSubmit(onSubmit)
                     if !text.isEmpty {

@@ -56,14 +56,31 @@ struct QueueRow: View {
         .onTapGesture(perform: primaryAction)
         .help(helpText)
         .sheet(isPresented: $choosing) {
-            if let probe = item.probe {
-                FormatPanel(
-                    probe: probe,
-                    destination: $model.destination,
-                    onConfirm: { format, includeSubtitles in
-                        model.choose(format, includeSubtitles: includeSubtitles, for: item)
-                        choosing = false
-                    },
+            switch item.source {
+            case .media:
+                if let probe = item.probe {
+                    FormatPanel(
+                        probe: probe,
+                        destination: $model.destination,
+                        onConfirm: { format, includeSubtitles in
+                            model.choose(format, includeSubtitles: includeSubtitles, for: item)
+                            choosing = false
+                        },
+                        onCancel: { choosing = false }
+                    )
+                }
+            case .directFile(let info):
+                DirectConfirmPanel(
+                    title: item.title, info: info, destination: $model.destination,
+                    onDownload: { model.confirmDirect(item); choosing = false },
+                    onCancel: { choosing = false }
+                )
+            case .ambiguous(let info):
+                DetectionPanel(
+                    title: item.title, info: info, probe: item.probe, destination: $model.destination,
+                    onProcessMedia: { model.processAmbiguousAsMedia(item); choosing = false },
+                    onChooseFormat: { fmt in model.choose(fmt, for: item); choosing = false },
+                    onDownloadAsFile: { model.downloadAmbiguousAsFile(item); choosing = false },
                     onCancel: { choosing = false }
                 )
             }
@@ -117,11 +134,18 @@ struct QueueRow: View {
     }
 
     private var fallbackIcon: some View {
-        Image(systemName: item.format == .audioMP3 ? "music.note" : "film")
+        Image(systemName: fallbackSymbol)
             .font(.title3)
             .foregroundStyle(Theme.accent.opacity(0.7))
             .frame(width: 84, height: 48)
             .background(Theme.surface, in: .rect(cornerRadius: 8))
+    }
+
+    private var fallbackSymbol: String {
+        switch item.source {
+        case .media: item.format == .audioMP3 ? "music.note" : "film"
+        case .directFile, .ambiguous: FileIcon.symbol(for: item.title)
+        }
     }
 
     private func formatChip(_ format: DownloadFormat) -> some View {
@@ -272,7 +296,12 @@ struct QueueRow: View {
         switch item.state {
         case .probing: return "Analyzing…"
         case .probeFailed(let m): return "Analysis error: \(compactError(m))"
-        case .readyToChoose: return "Click to choose quality"
+        case .readyToChoose:
+            switch item.source {
+            case .media: return "Click to choose quality"
+            case .directFile: return "Click to review and download"
+            case .ambiguous: return "Click to choose how to download"
+            }
         case .queued: return "Queued"
         case .downloading:
             let pct = "\(Int(item.fraction * 100))%"
