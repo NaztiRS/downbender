@@ -32,6 +32,13 @@ public struct DirectDownloadService: Sendable {
         URLSession(configuration: configuration)
     }
 
+    /// A HEAD content-type that indicates a downloadable file rather than a web page. Used by the
+    /// probe-failure fallback so a transient yt-dlp error on a real page isn't mistaken for a file.
+    public static func isDownloadableContentType(_ type: String?) -> Bool {
+        guard let type = type?.lowercased() else { return false }
+        return !type.hasPrefix("text/html") && !type.hasPrefix("application/xhtml")
+    }
+
     @discardableResult
     public func download(
         url: String,

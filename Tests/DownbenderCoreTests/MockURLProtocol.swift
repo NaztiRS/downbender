@@ -37,3 +37,20 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         }
     }
 }
+
+/// URLProtocol that always fails — keeps AppModel tests offline so the HEAD fallback
+/// deterministically fails (→ .probeFailed) without touching the network or the shared handler.
+final class FailingURLProtocol: URLProtocol, @unchecked Sendable {
+    // swiftlint:disable static_over_final_class
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    // swiftlint:enable static_over_final_class
+    override func startLoading() { client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)) }
+    override func stopLoading() {}
+
+    static func session() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FailingURLProtocol.self]
+        return DirectDownloadService.makeSession(configuration: config)
+    }
+}

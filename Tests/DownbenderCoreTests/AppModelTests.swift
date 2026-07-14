@@ -28,7 +28,8 @@ import Foundation
         appSupportDirectory: URL(fileURLWithPath: "/tmp/support"),
         cookiesBrowser: nil,
         notifier: notifier,
-        runner: runner
+        runner: runner,
+        directSessionFactory: { FailingURLProtocol.session() }
     )
 }
 

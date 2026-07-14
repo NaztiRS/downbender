@@ -79,6 +79,8 @@ public final class AppModel {
 
     /// In-flight probe tasks, per item: cancelled if the user removes the card.
     private var probeTasks: [UUID: Task<Void, Never>] = [:]
+    /// In-flight HEAD tasks for direct files, per item: cancelled if the user removes the card.
+    private var headTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Watch link that also carries a `list=`: parked here until the user picks video vs playlist.
     public var pendingPlaylistChoice: String?
@@ -90,7 +92,39 @@ public final class AppModel {
             pendingPlaylistChoice = url
             return
         }
-        addVideoURL(url)
+        switch DetectionService.classify(url) {
+        case .directFile: addDirectFileURL(url)
+        case .mediaFile: addMediaFileURL(url)
+        case .probe: addVideoURL(url)
+        }
+    }
+
+    /// A clearly-a-file URL: create a probing card, HEAD for the size, then present the
+    /// mini-confirmation (`.readyToChoose` + `.directFile`). No yt-dlp probe.
+    private func addDirectFileURL(_ url: String) {
+        let item = DownloadItem(url: url, title: URL(string: url)?.lastPathComponent ?? url,
+                                destination: destination, state: .probing)
+        item.source = .directFile(DirectFileInfo(suggestedName: URL(string: url)?.lastPathComponent))
+        queue.add(item)
+        headTasks[item.id] = Task { @MainActor [weak self] in
+            defer { self?.headTasks[item.id] = nil }
+            guard let self else { return }
+            let info = try? await directDownloader.headInfo(url: url, session: directSessionFactory())
+            guard !Task.isCancelled else { return }
+            if let info {
+                item.source = .directFile(info)
+                if let name = info.suggestedName { item.title = name }
+            }
+            item.state = .readyToChoose
+        }
+    }
+
+    /// A raw media file (.mp4/.mp3): let the user choose process-vs-raw. No probe until they pick.
+    private func addMediaFileURL(_ url: String) {
+        let item = DownloadItem(url: url, title: URL(string: url)?.lastPathComponent ?? url,
+                                destination: destination, state: .readyToChoose)
+        item.source = .ambiguous(DirectFileInfo(suggestedName: URL(string: url)?.lastPathComponent))
+        queue.add(item)
     }
 
     public func chooseVideoOnly() {
@@ -133,6 +167,11 @@ public final class AppModel {
                     item.title = result.title
                     item.thumbnailURL = result.thumbnailURL
                     item.probe = result
+                    // The generic extractor matches almost any URL: treat it as ambiguous, not
+                    // confirmed media, so the user gets the detection panel + "download as-is".
+                    if result.isGeneric {
+                        item.source = .ambiguous(DirectFileInfo(suggestedName: URL(string: item.url)?.lastPathComponent))
+                    }
                     item.state = .readyToChoose
                 case .playlist(let playlist):
                     guard !playlist.entries.isEmpty else {
@@ -144,6 +183,16 @@ public final class AppModel {
                     self?.presentAnalysis(playlist)
                 }
             } catch {
+                guard !Task.isCancelled, let self else { return }
+                // yt-dlp didn't recognize it: maybe it's a plain file. Try a HEAD before giving up,
+                // but only treat it as a file if the content-type isn't a web page (HTML).
+                if let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()),
+                   !Task.isCancelled, DirectDownloadService.isDownloadableContentType(info.contentType) {
+                    item.source = .directFile(info)
+                    if let name = info.suggestedName { item.title = name }
+                    item.state = .readyToChoose // reactivates the EXISTING card; no enqueue → no duplicate
+                    return
+                }
                 guard !Task.isCancelled else { return }
                 item.state = .probeFailed(error.localizedDescription)
             }
@@ -233,10 +282,32 @@ public final class AppModel {
         queue.start(item)
     }
 
+    /// User confirmed the mini-confirmation for a direct file.
+    public func confirmDirect(_ item: DownloadItem) {
+        item.destination = destination
+        queue.startDirect(item)
+    }
+
+    /// Ambiguous item: user chose "download as-is".
+    public func downloadAmbiguousAsFile(_ item: DownloadItem) {
+        if case .ambiguous(let info) = item.source { item.source = .directFile(info) }
+        item.destination = destination
+        queue.startDirect(item)
+    }
+
+    /// Ambiguous item: user chose "process with yt-dlp" — run the normal probe path.
+    public func processAmbiguousAsMedia(_ item: DownloadItem) {
+        item.source = .media
+        item.state = .probing
+        runProbe(for: item)
+    }
+
     /// Removes the card from the list (cancelling any in-flight probe or download). Does not touch files.
     public func remove(_ item: DownloadItem) {
         probeTasks[item.id]?.cancel()
         probeTasks[item.id] = nil
+        headTasks[item.id]?.cancel()
+        headTasks[item.id] = nil
         queue.remove(item)
     }
 
