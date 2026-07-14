@@ -40,4 +40,37 @@ struct DirectDownloadTests {
                                            suggestedName: nil, maxBytes: nil, session: MockURLProtocol.session(), onProgress: { _ in })
         }
     }
+
+    @Test func safeFileNameStripsTraversalAndSeparators() {
+        #expect(DirectDownloadService.safeFileName("../../etc/passwd") == "passwd")
+        #expect(DirectDownloadService.safeFileName("/abs/evil.sh") == "evil.sh")
+        #expect(DirectDownloadService.safeFileName("na\u{0000}me.zip") == "name.zip")
+        #expect(DirectDownloadService.safeFileName("a%2Fb.zip") == "b.zip")
+        #expect(DirectDownloadService.safeFileName("..") == "download")
+        #expect(DirectDownloadService.safeFileName("") == "download")
+    }
+
+    @Test func doesNotOverwriteExistingFile() async throws {
+        let dest = freshDir(); let tmp = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest); try? FileManager.default.removeItem(at: tmp) }
+        FileManager.default.createFile(atPath: dest.appendingPathComponent("a.zip").path, contents: Data("old".utf8))
+        MockURLProtocol.respond(status: 200, data: Data("new".utf8), headers: ["Content-Type": "application/zip"])
+        let delivered = try await DirectDownloadService().download(
+            url: "https://example.com/a.zip", destination: dest, tmpDirectory: tmp,
+            session: MockURLProtocol.session(), onProgress: { _ in })
+        #expect(delivered.lastPathComponent == "a (1).zip")
+        #expect(try String(contentsOf: dest.appendingPathComponent("a.zip"), encoding: .utf8) == "old")
+    }
+
+    @Test func sanitizesMaliciousServerFilename() async throws {
+        let dest = freshDir(); let tmp = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest); try? FileManager.default.removeItem(at: tmp) }
+        MockURLProtocol.respond(status: 200, data: Data("x".utf8),
+                                headers: ["Content-Disposition": #"attachment; filename="../../../../tmp/pwned.sh""#])
+        let delivered = try await DirectDownloadService().download(
+            url: "https://example.com/dl", destination: dest, tmpDirectory: tmp,
+            session: MockURLProtocol.session(), onProgress: { _ in })
+        #expect(delivered.deletingLastPathComponent().standardizedFileURL.path == dest.standardizedFileURL.path)
+        #expect(delivered.lastPathComponent == "pwned.sh")
+    }
 }

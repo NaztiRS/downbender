@@ -52,19 +52,67 @@ public struct DirectDownloadService: Sendable {
         if status == 401 || status == 403 { throw DirectDownloadError.accessDenied }
         guard (200...299).contains(status) else { throw DirectDownloadError.badStatus(status) }
 
-        let name = Self.deliveredName(suggestedName: suggestedName, response: response, requestURL: parsed)
-        let finalURL = destination.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let name = Self.safeFileName(suggestedName ?? Self.contentDispositionFilename(response) ?? parsed.lastPathComponent)
+        let candidate = destination.appendingPathComponent(name)
+        // Defense in depth: even after sanitization, confirm the resolved path stays inside destination.
+        guard candidate.standardizedFileURL.path.hasPrefix(destination.standardizedFileURL.path + "/") else {
+            try? FileManager.default.removeItem(at: tmpURL)
+            throw DirectDownloadError.invalidURL
+        }
+        let finalURL = Self.deDuplicated(candidate)
         _ = try FileManager.default.replaceItemAt(finalURL, withItemAt: tmpURL)
         return finalURL
     }
 
-    /// v1 name derivation (traversal-safe sanitization arrives in Task 5).
-    static func deliveredName(suggestedName: String?, response: URLResponse, requestURL: URL) -> String {
-        if let suggestedName, !suggestedName.isEmpty { return suggestedName }
-        let last = requestURL.lastPathComponent
-        if !last.isEmpty, last != "/" { return last }
-        return response.suggestedFilename ?? "download"
+    /// Reduces an attacker-controlled name to a safe last path component. Percent-decodes,
+    /// collapses both separators, strips control/NUL, and rejects empty/dot names.
+    static func safeFileName(_ raw: String) -> String {
+        let decoded = raw.removingPercentEncoding ?? raw
+        // Last path component only defeats both "/" and "\" separators and any traversal prefix.
+        let unifiedSlashes = decoded.replacingOccurrences(of: "\\", with: "/")
+        var name = (unifiedSlashes as NSString).lastPathComponent
+        name = name.components(separatedBy: .controlCharacters).joined()
+        name = name.trimmingCharacters(in: .whitespaces)
+        if name.isEmpty || name == "." || name == ".." { return "download" }
+        return name
+    }
+
+    /// Finder-style de-duplication so an existing file is never silently clobbered.
+    static func deDuplicated(_ url: URL) -> URL {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return url }
+        let dir = url.deletingLastPathComponent()
+        let ext = url.pathExtension
+        let base = url.deletingPathExtension().lastPathComponent
+        var n = 1
+        while true {
+            let candidateName = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"
+            let candidate = dir.appendingPathComponent(candidateName)
+            if !fm.fileExists(atPath: candidate.path) { return candidate }
+            n += 1
+        }
+    }
+
+    /// Parses a filename from the Content-Disposition header (RFC 6266 / 5987). More predictable
+    /// than URLResponse.suggestedFilename, which sanitizes in undocumented ways.
+    static func contentDispositionFilename(_ response: URLResponse) -> String? {
+        guard let http = response as? HTTPURLResponse,
+              let header = http.value(forHTTPHeaderField: "Content-Disposition") else { return nil }
+        for part in header.components(separatedBy: ";") {
+            let token = part.trimmingCharacters(in: .whitespaces)
+            if token.lowercased().hasPrefix("filename*=") {
+                let value = String(token.dropFirst("filename*=".count))
+                if let marker = value.range(of: "''", options: .backwards) {
+                    return String(value[marker.upperBound...]).removingPercentEncoding
+                }
+                return value.removingPercentEncoding
+            }
+            if token.lowercased().hasPrefix("filename=") {
+                return String(token.dropFirst("filename=".count)).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            }
+        }
+        return nil
     }
 }
 
