@@ -20,6 +20,10 @@ public final class DirectDownloadCoordinator {
 
     public func run(_ item: DownloadItem, tmpDirectory: URL, allowInsecureHTTP: Bool = false) async {
         item.state = .downloading
+        if let known = knownSize(item), let free = freeCapacity(at: item.destination), known > free {
+            item.state = .failed(DirectDownloadError.notEnoughDiskSpace.localizedDescription)
+            return
+        }
         let suggested: String? = {
             switch item.source {
             case .directFile(let info), .ambiguous(let info): return info.suggestedName
@@ -53,5 +57,19 @@ public final class DirectDownloadCoordinator {
     /// cancelling the Task, so only an execution state gets overwritten here.
     private func finishInterrupted(_ item: DownloadItem) {
         if item.state == .downloading { item.state = .cancelled }
+    }
+
+    private func knownSize(_ item: DownloadItem) -> Int64? {
+        switch item.source {
+        case .directFile(let info), .ambiguous(let info): info.sizeBytes
+        case .media: nil
+        }
+    }
+
+    /// Free space on the destination's volume (not tmp's — they can differ; the atomic move
+    /// lands on the destination volume).
+    private func freeCapacity(at url: URL) -> Int64? {
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
     }
 }
