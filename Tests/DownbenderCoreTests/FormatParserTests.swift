@@ -177,3 +177,23 @@ import Foundation
     }
     #expect(result.title == "Test video")
 }
+
+// MARK: - Extractor confidence
+
+@Test func parseFlagsGenericExtractorAsLowConfidence() throws {
+    let json = #"""
+    {"id":"x","title":"Raw","extractor":"generic","formats":[{"format_id":"0","height":720,"vcodec":"avc1","acodec":"mp4a"}]}
+    """#
+    let result = try FormatParser.parse(Data(json.utf8))
+    #expect(result.extractor == "generic")
+    #expect(result.isGeneric)
+}
+
+@Test func parseKeepsSpecificExtractorAsConfident() throws {
+    let json = #"""
+    {"id":"x","title":"YT","extractor":"youtube","formats":[{"format_id":"0","height":720,"vcodec":"avc1","acodec":"mp4a"}]}
+    """#
+    let result = try FormatParser.parse(Data(json.utf8))
+    #expect(result.extractor == "youtube")
+    #expect(!result.isGeneric)
+}

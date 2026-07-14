@@ -29,6 +29,9 @@ struct RawProbe: Decodable {
     let thumbnail: String?
     let duration: Double?
     let formats: [RawFormat]
+    /// yt-dlp's extractor key; "generic" means it fell back to sniffing HTML/direct files
+    /// rather than a site-specific extractor — a low-confidence "this is media" signal.
+    let extractor: String?
     /// Creator-uploaded tracks only; `automatic_captions` is deliberately NOT decoded.
     let subtitles: [String: RawIgnoredValue]?
 }

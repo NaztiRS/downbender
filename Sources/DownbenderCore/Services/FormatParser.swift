@@ -63,7 +63,8 @@ public enum FormatParser {
             durationSeconds: raw.duration,
             availableFormats: formats,
             approxSizeBytes: approxSizeBytes,
-            subtitleLanguages: subtitleLanguages
+            subtitleLanguages: subtitleLanguages,
+            extractor: raw.extractor
         )
     }
 

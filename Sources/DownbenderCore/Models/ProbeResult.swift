@@ -8,8 +8,9 @@ public struct ProbeResult: Equatable, Sendable {
     public let availableFormats: [DownloadFormat]
     public let approxSizeBytes: [DownloadFormat: Int64]
     public let subtitleLanguages: [String]
+    public let extractor: String?
 
-    public init(videoID: String, title: String, thumbnailURL: URL?, durationSeconds: Double?, availableFormats: [DownloadFormat], approxSizeBytes: [DownloadFormat: Int64] = [:], subtitleLanguages: [String] = []) {
+    public init(videoID: String, title: String, thumbnailURL: URL?, durationSeconds: Double?, availableFormats: [DownloadFormat], approxSizeBytes: [DownloadFormat: Int64] = [:], subtitleLanguages: [String] = [], extractor: String? = nil) {
         self.videoID = videoID
         self.title = title
         self.thumbnailURL = thumbnailURL
@@ -17,7 +18,14 @@ public struct ProbeResult: Equatable, Sendable {
         self.availableFormats = availableFormats
         self.approxSizeBytes = approxSizeBytes
         self.subtitleLanguages = subtitleLanguages
+        self.extractor = extractor
     }
+}
+
+public extension ProbeResult {
+    /// yt-dlp matched only via the generic extractor: treat the result as ambiguous rather than
+    /// as confirmed media (the generic extractor matches almost any URL).
+    var isGeneric: Bool { extractor == "generic" }
 }
 
 extension ProbeResult: Identifiable {
