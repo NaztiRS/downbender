@@ -45,6 +45,9 @@ public struct DirectDownloadService: Sendable {
         guard let parsed = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw DirectDownloadError.invalidURL
         }
+        let scheme = parsed.scheme?.lowercased()
+        if scheme == "http", !allowInsecureHTTP { throw DirectDownloadError.insecureScheme }
+        guard scheme == "https" || scheme == "http" else { throw DirectDownloadError.invalidURL }
         let delegate = DirectProgressDelegate(onProgress: onProgress)
         let (tmpURL, response) = try await session.download(from: parsed, delegate: delegate)
         let http = response as? HTTPURLResponse
@@ -74,6 +77,28 @@ public struct DirectDownloadService: Sendable {
         _ = try FileManager.default.replaceItemAt(finalURL, withItemAt: tmpURL)
         Self.markQuarantined(finalURL)
         return finalURL
+    }
+
+    /// Issues a HEAD to learn size/name/type BEFORE downloading (drives the mini-confirmation).
+    /// Never throws on a missing Content-Length — an unknown size is a valid, expected answer.
+    public func headInfo(url: String, session: URLSession = makeSession()) async throws -> DirectFileInfo {
+        guard let parsed = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw DirectDownloadError.invalidURL
+        }
+        var request = URLRequest(url: parsed)
+        request.httpMethod = "HEAD"
+        let (_, response) = try await session.data(for: request)
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? -1
+        if status == 401 || status == 403 { throw DirectDownloadError.accessDenied }
+        let size = http?.expectedContentLength ?? -1
+        let name = Self.contentDispositionFilename(response).map { Self.safeFileName($0) }
+            ?? Self.safeFileName(parsed.lastPathComponent)
+        return DirectFileInfo(
+            suggestedName: name,
+            sizeBytes: size > 0 ? size : nil,
+            contentType: http?.value(forHTTPHeaderField: "Content-Type")
+        )
     }
 
     /// Reduces an attacker-controlled name to a safe last path component. Percent-decodes,

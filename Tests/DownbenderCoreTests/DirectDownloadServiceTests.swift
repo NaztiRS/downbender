@@ -94,4 +94,26 @@ struct DirectDownloadTests {
             session: MockURLProtocol.session(), onProgress: { _ in })
         #expect(DirectDownloadService.isQuarantined(delivered))
     }
+
+    @Test func headInfoReadsSizeNameAndType() async throws {
+        MockURLProtocol.handler = { req in
+            let r = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil,
+                                    headerFields: ["Content-Length": "2048", "Content-Type": "application/pdf",
+                                                   "Content-Disposition": #"attachment; filename="report.pdf""#])!
+            return (r, Data())
+        }
+        let info = try await DirectDownloadService().headInfo(url: "https://example.com/dl", session: MockURLProtocol.session())
+        #expect(info.sizeBytes == 2048)
+        #expect(info.contentType == "application/pdf")
+        #expect(info.suggestedName == "report.pdf")
+    }
+
+    @Test func downloadRejectsInsecureHTTPByDefault() async throws {
+        let dest = freshDir(); let tmp = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest); try? FileManager.default.removeItem(at: tmp) }
+        await #expect(throws: DirectDownloadError.insecureScheme) {
+            _ = try await DirectDownloadService().download(url: "http://example.com/a.zip", destination: dest, tmpDirectory: tmp,
+                                                           session: MockURLProtocol.session(), onProgress: { _ in })
+        }
+    }
 }
