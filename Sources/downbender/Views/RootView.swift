@@ -41,6 +41,10 @@ struct RootView: View {
                 .background(Theme.surface)
             }
             Divider()
+                // Anchored here (not the VStack, which owns the playlist-choice sheet): one sheet per view.
+                .sheet(isPresented: $model.showTerms) {
+                    TermsGate(onAccept: { model.termsAccepted = true; model.showTerms = false })
+                }
             QueueList(model: model)
                 // Anchored here, not on URLBar: one sheet per view (the clipboard prompt owns that one).
                 .sheet(isPresented: Binding(

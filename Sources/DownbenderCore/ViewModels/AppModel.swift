@@ -5,12 +5,25 @@ import Observation
 public final class AppModel {
     public var destination: URL
     public var maxConcurrent: Int = 2
+    /// Drives the first-run terms sheet; observable so the UI reacts (termsAccepted is defaults-backed).
+    public var showTerms: Bool = false
     public static let cookiesBrowserKey = "cookiesBrowser"
     /// Browser to borrow cookies from (nil = none); passed per invocation so a Settings change applies to the very next probe/download.
     public var cookiesBrowser: String? {
         didSet {
             if let cookiesBrowser { defaults.set(cookiesBrowser, forKey: Self.cookiesBrowserKey) }
             else { defaults.removeObject(forKey: Self.cookiesBrowserKey) }
+        }
+    }
+
+    public static let termsAcceptedKey = "termsAcceptedVersion"
+    public static let currentTermsVersion = "1"
+    /// True once the user accepted the current terms version. Backed by the injected defaults.
+    public var termsAccepted: Bool {
+        get { defaults.string(forKey: Self.termsAcceptedKey) == Self.currentTermsVersion }
+        set {
+            if newValue { defaults.set(Self.currentTermsVersion, forKey: Self.termsAcceptedKey) }
+            else { defaults.removeObject(forKey: Self.termsAcceptedKey) }
         }
     }
     public let clipboard = ClipboardWatcher()
@@ -75,6 +88,7 @@ public final class AppModel {
                 break   // paused/cancelled are intentional user actions: no notification
             }
         })
+        self.showTerms = (defaults.string(forKey: Self.termsAcceptedKey) != Self.currentTermsVersion)
     }
 
     /// In-flight probe tasks, per item: cancelled if the user removes the card.
