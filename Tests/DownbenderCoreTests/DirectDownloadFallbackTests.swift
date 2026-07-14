@@ -30,7 +30,9 @@ extension DirectDownloadTests {
         model.addURL("https://weird.example.com/thing")
         let item = model.queue.items[0]
         await waitNotProbing(item)
-        guard case .probeFailed = item.state else { Issue.record("expected .probeFailed, got \(item.state)"); return }
+        guard case .probeFailed(let message) = item.state else { Issue.record("expected .probeFailed, got \(item.state)"); return }
+        // A web page must produce a clear message, not yt-dlp's raw "Unsupported URL" error.
+        #expect(message.contains("web page"))
     }
 
     @MainActor

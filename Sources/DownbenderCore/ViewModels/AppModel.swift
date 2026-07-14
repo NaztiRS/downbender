@@ -201,13 +201,17 @@ public final class AppModel {
                 }
             } catch {
                 guard !Task.isCancelled, let self else { return }
-                // yt-dlp didn't recognize it: maybe it's a plain file. Try a HEAD before giving up,
-                // but only treat it as a file if the content-type isn't a web page (HTML).
-                if let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()),
-                   !Task.isCancelled, DirectDownloadService.isDownloadableContentType(info.contentType) {
-                    item.source = .directFile(info)
-                    if let name = info.suggestedName { item.title = name }
-                    item.state = .readyToChoose // reactivates the EXISTING card; no enqueue → no duplicate
+                // yt-dlp didn't recognize it: maybe it's a plain file. Try a HEAD before giving up.
+                if let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()), !Task.isCancelled {
+                    if DirectDownloadService.isDownloadableContentType(info.contentType) {
+                        // Fetchable file: reactivate the EXISTING card; no enqueue → no duplicate.
+                        item.source = .directFile(info)
+                        if let name = info.suggestedName { item.title = name }
+                        item.state = .readyToChoose
+                        return
+                    }
+                    // Reachable but a web page (or other non-file): a clear message beats yt-dlp's raw error.
+                    item.state = .probeFailed("This looks like a web page, not a video or a downloadable file.")
                     return
                 }
                 guard !Task.isCancelled else { return }
