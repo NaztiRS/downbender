@@ -8,6 +8,7 @@ struct DetectionPanel: View {
     let title: String
     let info: DirectFileInfo
     let probe: ProbeResult? // non-nil for generic-extractor results
+    var isInsecureHTTP: Bool = false
     @Binding var destination: URL
     var onProcessMedia: () -> Void // media file (.mp4) with no probe yet
     var onChooseFormat: (DownloadFormat) -> Void // generic-extractor: user picked a quality
@@ -43,6 +44,11 @@ struct DetectionPanel: View {
                       systemImage: "arrow.down.doc")
             }
             .buttonStyle(.plain).foregroundStyle(Theme.accent)
+            if isInsecureHTTP {
+                Label("\"As-is\" over http isn't encrypted — download only if you trust it.",
+                      systemImage: "lock.open")
+                    .font(.caption).foregroundStyle(.orange)
+            }
 
             HStack {
                 Spacer()

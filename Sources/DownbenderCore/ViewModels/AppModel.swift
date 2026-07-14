@@ -77,7 +77,8 @@ public final class AppModel {
             case .media:
                 await coordinator.run(item, tmpDirectory: tmpDirectory, cookiesBrowser: self?.cookiesBrowser)
             case .directFile, .ambiguous:
-                await directCoordinator.run(item, tmpDirectory: tmpDirectory)
+                await directCoordinator.run(item, tmpDirectory: tmpDirectory,
+                                            allowInsecureHTTP: self?.httpConfirmed.contains(item.id) == true)
             }
             switch item.state {
             case .done:
@@ -95,6 +96,8 @@ public final class AppModel {
     private var probeTasks: [UUID: Task<Void, Never>] = [:]
     /// In-flight HEAD tasks for direct files, per item: cancelled if the user removes the card.
     private var headTasks: [UUID: Task<Void, Never>] = [:]
+    /// Direct items whose insecure-http download the user explicitly confirmed.
+    private var httpConfirmed: Set<UUID> = []
 
     /// Watch link that also carries a `list=`: parked here until the user picks video vs playlist.
     public var pendingPlaylistChoice: String?
@@ -303,6 +306,14 @@ public final class AppModel {
         item.destination = destination
         queue.startDirect(item)
     }
+
+    /// True when a direct item's URL is plaintext http (needs an explicit confirmation).
+    public func isInsecureHTTP(_ item: DownloadItem) -> Bool {
+        URL(string: item.url)?.scheme?.lowercased() == "http"
+    }
+
+    /// Records the user's consent to download this insecure-http item.
+    public func confirmInsecureHTTP(_ item: DownloadItem) { httpConfirmed.insert(item.id) }
 
     /// Ambiguous item: user chose "download as-is".
     public func downloadAmbiguousAsFile(_ item: DownloadItem) {

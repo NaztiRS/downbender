@@ -25,8 +25,7 @@ public enum DirectDownloadError: Error, Equatable, LocalizedError {
 /// Native URLSession file downloader — the non-yt-dlp engine. Mirrors UpdaterService's
 /// download/replaceItemAt pattern and adds the safety yt-dlp handled for free (see the spec §3).
 public struct DirectDownloadService: Sendable {
-    let allowInsecureHTTP: Bool
-    public init(allowInsecureHTTP: Bool = false) { self.allowInsecureHTTP = allowInsecureHTTP }
+    public init() {}
 
     public static func makeSession(configuration: URLSessionConfiguration = .default) -> URLSession {
         URLSession(configuration: configuration)
@@ -46,6 +45,7 @@ public struct DirectDownloadService: Sendable {
         tmpDirectory: URL,
         suggestedName: String? = nil,
         maxBytes: Int64? = nil,
+        allowInsecureHTTP: Bool = false,
         session: URLSession = makeSession(),
         onProgress: @Sendable @escaping (DownloadProgress) -> Void
     ) async throws -> URL {

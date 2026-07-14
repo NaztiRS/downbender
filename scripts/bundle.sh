@@ -45,6 +45,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <!-- Downbender is a general download tool: users paste http mirrors (SourceForge, uni
+         mirrors). We allow http but confirm each insecure download in-app first. -->
+    <key>NSAllowsArbitraryLoads</key><true/>
+  </dict>
 </dict></plist>
 PLIST
 

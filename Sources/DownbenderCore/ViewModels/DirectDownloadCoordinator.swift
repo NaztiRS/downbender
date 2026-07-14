@@ -18,7 +18,7 @@ public final class DirectDownloadCoordinator {
         self.sessionFactory = sessionFactory
     }
 
-    public func run(_ item: DownloadItem, tmpDirectory: URL) async {
+    public func run(_ item: DownloadItem, tmpDirectory: URL, allowInsecureHTTP: Bool = false) async {
         item.state = .downloading
         let suggested: String? = {
             switch item.source {
@@ -30,7 +30,7 @@ public final class DirectDownloadCoordinator {
         do {
             let delivered = try await service.download(
                 url: item.url, destination: item.destination, tmpDirectory: tmpDirectory,
-                suggestedName: suggested, maxBytes: maxBytes, session: session,
+                suggestedName: suggested, maxBytes: maxBytes, allowInsecureHTTP: allowInsecureHTTP, session: session,
                 onProgress: { progress in
                     Task { @MainActor in
                         if item.state == .downloading {

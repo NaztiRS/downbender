@@ -5,6 +5,7 @@ import SwiftUI
 struct DirectConfirmPanel: View {
     let title: String
     let info: DirectFileInfo
+    var isInsecureHTTP: Bool = false
     @Binding var destination: URL
     var onDownload: () -> Void
     var onCancel: () -> Void
@@ -24,6 +25,11 @@ struct DirectConfirmPanel: View {
                     Label("This is an app or installer — macOS will check it when you open it.",
                           systemImage: "exclamationmark.shield")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if isInsecureHTTP {
+                    Label("This link isn't encrypted (http). Download only if you trust it.",
+                          systemImage: "lock.open")
+                        .font(.caption).foregroundStyle(.orange)
                 }
             }
             folderRow

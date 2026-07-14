@@ -116,4 +116,14 @@ struct DirectDownloadTests {
                                                            session: MockURLProtocol.session(), onProgress: { _ in })
         }
     }
+
+    @Test func allowsInsecureHTTPWhenExplicitlyAllowed() async throws {
+        let dest = freshDir(); let tmp = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest); try? FileManager.default.removeItem(at: tmp) }
+        MockURLProtocol.respond(status: 200, data: Data("x".utf8), headers: ["Content-Type": "application/zip"])
+        let delivered = try await DirectDownloadService().download(
+            url: "http://example.com/a.zip", destination: dest, tmpDirectory: tmp,
+            allowInsecureHTTP: true, session: MockURLProtocol.session(), onProgress: { _ in })
+        #expect(delivered.lastPathComponent == "a.zip")
+    }
 }

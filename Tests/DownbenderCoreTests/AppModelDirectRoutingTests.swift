@@ -59,6 +59,15 @@ import Foundation
 }
 
 @MainActor
+@Test func isInsecureHTTPFlagsHttpItems() {
+    let model = makeRoutingModel(runner: FakeProcessRunner())
+    let httpItem = DownloadItem(url: "http://x/a.zip", title: "a", destination: URL(fileURLWithPath: "/tmp"))
+    let httpsItem = DownloadItem(url: "https://x/a.zip", title: "a", destination: URL(fileURLWithPath: "/tmp"))
+    #expect(model.isInsecureHTTP(httpItem))
+    #expect(!model.isInsecureHTTP(httpsItem))
+}
+
+@MainActor
 @Test func specificExtractorProbeStaysMedia() async throws {
     let json = #"{"id":"x","title":"YT","extractor":"youtube","formats":[{"format_id":"0","height":720,"vcodec":"avc1","acodec":"mp4a"}]}"#
     let runner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)

@@ -71,16 +71,23 @@ struct QueueRow: View {
                 }
             case .directFile(let info):
                 DirectConfirmPanel(
-                    title: item.title, info: info, destination: $model.destination,
-                    onDownload: { model.confirmDirect(item); choosing = false },
+                    title: item.title, info: info, isInsecureHTTP: model.isInsecureHTTP(item), destination: $model.destination,
+                    onDownload: {
+                        if model.isInsecureHTTP(item) { model.confirmInsecureHTTP(item) }
+                        model.confirmDirect(item); choosing = false
+                    },
                     onCancel: { choosing = false }
                 )
             case .ambiguous(let info):
                 DetectionPanel(
-                    title: item.title, info: info, probe: item.probe, destination: $model.destination,
+                    title: item.title, info: info, probe: item.probe, isInsecureHTTP: model.isInsecureHTTP(item),
+                    destination: $model.destination,
                     onProcessMedia: { model.processAmbiguousAsMedia(item); choosing = false },
                     onChooseFormat: { fmt in model.choose(fmt, for: item); choosing = false },
-                    onDownloadAsFile: { model.downloadAmbiguousAsFile(item); choosing = false },
+                    onDownloadAsFile: {
+                        if model.isInsecureHTTP(item) { model.confirmInsecureHTTP(item) }
+                        model.downloadAmbiguousAsFile(item); choosing = false
+                    },
                     onCancel: { choosing = false }
                 )
             }
