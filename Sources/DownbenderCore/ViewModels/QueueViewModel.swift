@@ -30,6 +30,14 @@ public final class QueueViewModel {
         pump()
     }
 
+    /// Starts a direct/ambiguous item (no format). The card was already added at detection time,
+    /// so this reactivates it in place — re-appending here would duplicate the card.
+    public func startDirect(_ item: DownloadItem) {
+        guard item.state == .readyToChoose, item.source != .media else { return }
+        item.state = .queued
+        pump()
+    }
+
     public func remove(_ item: DownloadItem) {
         tasks[item.id]?.cancel()
         tasks[item.id] = nil
