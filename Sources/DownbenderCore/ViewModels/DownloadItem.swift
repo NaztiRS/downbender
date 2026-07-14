@@ -1,6 +1,17 @@
 import Foundation
 import Observation
 
+public struct DirectFileInfo: Equatable, Sendable {
+    public var suggestedName: String?
+    public var sizeBytes: Int64?
+    public var contentType: String?
+    public init(suggestedName: String? = nil, sizeBytes: Int64? = nil, contentType: String? = nil) {
+        self.suggestedName = suggestedName
+        self.sizeBytes = sizeBytes
+        self.contentType = contentType
+    }
+}
+
 @MainActor @Observable
 public final class DownloadItem: Identifiable {
     public enum State: Equatable {
@@ -12,6 +23,15 @@ public final class DownloadItem: Identifiable {
         case paused
         case failed(String)
         case cancelled
+    }
+
+    /// What kind of download this item is. `.media` is the yt-dlp path (today's behavior);
+    /// the others take the native URLSession engine. The UI reuses `.readyToChoose` for the
+    /// direct/ambiguous confirmation, discriminating on this.
+    public enum Source: Equatable, Sendable {
+        case media
+        case directFile(DirectFileInfo)
+        case ambiguous(DirectFileInfo)
     }
 
     public let id = UUID()
@@ -33,6 +53,10 @@ public final class DownloadItem: Identifiable {
     public var deliveredNote: String = ""
     public var deliveredMismatch: Bool = false
     public var deliveredFileURL: URL?
+
+    public var source: Source = .media
+    /// Reserved for real HTTP pause/resume (fase 2); unused in v1.
+    public var resumeData: Data?
 
     public init(
         url: String,
