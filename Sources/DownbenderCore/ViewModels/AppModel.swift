@@ -19,6 +19,9 @@ public final class AppModel {
 
     private let probe: ProbeService
     private let coordinator: DownloadCoordinator
+    private let directCoordinator: DirectDownloadCoordinator
+    private let directDownloader = DirectDownloadService()
+    private let directSessionFactory: @Sendable () -> URLSession
     private let tmpDirectory: URL
     private let appSupportDirectory: URL
     private let ytdlpURL: URL
@@ -34,7 +37,8 @@ public final class AppModel {
         cookiesBrowser: String? = nil,
         notifier: CompletionNotifying? = nil,
         runner: ProcessRunning = ProcessRunner(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        directSessionFactory: @escaping @Sendable () -> URLSession = { DirectDownloadService.makeSession() }
     ) {
         self.destination = destination
         self.tmpDirectory = tmpDirectory
@@ -53,8 +57,15 @@ public final class AppModel {
             runner: runner, ffprobeURL: binaries.ffmpegDirectory.appendingPathComponent("ffprobe")
         )
         self.coordinator = DownloadCoordinator(download: download, inspect: inspector.videoDimensions(of:))
-        self.queue = QueueViewModel(maxConcurrent: maxConcurrent, perform: { [weak self, coordinator, tmpDirectory] item in
-            await coordinator.run(item, tmpDirectory: tmpDirectory, cookiesBrowser: self?.cookiesBrowser)
+        self.directSessionFactory = directSessionFactory
+        self.directCoordinator = DirectDownloadCoordinator(service: DirectDownloadService(), maxBytes: nil, sessionFactory: directSessionFactory)
+        self.queue = QueueViewModel(maxConcurrent: maxConcurrent, perform: { [weak self, coordinator, directCoordinator, tmpDirectory] item in
+            switch item.source {
+            case .media:
+                await coordinator.run(item, tmpDirectory: tmpDirectory, cookiesBrowser: self?.cookiesBrowser)
+            case .directFile, .ambiguous:
+                await directCoordinator.run(item, tmpDirectory: tmpDirectory)
+            }
             switch item.state {
             case .done:
                 self?.notifier?.downloadFinished(title: item.title, success: true, filePath: item.deliveredFileURL?.path)
