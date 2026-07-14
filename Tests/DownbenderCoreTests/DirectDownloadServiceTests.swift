@@ -73,4 +73,25 @@ struct DirectDownloadTests {
         #expect(delivered.deletingLastPathComponent().standardizedFileURL.path == dest.standardizedFileURL.path)
         #expect(delivered.lastPathComponent == "pwned.sh")
     }
+
+    @Test func rejectsFileOverMaxBytes() async throws {
+        let dest = freshDir(); let tmp = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest); try? FileManager.default.removeItem(at: tmp) }
+        MockURLProtocol.respond(status: 200, data: Data(count: 5000),
+                                headers: ["Content-Length": "5000", "Content-Type": "application/zip"])
+        await #expect(throws: DirectDownloadError.fileTooLarge(1000)) {
+            _ = try await DirectDownloadService().download(url: "https://example.com/a.zip", destination: dest, tmpDirectory: tmp,
+                                                           maxBytes: 1000, session: MockURLProtocol.session(), onProgress: { _ in })
+        }
+    }
+
+    @Test func setsQuarantineXattr() async throws {
+        let dest = freshDir(); let tmp = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest); try? FileManager.default.removeItem(at: tmp) }
+        MockURLProtocol.respond(status: 200, data: Data("x".utf8), headers: ["Content-Type": "application/zip"])
+        let delivered = try await DirectDownloadService().download(
+            url: "https://example.com/a.zip", destination: dest, tmpDirectory: tmp,
+            session: MockURLProtocol.session(), onProgress: { _ in })
+        #expect(DirectDownloadService.isQuarantined(delivered))
+    }
 }

@@ -52,6 +52,16 @@ public struct DirectDownloadService: Sendable {
         if status == 401 || status == 403 { throw DirectDownloadError.accessDenied }
         guard (200...299).contains(status) else { throw DirectDownloadError.badStatus(status) }
 
+        if let maxBytes {
+            let observed = Int64((try? tmpURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+            let expected = http?.expectedContentLength ?? -1
+            let effective = observed > 0 ? observed : max(expected, 0)
+            if effective > maxBytes {
+                try? FileManager.default.removeItem(at: tmpURL)
+                throw DirectDownloadError.fileTooLarge(maxBytes)
+            }
+        }
+
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         let name = Self.safeFileName(suggestedName ?? Self.contentDispositionFilename(response) ?? parsed.lastPathComponent)
         let candidate = destination.appendingPathComponent(name)
@@ -62,6 +72,7 @@ public struct DirectDownloadService: Sendable {
         }
         let finalURL = Self.deDuplicated(candidate)
         _ = try FileManager.default.replaceItemAt(finalURL, withItemAt: tmpURL)
+        Self.markQuarantined(finalURL)
         return finalURL
     }
 
@@ -113,6 +124,17 @@ public struct DirectDownloadService: Sendable {
             }
         }
         return nil
+    }
+
+    /// Marks the file so Gatekeeper/XProtect evaluates it on first open — the same protection a
+    /// browser download gets. Best-effort: a failure to set the xattr must not fail the download.
+    static func markQuarantined(_ url: URL) {
+        let value = "0181;00000000;Downbender;\(UUID().uuidString)"
+        _ = value.withCString { setxattr(url.path, "com.apple.quarantine", $0, value.utf8.count, 0, 0) }
+    }
+
+    static func isQuarantined(_ url: URL) -> Bool {
+        getxattr(url.path, "com.apple.quarantine", nil, 0, 0, 0) >= 0
     }
 }
 
