@@ -8,8 +8,8 @@ private func makeUpdater(
     latestAppTag: @escaping @Sendable () async throws -> String = { "v1.0.0" },
     engineInstalled: @escaping @Sendable () async throws -> String = { "2026.07.04" },
     engineLatest: @escaping @Sendable () async throws -> String = { "2026.07.04" },
-    updateEngine: @escaping @Sendable (@escaping @Sendable (Double) -> Void) async throws -> Void = { _ in },
-    updateApp: @escaping @Sendable (@escaping @Sendable (Double) -> Void) async throws -> Void = { _ in }
+    updateEngine: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void = { _ in },
+    updateApp: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void = { _ in }
 ) -> UnifiedUpdater {
     UnifiedUpdater(
         installedAppVersion: installedApp,

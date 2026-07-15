@@ -12,8 +12,9 @@ public final class UnifiedUpdater {
         case upToDate(app: String, engine: String)
         /// At least one side is non-nil.
         case available(appVersion: String?, engineInstalled: String?, engineLatest: String?)
-        case workingOnEngine(Double)
-        case workingOnApp(Double)
+        /// nil fraction = indeterminate (the server didn't report a total size).
+        case workingOnEngine(Double?)
+        case workingOnApp(Double?)
         /// The app was swapped on disk; it takes effect on relaunch.
         case readyToRestart
         case failed(String)
@@ -25,16 +26,16 @@ public final class UnifiedUpdater {
     private let fetchLatestAppTag: @Sendable () async throws -> String
     private let fetchEngineInstalled: @Sendable () async throws -> String
     private let fetchEngineLatest: @Sendable () async throws -> String
-    private let updateEngine: @Sendable (@escaping @Sendable (Double) -> Void) async throws -> Void
-    private let updateApp: @Sendable (@escaping @Sendable (Double) -> Void) async throws -> Void
+    private let updateEngine: @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
+    private let updateApp: @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
 
     public init(
         installedAppVersion: String,
         fetchLatestAppTag: @escaping @Sendable () async throws -> String,
         fetchEngineInstalled: @escaping @Sendable () async throws -> String,
         fetchEngineLatest: @escaping @Sendable () async throws -> String,
-        updateEngine: @escaping @Sendable (@escaping @Sendable (Double) -> Void) async throws -> Void,
-        updateApp: @escaping @Sendable (@escaping @Sendable (Double) -> Void) async throws -> Void
+        updateEngine: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void,
+        updateApp: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
     ) {
         self.installedAppVersion = installedAppVersion
         self.fetchLatestAppTag = fetchLatestAppTag
@@ -84,7 +85,7 @@ public final class UnifiedUpdater {
         guard case let .available(appVersion, _, engineLatest) = phase else { return }
         do {
             if appVersion != nil {
-                phase = .workingOnApp(0)
+                phase = .workingOnApp(nil)
                 try await updateApp { [weak self] fraction in
                     Task { @MainActor in
                         if case .workingOnApp = self?.phase { self?.phase = .workingOnApp(fraction) }
@@ -92,7 +93,7 @@ public final class UnifiedUpdater {
                 }
                 phase = .readyToRestart
             } else if let engineLatest {
-                phase = .workingOnEngine(0)
+                phase = .workingOnEngine(nil)
                 try await updateEngine { [weak self] fraction in
                     Task { @MainActor in
                         if case .workingOnEngine = self?.phase { self?.phase = .workingOnEngine(fraction) }

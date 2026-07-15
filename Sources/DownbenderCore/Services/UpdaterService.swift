@@ -74,7 +74,7 @@ public struct UpdaterService: Sendable {
     @discardableResult
     public func updateYtdlp(
         session: URLSession = .shared,
-        onProgress: @escaping @Sendable (Double) -> Void = { _ in }
+        onProgress: @escaping @Sendable (Double?) -> Void = { _ in }
     ) async throws -> URL {
         try FileManager.default.createDirectory(at: appSupportDirectory, withIntermediateDirectories: true)
         let delegate = DownloadProgressDelegate(onProgress: onProgress)
@@ -91,10 +91,10 @@ public struct UpdaterService: Sendable {
     }
 }
 
-/// Translates `didWriteData` into a 0…1 fraction; the async download manages the temp file itself.
+/// Translates `didWriteData` into a 0…1 fraction, or nil when the total is unknown (indeterminate).
 final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    let onProgress: @Sendable (Double) -> Void
-    init(onProgress: @escaping @Sendable (Double) -> Void) { self.onProgress = onProgress }
+    let onProgress: @Sendable (Double?) -> Void
+    init(onProgress: @escaping @Sendable (Double?) -> Void) { self.onProgress = onProgress }
 
     func urlSession(
         _ session: URLSession,
@@ -103,8 +103,14 @@ final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard totalBytesExpectedToWrite > 0 else { return }
-        onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        // A missing/zero total (e.g. chunked responses behind a CDN redirect, as GitHub release
+        // assets can be) means the size is unknown: report nil (indeterminate) instead of staying
+        // silent, which would freeze the progress bar at 0% while bytes are actually flowing.
+        if totalBytesExpectedToWrite > 0 {
+            onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        } else {
+            onProgress(nil)
+        }
     }
 
     // Required by the protocol; the async download already returns the temporary URL.

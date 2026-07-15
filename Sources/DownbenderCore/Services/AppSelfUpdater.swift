@@ -43,14 +43,14 @@ public struct AppSelfUpdater: Sendable {
     public func update(
         session: URLSession = .shared,
         from url: URL = appZipURL,
-        onProgress: @escaping @Sendable (Double) -> Void = { _ in }
+        onProgress: @escaping @Sendable (Double?) -> Void = { _ in }
     ) async throws {
         let zip = try await download(session: session, from: url, onProgress: onProgress)
         let extracted = try await extract(zip: zip)
         try install(appAt: extracted)
     }
 
-    func download(session: URLSession, from url: URL, onProgress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    func download(session: URLSession, from url: URL, onProgress: @escaping @Sendable (Double?) -> Void) async throws -> URL {
         let delegate = DownloadProgressDelegate(onProgress: onProgress)
         let (tmp, response) = try await session.download(from: url, delegate: delegate)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {

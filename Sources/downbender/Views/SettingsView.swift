@@ -108,7 +108,9 @@ private struct UpdatesSection: View {
                     HStack {
                         Text("Updating…")
                         Spacer()
-                        Text("\(Int(fraction * 100))%").monospacedDigit().foregroundStyle(.secondary)
+                        if let fraction {
+                            Text("\(Int(fraction * 100))%").monospacedDigit().foregroundStyle(.secondary)
+                        }
                     }
                     .font(.caption)
                     WaveProgress(fraction: fraction)
