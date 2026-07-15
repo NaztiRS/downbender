@@ -287,6 +287,7 @@ struct QueueRow: View {
 
     /// yt-dlp prepends walls of WARNINGs to the real error: surface the definitive "ERROR:" line.
     private func compactError(_ message: String) -> String {
+        if let hint = YtdlpErrorHint.friendly(message) { return hint }
         let lines = message.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
