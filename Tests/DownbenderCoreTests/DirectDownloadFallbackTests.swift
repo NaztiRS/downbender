@@ -35,6 +35,20 @@ extension DirectDownloadTests {
         #expect(message.contains("web page"))
     }
 
+    // Regression: a YouTube URL whose probe fails (e.g. the cookie gate) must show yt-dlp's own
+    // error, NOT the "web page" fallback — even though a HEAD to youtube.com returns text/html.
+    @MainActor
+    @Test func knownMediaHostProbeFailureKeepsYtdlpErrorNotWebPage() async {
+        MockURLProtocol.respond(status: 200, data: Data(), headers: ["Content-Type": "text/html; charset=utf-8"])
+        let model = makeFallbackModel(runner: FakeProcessRunner(stderr: "ERROR: [youtube] x: Sign in to confirm you're not a bot.", exitCode: 1))
+        model.addURL("https://www.youtube.com/watch?v=5F1pcSljraU")
+        let item = model.queue.items[0]
+        await waitNotProbing(item)
+        guard case .probeFailed(let message) = item.state else { Issue.record("expected .probeFailed, got \(item.state)"); return }
+        #expect(message.contains("not a bot"))
+        #expect(!message.contains("web page"))
+    }
+
     @MainActor
     @Test func probeFailureWithFileContentTypeBecomesDirectFile() async {
         MockURLProtocol.respond(status: 200, data: Data(), headers: ["Content-Type": "application/zip"])

@@ -203,8 +203,11 @@ public final class AppModel {
                 }
             } catch {
                 guard !Task.isCancelled, let self else { return }
-                // yt-dlp didn't recognize it: maybe it's a plain file. Try a HEAD before giving up.
-                if let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()), !Task.isCancelled {
+                // On a known media host (YouTube, Vimeo…) a probe failure is about that site — e.g.
+                // YouTube's cookie gate — NOT "it's a web page", so surface yt-dlp's own error (which
+                // YtdlpErrorHint turns into the cookies suggestion). Only HEAD-sniff unknown hosts.
+                if MediaURL.detect(in: item.url) == nil,
+                   let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()), !Task.isCancelled {
                     if DirectDownloadService.isDownloadableContentType(info.contentType) {
                         // Fetchable file: reactivate the EXISTING card; no enqueue → no duplicate.
                         item.source = .directFile(info)
