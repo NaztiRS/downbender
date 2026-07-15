@@ -54,7 +54,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(WashBackground())
-        .frame(width: 480, height: 470)
+        .frame(width: 500, height: 580)
         .task {
             if updater == nil { updater = model.makeUnifiedUpdater() }
             // Arrived from the "Update" banner: run the check automatically so the user doesn't re-click.
