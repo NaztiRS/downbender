@@ -94,7 +94,12 @@ public struct UpdaterService: Sendable {
 /// Translates `didWriteData` into a 0…1 fraction, or nil when the total is unknown (indeterminate).
 final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     let onProgress: @Sendable (Double?) -> Void
-    init(onProgress: @escaping @Sendable (Double?) -> Void) { self.onProgress = onProgress }
+    /// Fallback total (from a prior HEAD) used when the GET response omits its size.
+    let expectedBytes: Int64?
+    init(onProgress: @escaping @Sendable (Double?) -> Void, expectedBytes: Int64? = nil) {
+        self.onProgress = onProgress
+        self.expectedBytes = expectedBytes
+    }
 
     func urlSession(
         _ session: URLSession,
@@ -103,11 +108,12 @@ final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        // A missing/zero total (e.g. chunked responses behind a CDN redirect, as GitHub release
-        // assets can be) means the size is unknown: report nil (indeterminate) instead of staying
-        // silent, which would freeze the progress bar at 0% while bytes are actually flowing.
-        if totalBytesExpectedToWrite > 0 {
-            onProgress(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        // Prefer the GET's own total; fall back to the HEAD size (GitHub assets can arrive chunked
+        // behind a CDN redirect with no total). Only when neither is known do we report nil
+        // (indeterminate) — never stay silent, which would freeze the bar at 0% while bytes flow.
+        let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : (expectedBytes ?? -1)
+        if total > 0 {
+            onProgress(Double(totalBytesWritten) / Double(total))
         } else {
             onProgress(nil)
         }

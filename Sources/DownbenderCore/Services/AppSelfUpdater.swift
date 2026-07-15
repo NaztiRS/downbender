@@ -51,7 +51,10 @@ public struct AppSelfUpdater: Sendable {
     }
 
     func download(session: URLSession, from url: URL, onProgress: @escaping @Sendable (Double?) -> Void) async throws -> URL {
-        let delegate = DownloadProgressDelegate(onProgress: onProgress)
+        // The GET can arrive without a total (chunked behind GitHub's CDN redirect), leaving the bar
+        // indeterminate. A HEAD reliably returns the size, so progress can show a real percentage.
+        let expected = try? await Self.headContentLength(url: url, session: session)
+        let delegate = DownloadProgressDelegate(onProgress: onProgress, expectedBytes: expected)
         let (tmp, response) = try await session.download(from: url, delegate: delegate)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw SelfUpdateError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
@@ -60,6 +63,16 @@ public struct AppSelfUpdater: Sendable {
         let stable = FileManager.default.temporaryDirectory.appendingPathComponent("Downbender-update-\(UUID().uuidString).zip")
         try FileManager.default.moveItem(at: tmp, to: stable)
         return stable
+    }
+
+    /// A HEAD to learn the asset size up front, so the bar can show a real percentage even when
+    /// the download itself arrives without a total. Best-effort: nil on any failure or unknown size.
+    static func headContentLength(url: URL, session: URLSession) async throws -> Int64? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        let (_, response) = try await session.data(for: request)
+        let length = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
+        return length > 0 ? length : nil
     }
 
     /// ditto (not unzip) preserves bundle structure, permissions and the ad-hoc signature.
