@@ -48,20 +48,39 @@ struct SettingsView: View {
             }
 
             if let updater {
-                UpdatesSection(updater: updater)
+                UpdatesSection(updater: updater, model: model)
             }
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .background(WashBackground())
         .frame(width: 480, height: 470)
-        .task { if updater == nil { updater = model.makeUnifiedUpdater() } }
+        .task {
+            if updater == nil { updater = model.makeUnifiedUpdater() }
+            // Arrived from the "Update" banner: run the check automatically so the user doesn't re-click.
+            if model.checkUpdatesOnOpen {
+                model.checkUpdatesOnOpen = false
+                await updater?.check()
+            }
+        }
     }
 }
 
 /// One check and one "Update now" cover both the app and the download engine (yt-dlp).
 private struct UpdatesSection: View {
     let updater: UnifiedUpdater
+    let model: AppModel
+    @State private var confirmingRestart = false
+
+    /// Downloads that would be lost when the app relaunches to finish updating.
+    private var activeDownloads: Int {
+        model.queue.items.filter { item in
+            switch item.state {
+            case .downloading, .queued, .merging, .paused: true
+            default: false
+            }
+        }.count
+    }
 
     var body: some View {
         Section {
@@ -120,8 +139,16 @@ private struct UpdatesSection: View {
             case .readyToRestart:
                 Label("Update installed", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Button("Restart Downbender") { relaunchApp() }
-                    .buttonStyle(WaveButtonStyle())
+                Button("Restart Downbender") {
+                    if activeDownloads > 0 { confirmingRestart = true } else { relaunchApp() }
+                }
+                .buttonStyle(WaveButtonStyle())
+                .confirmationDialog("Restart to finish updating?", isPresented: $confirmingRestart, titleVisibility: .visible) {
+                    Button("Restart (cancels \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))", role: .destructive) { relaunchApp() }
+                    Button("Not now", role: .cancel) {}
+                } message: {
+                    Text("\(activeDownloads) download\(activeDownloads == 1 ? " is" : "s are") still in progress and will be cancelled when Downbender restarts.")
+                }
 
             case .failed(let message):
                 Label("Update failed", systemImage: "exclamationmark.triangle.fill")

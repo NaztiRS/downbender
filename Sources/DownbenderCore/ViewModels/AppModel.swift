@@ -7,6 +7,8 @@ public final class AppModel {
     public var maxConcurrent: Int = 2
     /// Drives the first-run terms sheet; observable so the UI reacts (termsAccepted is defaults-backed).
     public var showTerms: Bool = false
+    /// Set by the "Update" banner so that opening Settings auto-runs the update check (saves a click).
+    public var checkUpdatesOnOpen: Bool = false
     public static let cookiesBrowserKey = "cookiesBrowser"
     /// Browser to borrow cookies from (nil = none); passed per invocation so a Settings change applies to the very next probe/download.
     public var cookiesBrowser: String? {

@@ -4,6 +4,7 @@ import DownbenderCore
 struct RootView: View {
     @State var model: AppModel
     @State private var urlText = ""
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +26,11 @@ struct RootView: View {
                     Image(systemName: "sparkles").foregroundStyle(Theme.glow)
                     Text("Downbender v\(version) is available")
                         .font(.callout)
-                    SettingsLink {
+                    Button {
+                        // Auto-run the update check on arrival so the user doesn't have to press it in Settings.
+                        model.checkUpdatesOnOpen = true
+                        openSettings()
+                    } label: {
                         Text("Update").font(.callout.weight(.semibold)).foregroundStyle(Theme.glow)
                     }
                     .buttonStyle(.plain)
