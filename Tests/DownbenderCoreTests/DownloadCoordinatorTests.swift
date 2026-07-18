@@ -189,3 +189,38 @@ import Foundation
     #expect(args.contains("--cookies-from-browser"))
     #expect(args.contains("brave"))
 }
+
+// A transient DNS failure resolving the ephemeral googlevideo CDN host is intermittent, just like
+// the 403: a FRESH yt-dlp invocation re-extracts and gets a healthy host, so it retries silently
+// (never showing .failed) instead of forcing the user to react. Only a persistent outage fails.
+private let dnsResolveError = "ERROR: [download] Got error: HTTPSConnection(host='rr5---sn-hp57ynsl.googlevideo.com', port=443): Failed to resolve 'rr5---sn-hp57ynsl.googlevideo.com' ([Errno 8] nodename nor servname provided, or not known). Giving up after 10 retries"
+
+@MainActor
+@Test func coordinatorRetriesOnTransientDNSFailureUpToThreeAttemptsThenFails() async {
+    let runner = FakeProcessRunner(stderr: dnsResolveError, exitCode: 1)
+    let download = DownloadService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/x"), ffmpegDirectory: URL(fileURLWithPath: "/y"))
+    let coordinator = DownloadCoordinator(download: download, retryDelay: .milliseconds(10))
+    let item = DownloadItem(url: "u", title: "t", format: .video(height: 1080), destination: URL(fileURLWithPath: "/tmp"))
+
+    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    #expect(runner.calls.count == 3)
+    if case .failed = item.state {} else { Issue.record("expected .failed, got \(item.state)") }
+}
+
+@MainActor
+@Test func coordinatorRecoversSilentlyWhenTransientDNSClearsOnRetry() async {
+    let runner = FakeProcessRunner(replays: [
+        .init(stderr: dnsResolveError, exitCode: 1),
+        .init(stdoutLines: [
+            "DBPROG 100.0% 2MiB/s 00:00",
+            "DBPATH /tmp/out/video.mp4",
+        ], exitCode: 0),
+    ])
+    let download = DownloadService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/x"), ffmpegDirectory: URL(fileURLWithPath: "/y"))
+    let coordinator = DownloadCoordinator(download: download, retryDelay: .milliseconds(10))
+    let item = DownloadItem(url: "u", title: "t", format: .video(height: 1080), destination: URL(fileURLWithPath: "/tmp"))
+
+    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    #expect(runner.calls.count == 2)
+    #expect(item.state == .done)
+}
