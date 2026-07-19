@@ -85,18 +85,20 @@ public final class UnifiedUpdater {
         guard case let .available(appVersion, _, engineLatest) = phase else { return }
         do {
             if appVersion != nil {
-                phase = .workingOnApp(nil)
+                phase = .workingOnApp(0)
                 try await updateApp { [weak self] fraction in
                     Task { @MainActor in
-                        if case .workingOnApp = self?.phase { self?.phase = .workingOnApp(fraction) }
+                        guard let self, case .workingOnApp(let current) = self.phase else { return }
+                        self.phase = .workingOnApp(Self.advancingProgress(current: current, reported: fraction))
                     }
                 }
                 phase = .readyToRestart
             } else if let engineLatest {
-                phase = .workingOnEngine(nil)
+                phase = .workingOnEngine(0)
                 try await updateEngine { [weak self] fraction in
                     Task { @MainActor in
-                        if case .workingOnEngine = self?.phase { self?.phase = .workingOnEngine(fraction) }
+                        guard let self, case .workingOnEngine(let current) = self.phase else { return }
+                        self.phase = .workingOnEngine(Self.advancingProgress(current: current, reported: fraction))
                     }
                 }
                 phase = .upToDate(app: installedAppVersion, engine: engineLatest)
@@ -104,6 +106,17 @@ public final class UnifiedUpdater {
         } catch {
             phase = .failed(error.localizedDescription)
         }
+    }
+
+    /// Progress callbacks can be noisy, late, or briefly unknown across redirects. Keep the
+    /// visible bar clamped and monotonic; only switch to indeterminate before real progress begins.
+    nonisolated static func advancingProgress(current: Double?, reported: Double?) -> Double? {
+        guard let reported else {
+            return current == 0 ? nil : current
+        }
+        let clamped = min(max(reported, 0), 1)
+        guard let current else { return clamped }
+        return max(current, clamped)
     }
 }
 

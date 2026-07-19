@@ -71,15 +71,11 @@ No Chrome Web Store account is required. Open **Settings → Chrome extension** 
 **Install Chrome Extension**. Downbender creates a temporary shortcut in Downloads and takes you
 to Chrome's extension screen. Then:
 
-1. Open `chrome://extensions` in Chrome.
-2. Enable **Developer mode**.
-3. Click **Load unpacked**, choose **Downloads** in the sidebar and select
+1. Enable **Developer mode**.
+2. Click **Load unpacked**, choose **Downloads** in the sidebar and select
    `Downbender Extension Installer`.
-4. Once Chrome loads the extension, its native host verifies and removes the temporary shortcut
-   automatically. **Clean up manually** remains available in Downbender as a fallback.
-
-Chrome resolves the shortcut to the extension bundled inside `Downbender.app`; no permanent
-installation folder remains in Downloads.
+3. Once Chrome loads the extension, the temporary shortcut is removed automatically. Downbender
+   also removes it when the app quits or after one hour.
 
 The app registers its native-messaging helper automatically. The page overlay is deliberately
 singular: it appears only when a sufficiently large video is playing or its hover preview is

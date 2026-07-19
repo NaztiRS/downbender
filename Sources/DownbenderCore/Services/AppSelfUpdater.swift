@@ -45,9 +45,22 @@ public struct AppSelfUpdater: Sendable {
         from url: URL = appZipURL,
         onProgress: @escaping @Sendable (Double?) -> Void = { _ in }
     ) async throws {
-        let zip = try await download(session: session, from: url, onProgress: onProgress)
+        onProgress(0)
+        let zip = try await download(session: session, from: url) { fraction in
+            onProgress(Self.overallProgress(forDownloadFraction: fraction))
+        }
+        onProgress(0.92)
         let extracted = try await extract(zip: zip)
+        onProgress(0.97)
         try install(appAt: extracted)
+        onProgress(1)
+    }
+
+    /// The network transfer owns most of the bar; the remaining space makes extraction and
+    /// installation visible instead of letting the UI jump directly from download to completion.
+    static func overallProgress(forDownloadFraction fraction: Double?) -> Double? {
+        guard let fraction else { return nil }
+        return min(max(fraction, 0), 1) * 0.9
     }
 
     func download(session: URLSession, from url: URL, onProgress: @escaping @Sendable (Double?) -> Void) async throws -> URL {

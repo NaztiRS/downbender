@@ -1,8 +1,17 @@
+import AppKit
 import SwiftUI
 import DownbenderCore
 
+@MainActor
+private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillTerminate(_: Notification) {
+        ChromeIntegrationInstaller.cleanUpTemporaryInstaller()
+    }
+}
+
 @main
 struct DownbenderApp: App {
+    @NSApplicationDelegateAdaptor(DownbenderAppDelegate.self) private var appDelegate
     @State private var model: AppModel?
     @State private var pendingExternalURLs: [URL] = []
 
@@ -14,7 +23,7 @@ struct DownbenderApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Downbender") {
+        Window("Downbender", id: "main") {
             Group {
                 if let model {
                     RootView(model: model)
@@ -24,6 +33,7 @@ struct DownbenderApp: App {
             }
             .onAppear { prepareModel() }
             .onOpenURL(perform: receiveExternalURL)
+            .handlesExternalEvents(preferring: ["add"], allowing: ["add"])
             .tint(Theme.accent)
             // Dark mode only, by design decision.
             .preferredColorScheme(.dark)
@@ -57,11 +67,11 @@ struct DownbenderApp: App {
     @MainActor private static func makeModel() -> AppModel? {
         let fm = FileManager.default
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Downbender")
+        ChromeIntegrationInstaller.prepareIntegration()
         guard let binaries = BundledBinaries.locate(appSupportDirectory: support) else { return nil }
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let tmp = fm.temporaryDirectory.appendingPathComponent("Downbender")
         try? fm.createDirectory(at: tmp, withIntermediateDirectories: true)
-        ChromeIntegrationInstaller.refreshInstalledIntegration()
         return AppModel(
             binaries: binaries, destination: downloads, tmpDirectory: tmp,
             appSupportDirectory: support,

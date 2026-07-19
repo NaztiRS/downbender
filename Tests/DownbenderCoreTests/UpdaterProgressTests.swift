@@ -29,3 +29,19 @@ import Foundation
 
     #expect(calls.value == [0.5])
 }
+
+@Test func appDownloadProgressLeavesRoomForExtractionAndInstall() {
+    #expect(AppSelfUpdater.overallProgress(forDownloadFraction: nil) == nil)
+    #expect(AppSelfUpdater.overallProgress(forDownloadFraction: 0) == 0)
+    #expect(AppSelfUpdater.overallProgress(forDownloadFraction: 0.5) == 0.45)
+    #expect(AppSelfUpdater.overallProgress(forDownloadFraction: 1) == 0.9)
+    #expect(AppSelfUpdater.overallProgress(forDownloadFraction: 2) == 0.9)
+}
+
+@Test func visibleUpdateProgressIsClampedAndNeverMovesBackward() {
+    #expect(UnifiedUpdater.advancingProgress(current: 0, reported: nil) == nil)
+    #expect(UnifiedUpdater.advancingProgress(current: nil, reported: 0.2) == 0.2)
+    #expect(UnifiedUpdater.advancingProgress(current: 0.6, reported: 0.4) == 0.6)
+    #expect(UnifiedUpdater.advancingProgress(current: 0.6, reported: 2) == 1)
+    #expect(UnifiedUpdater.advancingProgress(current: 0.6, reported: nil) == 0.6)
+}

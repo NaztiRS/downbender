@@ -113,7 +113,7 @@ final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
         // (indeterminate) — never stay silent, which would freeze the bar at 0% while bytes flow.
         let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : (expectedBytes ?? -1)
         if total > 0 {
-            onProgress(Double(totalBytesWritten) / Double(total))
+            onProgress(min(max(Double(totalBytesWritten) / Double(total), 0), 1))
         } else {
             onProgress(nil)
         }

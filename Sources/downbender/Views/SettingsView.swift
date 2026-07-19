@@ -49,56 +49,40 @@ struct SettingsView: View {
             }
 
             Section("Chrome extension") {
+                Label {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("IDM-style browser button")
+                        Text("Appears only on the video currently playing or previewing")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "puzzlepiece.extension.fill").foregroundStyle(Theme.accent)
+                }
+
                 if let message = chromeIntegration?.errorMessage {
                     Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    Button("Try again") { chromeIntegration = ChromeIntegrationInstaller.status() }
-                } else if let integration = chromeIntegration, integration.isInstalling,
-                          let shortcut = integration.temporaryShortcut {
-                    Label {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Temporary installer ready")
-                            Text("In Load unpacked, select “Downbender Extension Installer”")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "puzzlepiece.extension.fill").foregroundStyle(Theme.accent)
-                    }
-                    HStack {
-                        Button("Open Chrome Extensions") { openChromeExtensions() }
-                        Button("Show installer") {
-                            NSWorkspace.shared.activateFileViewerSelecting([shortcut])
-                        }
-                    }
-                    Text("Chrome removes this temporary shortcut automatically as soon as the extension loads. Use the fallback below only if it remains in Downloads.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button("Clean up manually") { finishChromeInstallation() }
+                    Button("Try again") { beginChromeInstallation() }
                         .buttonStyle(WaveButtonStyle())
-                    Button("Cancel installation") {
-                        chromeIntegration = ChromeIntegrationInstaller.cancelInstallation()
-                    }
-                } else if chromeIntegration?.isInstalled == true {
-                    Label("Chrome integration installed", systemImage: "checkmark.seal.fill")
-                        .foregroundStyle(.green)
-                    Text("The extension lives inside Downbender; no installation folder is left in Downloads.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    HStack {
-                        Button("Open Chrome Extensions") { openChromeExtensions() }
-                        Button("Reinstall or update") { beginChromeInstallation() }
-                    }
                 } else if chromeIntegration?.isAvailable == true {
-                    Label {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("IDM-style browser button")
-                            Text("Appears only on the video currently playing or previewing")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "puzzlepiece.extension.fill").foregroundStyle(Theme.accent)
-                    }
                     Button("Install Chrome Extension") { beginChromeInstallation() }
                         .buttonStyle(WaveButtonStyle())
+
+                    if let integration = chromeIntegration, integration.isInstalling,
+                       let shortcut = integration.temporaryShortcut {
+                        Text("In Load unpacked, select “Downbender Extension Installer”.")
+                            .font(.caption).foregroundStyle(.secondary)
+
+                        HStack {
+                            Button("Show installer") {
+                                NSWorkspace.shared.activateFileViewerSelecting([shortcut])
+                            }
+                            Button("Cancel") {
+                                chromeIntegration = ChromeIntegrationInstaller.cancelInstallation()
+                            }
+                        }
+                    }
                 } else {
                     LabeledContent("Checking extension") { ProgressView().controlSize(.small) }
                 }
@@ -134,12 +118,6 @@ struct SettingsView: View {
         guard let shortcut = state.temporaryShortcut else { return }
         NSWorkspace.shared.activateFileViewerSelecting([shortcut])
         openChromeExtensions()
-    }
-
-    private func finishChromeInstallation() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Downbender")
-        chromeIntegration = ChromeIntegrationInstaller.finishInstallation(appSupportDirectory: support)
     }
 
     private func openChromeExtensions() {
@@ -206,19 +184,11 @@ private struct UpdatesSection: View {
                 Button("Update now") { Task { await updater.update() } }
                     .buttonStyle(WaveButtonStyle())
 
-            case .workingOnEngine(let fraction), .workingOnApp(let fraction):
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Updating…")
-                        Spacer()
-                        if let fraction {
-                            Text("\(Int(fraction * 100))%").monospacedDigit().foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.caption)
-                    WaveProgress(fraction: fraction)
-                }
-                .padding(.vertical, 2)
+            case .workingOnEngine(let fraction):
+                UpdateProgressView(title: "Updating download engine", fraction: fraction)
+
+            case .workingOnApp(let fraction):
+                UpdateProgressView(title: "Downloading Downbender", fraction: fraction)
 
             case .readyToRestart:
                 Label("Update installed", systemImage: "checkmark.circle.fill")
@@ -250,6 +220,32 @@ private struct UpdatesSection: View {
         if let appVersion { parts.append("Downbender v\(Downbender.version) → v\(appVersion)") }
         if let engineInstalled, let engineLatest { parts.append("engine \(engineInstalled) → \(engineLatest)") }
         return parts.joined(separator: " · ")
+    }
+}
+
+private struct UpdateProgressView: View {
+    let title: String
+    let fraction: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                Spacer()
+                if let fraction {
+                    Text("\(Int(min(max(fraction, 0), 1) * 100))%")
+                        .contentTransition(.numericText())
+                } else {
+                    Text("Preparing…")
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+
+            WaveProgress(fraction: fraction, height: 11)
+        }
+        .padding(.vertical, 6)
+        .animation(.easeOut(duration: 0.3), value: fraction)
     }
 }
 

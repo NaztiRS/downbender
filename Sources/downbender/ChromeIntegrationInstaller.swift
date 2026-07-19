@@ -4,35 +4,39 @@ import Foundation
 struct ChromeIntegrationState {
     let extensionDirectory: URL?
     let temporaryShortcut: URL?
-    let isInstalled: Bool
     let errorMessage: String?
 
     var isInstalling: Bool { temporaryShortcut != nil && errorMessage == nil }
     var isAvailable: Bool { extensionDirectory != nil && errorMessage == nil }
 }
 
+@MainActor
 enum ChromeIntegrationInstaller {
     private static let extensionFolderName = "ChromeExtension"
     private static let temporaryShortcutName = "Downbender Extension Installer"
-    private static let installedKey = "chromeIntegrationInstalled"
     private static let legacyVisibleFolderName = "Downbender Chrome Extension"
+    private static let expirationKey = "chromeExtensionInstallerExpiration"
+    private static let installerLifetime: TimeInterval = 60 * 60
+    private static var expirationTask: Task<Void, Never>?
 
     static func status() -> ChromeIntegrationState {
         do {
             let extensionDirectory = try bundledExtensionDirectory()
+            removeExpiredTemporaryShortcut()
             let shortcut = temporaryShortcutURL()
-            let shortcutExists = FileManager.default.fileExists(atPath: shortcut.path)
+            let shortcutExists = isOwnedShortcut(shortcut, destination: extensionDirectory)
+            if !shortcutExists {
+                cancelScheduledExpiration()
+            }
             return ChromeIntegrationState(
                 extensionDirectory: extensionDirectory,
                 temporaryShortcut: shortcutExists ? shortcut : nil,
-                isInstalled: integrationWasInstalled(),
                 errorMessage: nil
             )
         } catch {
             return ChromeIntegrationState(
                 extensionDirectory: nil,
                 temporaryShortcut: nil,
-                isInstalled: false,
                 errorMessage: error.localizedDescription
             )
         }
@@ -54,61 +58,46 @@ enum ChromeIntegrationInstaller {
                 try fileManager.removeItem(at: shortcut)
             }
             try fileManager.createSymbolicLink(at: shortcut, withDestinationURL: extensionDirectory)
+            scheduleExpiration()
             return ChromeIntegrationState(
                 extensionDirectory: extensionDirectory,
                 temporaryShortcut: shortcut,
-                isInstalled: integrationWasInstalled(),
                 errorMessage: nil
             )
         } catch {
             return ChromeIntegrationState(
                 extensionDirectory: nil,
                 temporaryShortcut: nil,
-                isInstalled: integrationWasInstalled(),
-                errorMessage: error.localizedDescription
-            )
-        }
-    }
-
-    /// Called only after the user confirms that Chrome loaded the temporary shortcut.
-    static func finishInstallation(appSupportDirectory: URL) -> ChromeIntegrationState {
-        do {
-            let fileManager = FileManager.default
-            let extensionDirectory = try bundledExtensionDirectory()
-            try removeTemporaryShortcut(fileManager: fileManager, extensionDirectory: extensionDirectory)
-            UserDefaults.standard.set(true, forKey: installedKey)
-            cleanupLegacyCopies(appSupportDirectory: appSupportDirectory, fileManager: fileManager)
-            return ChromeIntegrationState(
-                extensionDirectory: extensionDirectory,
-                temporaryShortcut: nil,
-                isInstalled: true,
-                errorMessage: nil
-            )
-        } catch {
-            return ChromeIntegrationState(
-                extensionDirectory: nil,
-                temporaryShortcut: nil,
-                isInstalled: integrationWasInstalled(),
                 errorMessage: error.localizedDescription
             )
         }
     }
 
     static func cancelInstallation() -> ChromeIntegrationState {
+        cleanUpTemporaryInstaller()
+        return status()
+    }
+
+    /// Removes the installer created by this app, never a foreign file with the same name.
+    /// Called on normal app termination and by the one-hour expiration task.
+    static func cleanUpTemporaryInstaller() {
+        cancelScheduledExpiration()
         if let extensionDirectory = try? bundledExtensionDirectory() {
             _ = try? ChromeExtensionShortcut.removeIfOwned(
                 at: temporaryShortcutURL(),
                 expectedDestination: extensionDirectory
             )
         }
-        return status()
     }
 
-    /// Keeps the absolute native-host path current after an app update or move, without creating
-    /// any visible installation files.
-    static func refreshInstalledIntegration() {
-        guard integrationWasInstalled() else { return }
+    /// Keeps the native host ready without trying to guess whether Chrome has the extension.
+    /// A shortcut left by an interrupted previous run is also removed on the next launch.
+    static func prepareIntegration() {
+        cleanUpTemporaryInstaller()
         try? installNativeHostManifest(fileManager: .default)
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Downbender")
+        cleanupLegacyCopies(appSupportDirectory: support, fileManager: .default)
     }
 
     private static func bundledExtensionDirectory() throws -> URL {
@@ -125,18 +114,40 @@ enum ChromeIntegrationInstaller {
             .appendingPathComponent(temporaryShortcutName, isDirectory: true)
     }
 
-    private static func integrationWasInstalled() -> Bool {
-        if UserDefaults.standard.bool(forKey: installedKey) { return true }
-        // Migration from the first companion build, which registered the host on app launch.
-        return FileManager.default.fileExists(atPath: nativeHostManifestURL().path)
+    private static func isOwnedShortcut(_ shortcut: URL, destination: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: shortcut.path),
+              let values = try? shortcut.resourceValues(forKeys: [.isSymbolicLinkKey]),
+              values.isSymbolicLink == true
+        else { return false }
+        return shortcut.resolvingSymlinksInPath().standardizedFileURL
+            == destination.resolvingSymlinksInPath().standardizedFileURL
     }
 
-    private static func removeTemporaryShortcut(fileManager: FileManager, extensionDirectory: URL) throws {
-        _ = try ChromeExtensionShortcut.removeIfOwned(
-            at: temporaryShortcutURL(),
-            expectedDestination: extensionDirectory,
-            fileManager: fileManager
-        )
+    private static func scheduleExpiration() {
+        cancelScheduledExpiration()
+        let expiration = Date().addingTimeInterval(installerLifetime)
+        UserDefaults.standard.set(expiration, forKey: expirationKey)
+        expirationTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(installerLifetime))
+            } catch {
+                return
+            }
+            cleanUpTemporaryInstaller()
+        }
+    }
+
+    private static func removeExpiredTemporaryShortcut(now: Date = Date()) {
+        guard let expiration = UserDefaults.standard.object(forKey: expirationKey) as? Date,
+              expiration <= now
+        else { return }
+        cleanUpTemporaryInstaller()
+    }
+
+    private static func cancelScheduledExpiration() {
+        expirationTask?.cancel()
+        expirationTask = nil
+        UserDefaults.standard.removeObject(forKey: expirationKey)
     }
 
     private static func cleanupLegacyCopies(appSupportDirectory: URL, fileManager: FileManager) {
