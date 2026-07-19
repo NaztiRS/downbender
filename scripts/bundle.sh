@@ -13,13 +13,17 @@ BUNDLE_ID="com.naztirs.downbender"
 
 swift build -c "$CONFIG"
 BIN_PATH=".build/$CONFIG/$BIN_NAME"
+HOST_PATH=".build/$CONFIG/downbender-native-host"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/$BIN_NAME"
+cp "$HOST_PATH" "$APP/Contents/MacOS/downbender-native-host"
+chmod +x "$APP/Contents/MacOS/downbender-native-host"
 
 # GPL compliance travels inside the bundle, keeping the DMG window clean.
 cp LICENSE NOTICE "$APP/Contents/Resources/"
+cp -R ChromeExtension "$APP/Contents/Resources/ChromeExtension"
 
 for b in yt-dlp_macos ffmpeg ffprobe deno; do
   if [ -f "Resources/binaries/$b" ]; then
@@ -45,6 +49,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>com.naztirs.downbender.add</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>downbender</string></array>
+    </dict>
+  </array>
   <key>NSAppTransportSecurity</key>
   <dict>
     <!-- Downbender is a general download tool: users paste http mirrors (SourceForge, uni
@@ -73,5 +86,6 @@ fi
 for b in yt-dlp_macos ffmpeg ffprobe deno; do
   [ -f "$APP/Contents/Resources/$b" ] && codesign --force --sign - "$APP/Contents/Resources/$b"
 done
+codesign --force --sign - "$APP/Contents/MacOS/downbender-native-host"
 codesign --force --sign - "$APP"
 echo "Built $APP"

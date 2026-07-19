@@ -3,10 +3,11 @@
   "private": true,
   "packageManager": "pnpm@11.8.0",
   "scripts": {
-    "check": "pnpm lint && pnpm build && pnpm test",
+    "check": "pnpm lint && pnpm extension:check && pnpm build && pnpm test",
     "build": "swift build",
     "test": "scripts/test.sh",
     "lint": "scripts/lint.sh",
+    "extension:check": "node --check ChromeExtension/background.js && node --check ChromeExtension/content.js && node --check ChromeExtension/url-utils.js && node ChromeExtension/url-utils.test.js && node -e 'JSON.parse(require(\"fs\").readFileSync(\"ChromeExtension/manifest.json\", \"utf8\"))'",
     "format": "swiftformat .",
     "bundle": "scripts/bundle.sh",
     "dmg": "scripts/make-dmg.sh",

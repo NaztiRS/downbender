@@ -4,6 +4,7 @@ import DownbenderCore
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var updater: UnifiedUpdater?
+    @State private var chromeIntegration: ChromeIntegrationState?
 
     var body: some View {
         Form {
@@ -47,6 +48,62 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Chrome extension") {
+                if let message = chromeIntegration?.errorMessage {
+                    Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button("Try again") { chromeIntegration = ChromeIntegrationInstaller.status() }
+                } else if let integration = chromeIntegration, integration.isInstalling,
+                          let shortcut = integration.temporaryShortcut {
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Temporary installer ready")
+                            Text("In Load unpacked, select “Downbender Extension Installer”")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "puzzlepiece.extension.fill").foregroundStyle(Theme.accent)
+                    }
+                    HStack {
+                        Button("Open Chrome Extensions") { openChromeExtensions() }
+                        Button("Show installer") {
+                            NSWorkspace.shared.activateFileViewerSelecting([shortcut])
+                        }
+                    }
+                    Text("Chrome removes this temporary shortcut automatically as soon as the extension loads. Use the fallback below only if it remains in Downloads.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Clean up manually") { finishChromeInstallation() }
+                        .buttonStyle(WaveButtonStyle())
+                    Button("Cancel installation") {
+                        chromeIntegration = ChromeIntegrationInstaller.cancelInstallation()
+                    }
+                } else if chromeIntegration?.isInstalled == true {
+                    Label("Chrome integration installed", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                    Text("The extension lives inside Downbender; no installation folder is left in Downloads.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button("Open Chrome Extensions") { openChromeExtensions() }
+                        Button("Reinstall or update") { beginChromeInstallation() }
+                    }
+                } else if chromeIntegration?.isAvailable == true {
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("IDM-style browser button")
+                            Text("Appears only on the video currently playing or previewing")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "puzzlepiece.extension.fill").foregroundStyle(Theme.accent)
+                    }
+                    Button("Install Chrome Extension") { beginChromeInstallation() }
+                        .buttonStyle(WaveButtonStyle())
+                } else {
+                    LabeledContent("Checking extension") { ProgressView().controlSize(.small) }
+                }
+            }
+
             if let updater {
                 UpdatesSection(updater: updater, model: model)
             }
@@ -56,6 +113,9 @@ struct SettingsView: View {
         .background(WashBackground())
         .frame(width: 500, height: 580)
         .task {
+            if chromeIntegration == nil {
+                chromeIntegration = ChromeIntegrationInstaller.status()
+            }
             if updater == nil { updater = model.makeUnifiedUpdater() }
             // Arrived from the "Update" banner: run the check automatically so the user doesn't re-click.
             if model.checkUpdatesOnOpen {
@@ -63,6 +123,30 @@ struct SettingsView: View {
                 await updater?.check()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            chromeIntegration = ChromeIntegrationInstaller.status()
+        }
+    }
+
+    private func beginChromeInstallation() {
+        let state = ChromeIntegrationInstaller.beginInstallation()
+        chromeIntegration = state
+        guard let shortcut = state.temporaryShortcut else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([shortcut])
+        openChromeExtensions()
+    }
+
+    private func finishChromeInstallation() {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Downbender")
+        chromeIntegration = ChromeIntegrationInstaller.finishInstallation(appSupportDirectory: support)
+    }
+
+    private func openChromeExtensions() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Google Chrome", "chrome://extensions/"]
+        try? process.run()
     }
 }
 

@@ -9,9 +9,14 @@ let testingLibPath = "/Library/Developer/CommandLineTools/Library/Developer/usr/
 let package = Package(
     name: "downbender",
     platforms: [.macOS(.v26)],
+    products: [
+        .executable(name: "downbender", targets: ["downbender"]),
+        .executable(name: "downbender-native-host", targets: ["DownbenderNativeHost"]),
+    ],
     targets: [
         .target(name: "DownbenderCore"),
         .executableTarget(name: "downbender", dependencies: ["DownbenderCore"]),
+        .executableTarget(name: "DownbenderNativeHost", dependencies: ["DownbenderCore"]),
         .testTarget(
             name: "DownbenderCoreTests",
             dependencies: ["DownbenderCore"],

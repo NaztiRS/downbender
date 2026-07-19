@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Downbender Companion",
+  "version": "0.1.2",
+  "description": "Send the video that is playing or being previewed to Downbender.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArV49PWUP1CdZsjIYgE37NBnwBk6RPy4eS/c99Ahkrp/8T10z8dhzRAeyL1KMj8SPZK1WwySEXtAEz9qnE/SqqOKcoEWLvuzI44NVdinbgQaOTSK08qs/b4xE+Kj0nlm/Moud7lXwIXujY2+uOzsN2ga0+/gQscBO+Qph8woS0pgNgKXqf8kr+rE2Tcb02CCBPhscdMg8epkQOaTI5L5xu7vOPelfcp0nYDLrL4ybZCmqa86sqKzvJyV5tn6IYD0PTv8MF4YSBfcffu1x2D/pKXrcl0aveoTtvfdszNhCJr7RQwsw8qGoV39q7vDWVN+yEH3qwJlKdD4vTrNT2ei23QIDAQAB",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Download with Downbender",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "url-utils.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/icon-128.png"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "incognito": "not_allowed"
+}
