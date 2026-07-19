@@ -23,6 +23,7 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 - Works with YouTube — the most battle-tested path — and [many other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) supported by yt-dlp (support for non-YouTube sites is still maturing).
 - Download queue with per-item progress, pause/resume and cancel.
 - Clipboard detection: copy a video link anywhere, confirm, download.
+- Optional Chrome companion: an IDM-style button follows only the video currently playing or previewing, with toolbar and right-click fallbacks.
 - Dock bounce and completion sound when a download finishes in the background.
 - Self-contained: yt-dlp, FFmpeg and Deno ship inside the app. Nothing to install.
 - One-click updater for the download engine (yt-dlp) in Settings.
@@ -63,6 +64,27 @@ row to reveal the file in Finder.
 - **Downloads suddenly failing?** YouTube changes constantly. Use
   **Settings → Downloader (yt-dlp) → Check for updates** to update the
   engine without reinstalling the app.
+
+### Chrome companion (manual install)
+
+No Chrome Web Store account is required. Open **Settings → Chrome extension** and click
+**Install Chrome Extension**. Downbender creates a temporary shortcut in Downloads and takes you
+to Chrome's extension screen. Then:
+
+1. Open `chrome://extensions` in Chrome.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**, choose **Downloads** in the sidebar and select
+   `Downbender Extension Installer`.
+4. Once Chrome loads the extension, its native host verifies and removes the temporary shortcut
+   automatically. **Clean up manually** remains available in Downbender as a fallback.
+
+Chrome resolves the shortcut to the extension bundled inside `Downbender.app`; no permanent
+installation folder remains in Downloads.
+
+The app registers its native-messaging helper automatically. The page overlay is deliberately
+singular: it appears only when a sufficiently large video is playing or its hover preview is
+advancing. Click Downbender's toolbar icon or use **Download with Downbender** in the context menu
+when a site uses a player the overlay cannot see.
 
 ## Build from source
 
