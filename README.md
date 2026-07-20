@@ -23,7 +23,7 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 - Works with YouTube — the most battle-tested path — and [many other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) supported by yt-dlp (support for non-YouTube sites is still maturing).
 - Download queue with per-item progress, pause/resume and cancel.
 - Clipboard detection: copy a video link anywhere, confirm, download.
-- Optional Chrome companion: an IDM-style button follows only the video currently playing or previewing, with toolbar and right-click fallbacks.
+- Optional Chrome extension for sending videos from the browser to Downbender.
 - Dock bounce and completion sound when a download finishes in the background.
 - Self-contained: yt-dlp, FFmpeg and Deno ship inside the app. Nothing to install.
 - One-click updater for the download engine (yt-dlp) in Settings.
@@ -65,7 +65,7 @@ row to reveal the file in Finder.
   **Settings → Downloader (yt-dlp) → Check for updates** to update the
   engine without reinstalling the app.
 
-### Chrome companion (manual install)
+### Chrome extension (manual install)
 
 No Chrome Web Store account is required. Open **Settings → Chrome extension** and click
 **Install Chrome Extension**. Downbender creates a temporary shortcut in Downloads and takes you

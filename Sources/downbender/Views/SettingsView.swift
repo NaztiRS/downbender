@@ -51,8 +51,8 @@ struct SettingsView: View {
             Section("Chrome extension") {
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("IDM-style browser button")
-                        Text("Appears only on the video currently playing or previewing")
+                        Text("Downbender Chrome extension")
+                        Text("Send videos from Chrome to Downbender")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } icon: {

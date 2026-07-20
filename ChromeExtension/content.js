@@ -196,6 +196,8 @@
 
   function isEligible(video, rect) {
     if (!video.isConnected || rect.width < MIN_WIDTH || rect.height < MIN_HEIGHT) return false;
+    // Live WebRTC feeds are calls, camera previews, or screen shares—not downloadable videos.
+    if (typeof MediaStream !== "undefined" && video.srcObject instanceof MediaStream) return false;
     if (visibleArea(rect) < MIN_WIDTH * MIN_HEIGHT * 0.35) return false;
     const style = getComputedStyle(video);
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) < 0.05) return false;
