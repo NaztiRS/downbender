@@ -6,17 +6,27 @@ struct FormatPanel: View {
     @Binding var destination: URL
     var onConfirm: (DownloadFormat, Bool) -> Void
     var onCancel: () -> Void
+    var onRemove: () -> Void
 
     @State private var selection: DownloadFormat?
     @State private var includeSubtitles = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("CHOOSE QUALITY")
-                    .font(.caption2.weight(.bold)).tracking(1.2)
-                    .foregroundStyle(Theme.accent)
-                Text(probe.title).font(.headline).lineLimit(2)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CHOOSE QUALITY")
+                        .font(.caption2.weight(.bold)).tracking(1.2)
+                        .foregroundStyle(Theme.accent)
+                    Text(probe.title).font(.headline).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("Remove from list")
             }
 
             Picker("Quality", selection: $selection) {

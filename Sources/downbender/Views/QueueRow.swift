@@ -56,41 +56,7 @@ struct QueueRow: View {
         .onTapGesture(perform: primaryAction)
         .help(helpText)
         .sheet(isPresented: $choosing) {
-            switch item.source {
-            case .media:
-                if let probe = item.probe {
-                    FormatPanel(
-                        probe: probe,
-                        destination: $model.destination,
-                        onConfirm: { format, includeSubtitles in
-                            model.choose(format, includeSubtitles: includeSubtitles, for: item)
-                            choosing = false
-                        },
-                        onCancel: { choosing = false }
-                    )
-                }
-            case .directFile(let info):
-                DirectConfirmPanel(
-                    title: item.title, info: info, isInsecureHTTP: model.isInsecureHTTP(item), destination: $model.destination,
-                    onDownload: {
-                        if model.isInsecureHTTP(item) { model.confirmInsecureHTTP(item) }
-                        model.confirmDirect(item); choosing = false
-                    },
-                    onCancel: { choosing = false }
-                )
-            case .ambiguous(let info):
-                DetectionPanel(
-                    title: item.title, info: info, probe: item.probe, isInsecureHTTP: model.isInsecureHTTP(item),
-                    destination: $model.destination,
-                    onProcessMedia: { model.processAmbiguousAsMedia(item); choosing = false },
-                    onChooseFormat: { fmt in model.choose(fmt, for: item); choosing = false },
-                    onDownloadAsFile: {
-                        if model.isInsecureHTTP(item) { model.confirmInsecureHTTP(item) }
-                        model.downloadAmbiguousAsFile(item); choosing = false
-                    },
-                    onCancel: { choosing = false }
-                )
-            }
+            chooserSheet
         }
         .confirmationDialog(
             "Delete “\(item.title)” permanently?",
@@ -109,6 +75,51 @@ struct QueueRow: View {
             Text("“\(item.title)” is no longer on disk. It may have been moved or deleted.")
         }
         .contextMenu { contextMenuItems }
+    }
+
+    @ViewBuilder private var chooserSheet: some View {
+        switch item.source {
+        case .media:
+            if let probe = item.probe {
+                FormatPanel(
+                    probe: probe,
+                    destination: $model.destination,
+                    onConfirm: { format, includeSubtitles in
+                        model.choose(format, includeSubtitles: includeSubtitles, for: item)
+                        choosing = false
+                    },
+                    onCancel: { choosing = false },
+                    onRemove: removeFromChooser
+                )
+            }
+        case .directFile(let info):
+            DirectConfirmPanel(
+                title: item.title, info: info, isInsecureHTTP: model.isInsecureHTTP(item), destination: $model.destination,
+                onDownload: {
+                    if model.isInsecureHTTP(item) { model.confirmInsecureHTTP(item) }
+                    model.confirmDirect(item); choosing = false
+                },
+                onCancel: { choosing = false }
+            )
+        case .ambiguous(let info):
+            DetectionPanel(
+                title: item.title, info: info, probe: item.probe, isInsecureHTTP: model.isInsecureHTTP(item),
+                destination: $model.destination,
+                onProcessMedia: { model.processAmbiguousAsMedia(item); choosing = false },
+                onChooseFormat: { fmt in model.choose(fmt, for: item); choosing = false },
+                onDownloadAsFile: {
+                    if model.isInsecureHTTP(item) { model.confirmInsecureHTTP(item) }
+                    model.downloadAmbiguousAsFile(item); choosing = false
+                },
+                onCancel: { choosing = false },
+                onRemove: removeFromChooser
+            )
+        }
+    }
+
+    private func removeFromChooser() {
+        choosing = false
+        model.remove(item)
     }
 
     // MARK: - Thumbnail
@@ -176,6 +187,7 @@ struct QueueRow: View {
             iconButton("xmark.circle.fill", .tertiary, "Remove from list") { model.remove(item) }
         case .readyToChoose:
             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+            iconButton("xmark.circle.fill", .tertiary, "Remove from list") { model.remove(item) }
         case .queued, .downloading:
             iconButton("pause.circle.fill", .secondary, "Pause") { model.queue.pause(item) }
             iconButton("xmark.circle.fill", .tertiary, "Cancel") { model.queue.cancel(item) }

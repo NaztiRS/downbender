@@ -14,16 +14,26 @@ struct DetectionPanel: View {
     var onChooseFormat: (DownloadFormat) -> Void // generic-extractor: user picked a quality
     var onDownloadAsFile: () -> Void
     var onCancel: () -> Void
+    var onRemove: () -> Void
 
     @State private var selection: DownloadFormat?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("HOW SHOULD WE DOWNLOAD THIS?")
-                    .font(.caption2.weight(.bold)).tracking(1.2)
-                    .foregroundStyle(Theme.accent)
-                Text(title).font(.headline).lineLimit(2)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("HOW SHOULD WE DOWNLOAD THIS?")
+                        .font(.caption2.weight(.bold)).tracking(1.2)
+                        .foregroundStyle(Theme.accent)
+                    Text(title).font(.headline).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("Remove from list")
             }
             if let probe, !probe.availableFormats.isEmpty {
                 Picker("Quality", selection: $selection) {
