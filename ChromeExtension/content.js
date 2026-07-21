@@ -26,6 +26,8 @@
   ].join(",");
   const videos = new Set();
   const playback = new WeakMap();
+  const dismissedVideos = new WeakSet();
+  const dismissedTargets = new Set();
 
   let activeVideo = null;
   let overlayHost = null;
@@ -89,15 +91,20 @@
     const shadow = overlayHost.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
-      button {
+      .control {
+        display: inline-flex;
+        position: relative;
+        pointer-events: auto;
+      }
+      .download {
         appearance: none;
         box-sizing: border-box;
         display: inline-flex;
         align-items: center;
-        gap: 7px;
-        height: 36px;
+        gap: 5px;
+        height: 30px;
         margin: 0;
-        padding: 4px 12px 4px 4px;
+        padding: 3px 10px 3px 3px;
         overflow: hidden;
         isolation: isolate;
         position: relative;
@@ -111,13 +118,13 @@
           inset 0 1px rgba(255, 255, 255, .1);
         color: white;
         cursor: pointer;
-        font: 600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         letter-spacing: .1px;
         pointer-events: auto;
         white-space: nowrap;
         transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
       }
-      button:hover {
+      .download:hover {
         border-color: rgba(166, 230, 255, .9);
         background: rgba(8, 29, 52, .97);
         box-shadow:
@@ -125,33 +132,64 @@
           0 0 0 1px rgba(45, 176, 237, .16);
         transform: translateY(-1px);
       }
-      button:active { transform: translateY(0) scale(.98); }
+      .download:active { transform: translateY(0) scale(.98); }
       .mark {
         display: grid;
         flex: 0 0 auto;
-        width: 28px;
-        height: 28px;
+        width: 22px;
+        height: 22px;
         place-items: center;
         border-radius: 50%;
         filter: drop-shadow(0 1px 3px rgba(75, 194, 255, .3));
       }
       .mark img {
         display: block;
-        width: 28px;
-        height: 28px;
+        width: 22px;
+        height: 22px;
         object-fit: contain;
       }
-      button[data-state="sending"] .mark img { animation: pulse 650ms ease-in-out infinite alternate; }
-      button[data-state="sent"] { border-color: rgba(74, 222, 128, .9); }
-      button[data-state="error"] { border-color: rgba(248, 113, 113, .95); }
+      .download[data-state="sending"] .mark img { animation: pulse 650ms ease-in-out infinite alternate; }
+      .download[data-state="sent"] { border-color: rgba(74, 222, 128, .9); }
+      .download[data-state="error"] { border-color: rgba(248, 113, 113, .95); }
+      .dismiss {
+        appearance: none;
+        box-sizing: border-box;
+        display: grid;
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        width: 17px;
+        height: 17px;
+        margin: 0;
+        padding: 0 0 1px;
+        place-items: center;
+        border: 1px solid rgba(137, 218, 255, .62);
+        border-radius: 50%;
+        background: rgba(5, 18, 34, .98);
+        box-shadow: 0 2px 7px rgba(0, 0, 0, .48);
+        color: rgba(255, 255, 255, .9);
+        cursor: pointer;
+        font: 700 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        pointer-events: auto;
+        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+      }
+      .dismiss:hover {
+        border-color: rgba(255, 255, 255, .9);
+        background: rgba(24, 53, 79, .99);
+        transform: scale(1.08);
+      }
+      .dismiss:active { transform: scale(.94); }
       @keyframes pulse { to { transform: translateY(2px); filter: brightness(1.2); } }
       @media (prefers-reduced-motion: reduce) {
-        button { transition: none; }
-        button[data-state="sending"] .mark img { animation: none; }
+        .download, .dismiss { transition: none; }
+        .download[data-state="sending"] .mark img { animation: none; }
       }
     `;
 
+    const control = document.createElement("div");
+    control.className = "control";
     overlayButton = document.createElement("button");
+    overlayButton.className = "download";
     overlayButton.type = "button";
     overlayButton.title = "Download this video with Downbender";
     overlayButton.setAttribute("aria-label", "Download this video with Downbender");
@@ -164,12 +202,20 @@
     overlayText = document.createElement("span");
     overlayText.textContent = "Download";
     overlayButton.append(mark, overlayText);
-    shadow.append(style, overlayButton);
+    const dismissButton = document.createElement("button");
+    dismissButton.className = "dismiss";
+    dismissButton.type = "button";
+    dismissButton.textContent = "×";
+    dismissButton.title = "Hide for this video until the page reloads";
+    dismissButton.setAttribute("aria-label", "Hide for this video until the page reloads");
+    control.append(overlayButton, dismissButton);
+    shadow.append(style, control);
     document.documentElement.append(overlayHost);
 
-    overlayButton.addEventListener("pointerenter", () => { overlayHovered = true; });
-    overlayButton.addEventListener("pointerleave", () => { overlayHovered = false; });
+    control.addEventListener("pointerenter", () => { overlayHovered = true; });
+    control.addEventListener("pointerleave", () => { overlayHovered = false; });
     overlayButton.addEventListener("click", sendActiveVideo);
+    dismissButton.addEventListener("click", dismissActiveVideo);
   }
 
   function mountOverlayForFullscreen() {
@@ -213,6 +259,7 @@
     const playing = !video.paused && !video.ended && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
     const hoveredPreview = isPointerInside(rect) && now - state.lastAdvancedAt < ACTIVE_GRACE_MS;
     if (!playing && !hoveredPreview && !(overlayHovered && video === activeVideo)) return null;
+    if (isDismissed(video)) return null;
 
     let score = playing ? 10_000 : 4_000;
     if (isPointerInside(rect)) score += 3_000;
@@ -226,8 +273,8 @@
   function positionOverlay(video) {
     ensureOverlay();
     const rect = video.getBoundingClientRect();
-    const width = overlayButton.offsetWidth || 126;
-    const height = overlayButton.offsetHeight || 38;
+    const width = overlayButton.offsetWidth || 104;
+    const height = overlayButton.offsetHeight || 30;
     const left = Math.max(8, Math.min(innerWidth - width - 8, rect.right - width - 10));
     const top = Math.max(8, Math.min(innerHeight - height - 8, rect.top + 10));
     overlayHost.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
@@ -373,6 +420,48 @@
     const canonical = document.querySelector("link[rel='canonical'][href]")?.href;
     if (canonical && /^https?:/i.test(canonical)) return canonicalDownloadURL(canonical);
     return canonicalDownloadURL(location.href);
+  }
+
+  function dismissalKeyFor(video) {
+    const youtube = youtubeCardURL(video);
+    if (youtube) return `youtube:${youtube}`;
+
+    const enclosingLink = video.closest("a[href]");
+    if (enclosingLink?.href && /^https?:/i.test(enclosingLink.href)) {
+      return `link:${canonicalDownloadURL(enclosingLink.href)}`;
+    }
+
+    const mediaURL = video.currentSrc || video.src;
+    if (/^https?:/i.test(mediaURL)) return `media:${mediaURL}`;
+    return null;
+  }
+
+  function isDismissed(video) {
+    if (dismissedVideos.has(video)) return true;
+    if (dismissedTargets.size === 0) return false;
+    const key = dismissalKeyFor(video);
+    return Boolean(key && dismissedTargets.has(key));
+  }
+
+  function dismissActiveVideo(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const video = activeVideo;
+    if (!video) return;
+
+    const key = dismissalKeyFor(video);
+    if (key) dismissedTargets.add(key);
+    else dismissedVideos.add(video);
+
+    clearTimeout(feedbackTimer);
+    feedbackTimer = null;
+    overlayButton.dataset.state = "";
+    overlayText.textContent = "Download";
+    overlayButton.title = "Download this video with Downbender";
+    overlayHovered = false;
+    activeVideo = null;
+    overlayHost.style.display = "none";
+    evaluate(true);
   }
 
   function setFeedback(state, text, title) {

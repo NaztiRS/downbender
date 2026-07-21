@@ -14,7 +14,7 @@ Click **Install Chrome Extension** in Downbender. After the app takes you to Chr
 
 The floating control is deliberately singular: it appears only over the video that is playing
 or whose hover preview is advancing. Toolbar and context-menu actions remain available as
-fallbacks.
+fallbacks. Its close button hides the control for that video until the page reloads.
 
 The floating control is disabled on live meeting surfaces such as Google Meet, Microsoft Teams,
 Zoom Web App, Webex web meetings, Jitsi Meet, and Whereby. Live WebRTC video streams are also
