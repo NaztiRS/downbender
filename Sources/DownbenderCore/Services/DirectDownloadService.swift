@@ -46,8 +46,10 @@ public struct DirectDownloadService: Sendable {
         suggestedName: String? = nil,
         maxBytes: Int64? = nil,
         allowInsecureHTTP: Bool = false,
+        resumeData: Data? = nil,
         session: URLSession = makeSession(),
-        onProgress: @Sendable @escaping (DownloadProgress) -> Void
+        onProgress: @Sendable @escaping (DownloadProgress) -> Void,
+        onResumeData: (@Sendable (Data) -> Void)? = nil
     ) async throws -> URL {
         guard let parsed = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw DirectDownloadError.invalidURL
@@ -55,8 +57,40 @@ public struct DirectDownloadService: Sendable {
         let scheme = parsed.scheme?.lowercased()
         if scheme == "http", !allowInsecureHTTP { throw DirectDownloadError.insecureScheme }
         guard scheme == "https" || scheme == "http" else { throw DirectDownloadError.invalidURL }
-        let delegate = DirectProgressDelegate(onProgress: onProgress)
-        let (tmpURL, response) = try await session.download(from: parsed, delegate: delegate)
+
+        // Resume data must be a property-list DICTIONARY (URLSession's format); anything else
+        // raises an ObjC exception inside downloadTask(withResumeData:) — even a bare string
+        // parses as a legacy plist — so validate the shape and fall back to a fresh download.
+        let usableResumeData = resumeData.flatMap { data in
+            ((try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any]) != nil
+                ? data : nil
+        }
+        let (tmpURL, response): (URL, URLResponse)
+        if let usableResumeData {
+            do {
+                (tmpURL, response) = try await Self.perform(
+                    task: session.downloadTask(withResumeData: usableResumeData),
+                    tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Stale or server-rejected resume data: restart from scratch instead of failing.
+                (tmpURL, response) = try await Self.perform(
+                    task: session.downloadTask(with: parsed),
+                    tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData
+                )
+            }
+        } else {
+            (tmpURL, response) = try await Self.perform(
+                task: session.downloadTask(with: parsed),
+                tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData
+            )
+        }
+        // Never leak the body: every early throw below leaves the temp file cleaned up.
+        var delivered = false
+        defer { if !delivered { try? FileManager.default.removeItem(at: tmpURL) } }
+
         let http = response as? HTTPURLResponse
         let status = http?.statusCode ?? -1
         if status == 401 || status == 403 { throw DirectDownloadError.accessDenied }
@@ -66,10 +100,7 @@ public struct DirectDownloadService: Sendable {
             let observed = Int64((try? tmpURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
             let expected = http?.expectedContentLength ?? -1
             let effective = observed > 0 ? observed : max(expected, 0)
-            if effective > maxBytes {
-                try? FileManager.default.removeItem(at: tmpURL)
-                throw DirectDownloadError.fileTooLarge(maxBytes)
-            }
+            if effective > maxBytes { throw DirectDownloadError.fileTooLarge(maxBytes) }
         }
 
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
@@ -77,13 +108,31 @@ public struct DirectDownloadService: Sendable {
         let candidate = destination.appendingPathComponent(name)
         // Defense in depth: even after sanitization, confirm the resolved path stays inside destination.
         guard candidate.standardizedFileURL.path.hasPrefix(destination.standardizedFileURL.path + "/") else {
-            try? FileManager.default.removeItem(at: tmpURL)
             throw DirectDownloadError.invalidURL
         }
         let finalURL = Self.deDuplicated(candidate)
         _ = try FileManager.default.replaceItemAt(finalURL, withItemAt: tmpURL)
+        delivered = true
         Self.markQuarantined(finalURL)
         return finalURL
+    }
+
+    static func perform(
+        task: URLSessionDownloadTask,
+        tmpDirectory: URL,
+        onProgress: @Sendable @escaping (DownloadProgress) -> Void,
+        onResumeData: (@Sendable (Data) -> Void)?
+    ) async throws -> (URL, URLResponse) {
+        let executor = DirectDownloadExecutor(tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData)
+        task.delegate = executor
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                executor.begin(continuation: continuation, task: task)
+            }
+        } onCancel: {
+            // Resume data (when the server supports ranges) lands via didCompleteWithError's userInfo.
+            task.cancel(byProducingResumeData: { _ in })
+        }
     }
 
     /// Issues a HEAD to learn size/name/type BEFORE downloading (drives the mini-confirmation).
@@ -170,21 +219,84 @@ public struct DirectDownloadService: Sendable {
     }
 }
 
-/// Translates URLSession byte callbacks into a DownloadProgress. Speed/ETA are derived from
-/// deltas (URLSession supplies neither); an unknown total yields an indeterminate fraction.
-final class DirectProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    let onProgress: @Sendable (DownloadProgress) -> Void
-    init(onProgress: @escaping @Sendable (DownloadProgress) -> Void) { self.onProgress = onProgress }
+/// Delegate bridge for a manually-driven URLSessionDownloadTask. The async
+/// `session.download(from:)` API can neither produce resume data on cancel nor choose where
+/// the temp file lives; driving the task by hand fixes both. The finished file is moved into
+/// tmpDirectory synchronously inside the callback (the system location dies on return).
+final class DirectDownloadExecutor: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private let tmpDirectory: URL
+    private let onProgress: @Sendable (DownloadProgress) -> Void
+    private let onResumeData: (@Sendable (Data) -> Void)?
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var movedURL: URL?
+
+    init(
+        tmpDirectory: URL,
+        onProgress: @escaping @Sendable (DownloadProgress) -> Void,
+        onResumeData: (@Sendable (Data) -> Void)?
+    ) {
+        self.tmpDirectory = tmpDirectory
+        self.onProgress = onProgress
+        self.onResumeData = onResumeData
+    }
+
+    func begin(continuation: CheckedContinuation<(URL, URLResponse), Error>, task: URLSessionDownloadTask) {
+        lock.lock()
+        self.continuation = continuation
+        lock.unlock()
+        task.resume()
+    }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                     totalBytesExpectedToWrite: Int64) {
-        let fraction = totalBytesExpectedToWrite > 0
-            ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0
-        onProgress(DownloadProgress(fraction: fraction, speedText: "", etaText: "",
-                                    downloadedBytes: totalBytesWritten,
-                                    totalBytes: totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil))
+        let known = totalBytesExpectedToWrite > 0
+        // Unknown total → totalBytes nil, NOT a frozen 0%: the UI shows an indeterminate bar.
+        onProgress(DownloadProgress(
+            fraction: known ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : 0,
+            speedText: "", etaText: "",
+            downloadedBytes: totalBytesWritten,
+            totalBytes: known ? totalBytesExpectedToWrite : nil
+        ))
     }
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
-                    didFinishDownloadingTo location: URL) {}
+                    didResumeAtOffset fileOffset: Int64, expectedTotalBytes: Int64) {}
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
+                    didFinishDownloadingTo location: URL) {
+        try? FileManager.default.createDirectory(at: tmpDirectory, withIntermediateDirectories: true)
+        let moved = tmpDirectory.appendingPathComponent("direct-\(UUID().uuidString).tmp")
+        do {
+            try FileManager.default.moveItem(at: location, to: moved)
+            lock.lock()
+            movedURL = moved
+            lock.unlock()
+        } catch {
+            // movedURL stays nil → didCompleteWithError reports the failure.
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        let moved = movedURL
+        lock.unlock()
+        if let error {
+            if let resume = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+                onResumeData?(resume)
+            }
+            if (error as? URLError)?.code == .cancelled {
+                continuation?.resume(throwing: CancellationError())
+            } else {
+                continuation?.resume(throwing: error)
+            }
+        } else if let moved, let response = task.response {
+            continuation?.resume(returning: (moved, response))
+        } else {
+            continuation?.resume(throwing: URLError(.cannotWriteToFile))
+        }
+    }
 }
