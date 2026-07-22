@@ -9,6 +9,12 @@ public final class QueueViewModel {
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private let perform: @MainActor (DownloadItem) async -> Void
 
+    /// Fired after every mutation that changes the item list or an item's scheduling —
+    /// AppModel hangs queue persistence off this.
+    public var onMutation: (@MainActor () -> Void)?
+
+    public var hasLiveTasks: Bool { !tasks.isEmpty }
+
     public init(maxConcurrent: Int = 2, perform: @escaping @MainActor (DownloadItem) async -> Void) {
         self.maxConcurrent = maxConcurrent
         self.perform = perform
@@ -17,17 +23,20 @@ public final class QueueViewModel {
     public func enqueue(_ item: DownloadItem) {
         items.append(item)
         pump()
+        onMutation?()
     }
 
     /// Adds the card WITHOUT starting a download: items being probed or awaiting a quality pick.
     public func add(_ item: DownloadItem) {
         items.append(item)
+        onMutation?()
     }
 
     public func start(_ item: DownloadItem) {
         guard item.state == .readyToChoose, item.format != nil else { return }
         item.state = .queued
         pump()
+        onMutation?()
     }
 
     /// Starts a direct/ambiguous item (no format). The card was already added at detection time,
@@ -36,12 +45,14 @@ public final class QueueViewModel {
         guard item.state == .readyToChoose, item.source != .media else { return }
         item.state = .queued
         pump()
+        onMutation?()
     }
 
     public func remove(_ item: DownloadItem) {
         tasks[item.id]?.cancel()
         tasks[item.id] = nil
         items.removeAll { $0.id == item.id }
+        onMutation?()
     }
 
     public func cancel(_ item: DownloadItem) {
@@ -51,6 +62,7 @@ public final class QueueViewModel {
         default:
             tasks[item.id]?.cancel()
         }
+        onMutation?()
     }
 
     /// Pause: terminates the process but leaves the item resumable (yt-dlp continues the .part files).
@@ -65,6 +77,14 @@ public final class QueueViewModel {
         default:
             break
         }
+        onMutation?()
+    }
+
+    /// Pauses everything queued or running (the quit flow uses this before terminating).
+    public func pauseAllActive() {
+        for item in items where item.state == .queued || item.state == .downloading || item.state == .merging {
+            pause(item)
+        }
     }
 
     public func resume(_ item: DownloadItem) {
@@ -73,6 +93,7 @@ public final class QueueViewModel {
         item.etaText = ""
         item.state = .queued
         pump()
+        onMutation?()
     }
 
     public func retry(_ item: DownloadItem) {
@@ -85,6 +106,7 @@ public final class QueueViewModel {
             item.deliveredMismatch = false
             item.state = .queued
             pump()
+            onMutation?()
         default:
             break
         }
@@ -106,6 +128,7 @@ public final class QueueViewModel {
                 await perform(next)
                 activeCount -= 1
                 tasks[next.id] = nil
+                onMutation?()
                 pump()
             }
             tasks[next.id] = task

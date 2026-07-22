@@ -43,6 +43,7 @@ public final class AppModel {
     private let runner: ProcessRunning
     private let defaults: UserDefaults
     private let notifier: CompletionNotifying?
+    private let queuePersistence: QueuePersistence
 
     public init(
         binaries: BundledBinaries,
@@ -63,6 +64,7 @@ public final class AppModel {
         self.defaults = defaults
         self.notifier = notifier
         self.cookiesBrowser = cookiesBrowser
+        self.queuePersistence = QueuePersistence(fileURL: appSupportDirectory.appendingPathComponent("queue.json"))
         self.probe = ProbeService(runner: runner, ytdlpURL: binaries.ytdlp, denoURL: binaries.deno)
         let download = DownloadService(
             runner: runner, ytdlpURL: binaries.ytdlp, ffmpegDirectory: binaries.ffmpegDirectory,
@@ -92,6 +94,38 @@ public final class AppModel {
             }
         })
         self.showTerms = (defaults.string(forKey: Self.termsAcceptedKey) != Self.currentTermsVersion)
+        self.queue.onMutation = { [weak self] in self?.queueDidMutate() }
+    }
+
+    func queueDidMutate() {
+        queuePersistence.scheduleSave(queue.items)
+    }
+
+    /// Writes the queue synchronously — the quit flow's last word.
+    public func saveQueueNow() {
+        queuePersistence.saveNow(queue.items)
+    }
+
+    /// Rehydrates the persisted queue (interrupted work paused, probes re-run). Called once
+    /// from the app at launch — NOT from init, so tests opt in explicitly.
+    public func restoreQueue() {
+        for persisted in queuePersistence.load() {
+            let item = persisted.makeItem()
+            queue.add(item)
+            if item.state == .probing { runProbe(for: item) }
+        }
+        queueDidMutate()
+    }
+
+    /// Pause-everything + final save; the app delegate awaits this before quitting so no
+    /// yt-dlp/ffmpeg child outlives the app.
+    public func prepareForTermination() async {
+        queue.pauseAllActive()
+        let deadline = ContinuousClock.now + .seconds(3)
+        while queue.hasLiveTasks, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        saveQueueNow()
     }
 
     /// Delay between silent probe retries on transient failures (tests shrink it).
@@ -197,9 +231,11 @@ public final class AppModel {
                             item.source = .ambiguous(DirectFileInfo(suggestedName: URL(string: item.url)?.lastPathComponent))
                         }
                         item.state = .readyToChoose
+                        self?.queueDidMutate()
                     case .playlist(let playlist):
                         guard !playlist.entries.isEmpty else {
                             item.state = .probeFailed("Playlist is empty.")
+                            self?.queueDidMutate()
                             return
                         }
                         // The probing card becomes the playlist panel: one choice for all entries.
@@ -225,14 +261,17 @@ public final class AppModel {
                             item.source = .directFile(info)
                             if let name = info.suggestedName { item.title = name }
                             item.state = .readyToChoose
+                            queueDidMutate()
                             return
                         }
                         // Reachable but a web page (or other non-file): a clear message beats yt-dlp's raw error.
                         item.state = .probeFailed("This looks like a web page, not a video or a downloadable file.")
+                        queueDidMutate()
                         return
                     }
                     guard !Task.isCancelled else { return }
                     item.state = .probeFailed(error.localizedDescription)
+                    queueDidMutate()
                     return
                 }
             }
