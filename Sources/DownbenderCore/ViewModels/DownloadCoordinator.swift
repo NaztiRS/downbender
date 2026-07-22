@@ -81,17 +81,7 @@ public final class DownloadCoordinator {
                     return
                 }
                 let message = error.localizedDescription
-                let lower = message.lowercased()
-                let isForbidden = message.contains("403") || lower.contains("forbidden")
-                // A transient DNS failure — the ephemeral googlevideo CDN host momentarily won't
-                // resolve (often a blip through a VPN/mesh resolver) — clears on a FRESH invocation
-                // that re-extracts a healthy host, so retry it silently, exactly like the 403.
-                let isTransientDNS = lower.contains("failed to resolve")
-                    || lower.contains("nodename nor servname")
-                    || lower.contains("temporary failure in name resolution")
-                    || lower.contains("name or service not known")
-                    || lower.contains("getaddrinfo")
-                if (isForbidden || isTransientDNS) && attempt < maxAttempts {
+                if TransientFailure.isTransient(error), attempt < maxAttempts {
                     // Reset progress AND state: the failed attempt may have reached .merging, and without
                     // returning to .downloading the hop guards would discard all of the retry's progress.
                     item.state = .downloading
