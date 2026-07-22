@@ -3,6 +3,7 @@ import DownbenderCore
 
 struct FormatPanel: View {
     let probe: ProbeResult
+    var preferred: DownloadFormat?
     @Binding var destination: URL
     var onConfirm: (DownloadFormat, Bool) -> Void
     var onCancel: () -> Void
@@ -80,10 +81,11 @@ struct FormatPanel: View {
         .frame(width: 430)
         .background(Theme.wash)
         .onAppear {
-            selection = probe.availableFormats.first(where: {
-                if case .video(let h) = $0 { return h <= 1080 }
-                return false
-            }) ?? probe.availableFormats.first
+            selection = preferred.flatMap { probe.closestMatch(to: $0) }
+                ?? probe.availableFormats.first(where: {
+                    if case .video(let h) = $0 { return h <= 1080 }
+                    return false
+                }) ?? probe.availableFormats.first
         }
     }
 

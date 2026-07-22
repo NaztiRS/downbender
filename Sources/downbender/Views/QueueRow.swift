@@ -84,6 +84,7 @@ struct QueueRow: View {
             if let probe = item.probe {
                 FormatPanel(
                     probe: probe,
+                    preferred: model.defaultQuality,
                     destination: $model.destination,
                     onConfirm: { format, includeSubtitles in
                         model.choose(format, includeSubtitles: includeSubtitles, for: item)

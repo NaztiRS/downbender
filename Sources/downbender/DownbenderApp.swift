@@ -61,6 +61,18 @@ struct DownbenderApp: App {
             // Dark mode only, by design decision.
             .preferredColorScheme(.dark)
         }
+        .commands {
+            CommandGroup(after: .pasteboard) {
+                Button("Paste and Download") {
+                    // The delegate holds the model (wired in prepareModel); commands closures
+                    // don't observe @State reliably, the delegate reference is always current.
+                    guard let model = appDelegate.model,
+                          let text = NSPasteboard.general.string(forType: .string) else { return }
+                    for url in URLBatch.split(text) { model.addURL(url) }
+                }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+            }
+        }
         Settings {
             if let model {
                 SettingsView(model: model)

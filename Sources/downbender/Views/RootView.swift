@@ -100,11 +100,12 @@ struct RootView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
     }
 
-    /// Never blocks: the card appears instantly and the probe runs in the background.
+    /// Never blocks: cards appear instantly and probes run in the background. Pasting a
+    /// list of links enqueues every one of them.
     private func submit() {
-        let url = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !url.isEmpty else { return }
+        let urls = URLBatch.split(urlText)
+        guard !urls.isEmpty else { return }
         urlText = ""
-        model.addURL(url)
+        for url in urls { model.addURL(url) }
     }
 }
