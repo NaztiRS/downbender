@@ -87,6 +87,31 @@ public final class QueueViewModel {
         }
     }
 
+    /// True when the list holds anything a "Clear finished" would remove.
+    public var hasSettledItems: Bool {
+        items.contains { isSettled($0) }
+    }
+
+    /// Removes every settled item (done / failed / cancelled). Active, queued, paused and
+    /// choosing items are never touched — retry a failure BEFORE clearing if you want it.
+    public func clearSettled() {
+        let settled = items.filter { isSettled($0) }
+        guard !settled.isEmpty else { return }
+        for entry in settled {
+            tasks[entry.id]?.cancel()
+            tasks[entry.id] = nil
+        }
+        items.removeAll { entry in settled.contains(where: { $0.id == entry.id }) }
+        onMutation?()
+    }
+
+    private func isSettled(_ item: DownloadItem) -> Bool {
+        switch item.state {
+        case .done, .failed, .cancelled: return true
+        default: return false
+        }
+    }
+
     public func resume(_ item: DownloadItem) {
         guard item.state == .paused else { return }
         item.speedText = ""
