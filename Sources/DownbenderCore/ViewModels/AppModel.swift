@@ -3,8 +3,16 @@ import Observation
 
 @MainActor @Observable
 public final class AppModel {
-    public var destination: URL
-    public var maxConcurrent: Int = 2
+    public static let destinationKey = "destinationPath"
+    /// Where downloads land. Persisted; a vanished folder falls back to the init parameter.
+    public var destination: URL {
+        didSet { defaults.set(destination.path, forKey: Self.destinationKey) }
+    }
+
+    public static let maxConcurrentKey = "maxConcurrent"
+    public var maxConcurrent: Int = 2 {
+        didSet { defaults.set(maxConcurrent, forKey: Self.maxConcurrentKey) }
+    }
     /// Drives the first-run terms sheet; observable so the UI reacts (termsAccepted is defaults-backed).
     public var showTerms: Bool = false
     /// Set by the "Update" banner so that opening Settings auto-runs the update check (saves a click).
@@ -56,7 +64,16 @@ public final class AppModel {
         defaults: UserDefaults = .standard,
         directSessionFactory: @escaping @Sendable () -> URLSession = { DirectDownloadService.makeSession() }
     ) {
-        self.destination = destination
+        // Observers don't fire during init: restoring persisted values writes nothing back.
+        var isDirectory: ObjCBool = false
+        if let savedPath = defaults.string(forKey: Self.destinationKey),
+           FileManager.default.fileExists(atPath: savedPath, isDirectory: &isDirectory), isDirectory.boolValue {
+            self.destination = URL(fileURLWithPath: savedPath)
+        } else {
+            self.destination = destination
+        }
+        let savedConcurrent = defaults.integer(forKey: Self.maxConcurrentKey)
+        if (1...4).contains(savedConcurrent) { self.maxConcurrent = savedConcurrent }
         self.tmpDirectory = tmpDirectory
         self.appSupportDirectory = appSupportDirectory
         self.ytdlpURL = binaries.ytdlp
