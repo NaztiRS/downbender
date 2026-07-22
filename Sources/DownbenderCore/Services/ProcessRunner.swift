@@ -48,7 +48,7 @@ public struct ProcessRunner: ProcessRunning {
 }
 
 /// Thread-safe stderr buffer with a blocking wait for EOF so the content is complete before reading.
-private final class StderrAccumulator: @unchecked Sendable {
+final class StderrAccumulator: @unchecked Sendable {
     private let lock = NSLock()
     private var data = Data()
     private let doneSemaphore = DispatchSemaphore(value: 0)
@@ -63,8 +63,10 @@ private final class StderrAccumulator: @unchecked Sendable {
         doneSemaphore.signal()
     }
 
-    func waitUntilDone() {
-        doneSemaphore.wait()
+    /// Bounded: if the EOF callback never fires (an orphaned grandchild can hold the pipe
+    /// open after the child exits), return with what we have instead of hanging forever.
+    func waitUntilDone(timeout: TimeInterval = 2) {
+        _ = doneSemaphore.wait(timeout: .now() + timeout)
     }
 
     var text: String {

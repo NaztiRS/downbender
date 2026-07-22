@@ -46,3 +46,14 @@ final class LineSink: @unchecked Sendable {
     let result = try await task.value
     #expect(result.exitCode != 0)   // terminated by signal, not exit 0
 }
+
+@Test func stderrAccumulatorWaitReturnsWithoutEOF() {
+    // A child that leaves an orphan holding the stderr pipe never delivers EOF; the
+    // bounded wait must return anyway with whatever was buffered.
+    let accumulator = StderrAccumulator()
+    accumulator.append(Data("partial stderr".utf8))
+    let start = ContinuousClock.now
+    accumulator.waitUntilDone(timeout: 0.2)
+    #expect(ContinuousClock.now - start < .seconds(2))
+    #expect(accumulator.text == "partial stderr")
+}
