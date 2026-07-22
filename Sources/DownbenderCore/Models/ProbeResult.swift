@@ -50,3 +50,25 @@ public extension ProbeResult {
         }
     }
 }
+
+public extension ProbeResult {
+    /// The listed format closest to `preferred`, mirroring the download selector's `height<=H`
+    /// fallback: exact or tallest below the request, else the lowest listed video, else MP3
+    /// when it's the only offer. nil when nothing is listed (caller shows the panel).
+    func closestMatch(to preferred: DownloadFormat) -> DownloadFormat? {
+        switch preferred {
+        case .audioMP3:
+            return .audioMP3
+        case .video(let requested):
+            let heights = availableFormats.compactMap { fmt -> Int? in
+                guard case .video(let h) = fmt else { return nil }
+                return h
+            }
+            if heights.isEmpty {
+                return availableFormats.contains(.audioMP3) ? .audioMP3 : nil
+            }
+            let below = heights.filter { $0 <= requested }
+            return .video(height: below.max() ?? heights.min()!)
+        }
+    }
+}

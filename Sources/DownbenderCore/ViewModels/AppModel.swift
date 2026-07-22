@@ -26,6 +26,20 @@ public final class AppModel {
         }
     }
 
+    public static let defaultQualityKey = "defaultQuality"
+    /// Pre-selected quality for the chooser; with one-click on, confirmed videos skip the panel.
+    public var defaultQuality: DownloadFormat? {
+        didSet {
+            if let defaultQuality { defaults.set(defaultQuality.id, forKey: Self.defaultQualityKey) }
+            else { defaults.removeObject(forKey: Self.defaultQualityKey) }
+        }
+    }
+
+    public static let oneClickKey = "oneClickDownload"
+    public var oneClickDownload: Bool = false {
+        didSet { defaults.set(oneClickDownload, forKey: Self.oneClickKey) }
+    }
+
     public static let termsAcceptedKey = "termsAcceptedVersion"
     public static let currentTermsVersion = "1"
     /// True once the user accepted the current terms version. Backed by the injected defaults.
@@ -74,6 +88,8 @@ public final class AppModel {
         }
         let savedConcurrent = defaults.integer(forKey: Self.maxConcurrentKey)
         if (1...4).contains(savedConcurrent) { self.maxConcurrent = savedConcurrent }
+        self.defaultQuality = defaults.string(forKey: Self.defaultQualityKey).flatMap(DownloadFormat.init(id:))
+        self.oneClickDownload = defaults.bool(forKey: Self.oneClickKey)
         self.tmpDirectory = tmpDirectory
         self.appSupportDirectory = appSupportDirectory
         self.ytdlpURL = binaries.ytdlp
@@ -263,6 +279,13 @@ public final class AppModel {
                         }
                         item.state = .readyToChoose
                         self?.queueDidMutate()
+                        // One-click: a CONFIRMED video (never generic/ambiguous) with a default
+                        // quality set skips the chooser and goes straight to the queue.
+                        if let self, self.oneClickDownload, !result.isGeneric,
+                           let preferred = self.defaultQuality,
+                           let format = result.closestMatch(to: preferred) {
+                            self.choose(format, for: item)
+                        }
                     case .playlist(let playlist):
                         guard !playlist.entries.isEmpty else {
                             item.state = .probeFailed("Playlist is empty.")
