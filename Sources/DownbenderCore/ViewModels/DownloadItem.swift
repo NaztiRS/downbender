@@ -55,8 +55,11 @@ public final class DownloadItem: Identifiable {
     public var deliveredFileURL: URL?
 
     public var source: Source = .media
-    /// Reserved for real HTTP pause/resume (fase 2); unused in v1.
+    /// URLSession resume data captured when a direct download is paused/interrupted;
+    /// persisted so a relaunch can continue where it left off.
     public var resumeData: Data?
+    /// True while a direct download's server never declared a total size (indeterminate bar).
+    public var indeterminateProgress: Bool = false
 
     public init(
         url: String,

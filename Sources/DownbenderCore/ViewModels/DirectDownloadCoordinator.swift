@@ -6,15 +6,18 @@ import Foundation
 public final class DirectDownloadCoordinator {
     let service: DirectDownloadService
     let maxBytes: Int64?
+    let retryDelay: Duration
     let sessionFactory: @Sendable () -> URLSession
 
     public init(
         service: DirectDownloadService,
         maxBytes: Int64?,
+        retryDelay: Duration = .seconds(3),
         sessionFactory: @escaping @Sendable () -> URLSession = { DirectDownloadService.makeSession() }
     ) {
         self.service = service
         self.maxBytes = maxBytes
+        self.retryDelay = retryDelay
         self.sessionFactory = sessionFactory
     }
 
@@ -30,26 +33,56 @@ public final class DirectDownloadCoordinator {
             case .media: return nil
             }
         }()
-        let session = sessionFactory()
-        do {
-            let delivered = try await service.download(
-                url: item.url, destination: item.destination, tmpDirectory: tmpDirectory,
-                suggestedName: suggested, maxBytes: maxBytes, allowInsecureHTTP: allowInsecureHTTP, session: session,
-                onProgress: { progress in
-                    Task { @MainActor in
-                        if item.state == .downloading {
-                            item.fraction = progress.fraction
-                            item.speedText = progress.speedText
-                            item.etaText = progress.etaText
+        // Same shape as DownloadCoordinator: transient network blips get fresh attempts.
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            let session = sessionFactory()
+            do {
+                let delivered = try await service.download(
+                    url: item.url, destination: item.destination, tmpDirectory: tmpDirectory,
+                    suggestedName: suggested, maxBytes: maxBytes, allowInsecureHTTP: allowInsecureHTTP,
+                    resumeData: item.resumeData, session: session,
+                    onProgress: { progress in
+                        Task { @MainActor in
+                            if item.state == .downloading {
+                                item.indeterminateProgress = progress.totalBytes == nil
+                                item.fraction = progress.fraction
+                                item.speedText = progress.speedText
+                                item.etaText = progress.etaText
+                            }
                         }
+                    },
+                    onResumeData: { data in
+                        // Captured on pause/interruption; resume() hands it back to URLSession.
+                        Task { @MainActor in item.resumeData = data }
                     }
+                )
+                item.resumeData = nil
+                item.indeterminateProgress = false
+                item.deliveredFileURL = delivered
+                if Task.isCancelled { finishInterrupted(item) } else { item.state = .done }
+                return
+            } catch {
+                item.indeterminateProgress = false
+                if Task.isCancelled || error is CancellationError {
+                    finishInterrupted(item)
+                    // A real cancel discards the partial transfer; only pause keeps resume data.
+                    if item.state == .cancelled { item.resumeData = nil }
+                    return
                 }
-            )
-            item.deliveredFileURL = delivered
-            if Task.isCancelled { finishInterrupted(item) } else { item.state = .done }
-        } catch {
-            if Task.isCancelled { finishInterrupted(item); return }
-            item.state = .failed(error.localizedDescription)
+                item.resumeData = nil
+                if let urlError = error as? URLError,
+                   TransientFailure.transientURLCodes.contains(urlError.code), attempt < maxAttempts {
+                    item.fraction = 0
+                    item.speedText = ""
+                    item.etaText = ""
+                    try? await Task.sleep(for: retryDelay)
+                    if Task.isCancelled { finishInterrupted(item); return }
+                    continue
+                }
+                item.state = .failed(error.localizedDescription)
+                return
+            }
         }
     }
 
