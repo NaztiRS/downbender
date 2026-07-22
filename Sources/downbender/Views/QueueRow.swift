@@ -198,7 +198,7 @@ struct QueueRow: View {
             iconButton("play.circle.fill", .tint, "Resume") { model.queue.resume(item) }
             iconButton("xmark.circle.fill", .tertiary, "Cancel") { model.queue.cancel(item) }
         case .done:
-            EmptyView()
+            iconButton("xmark.circle.fill", .tertiary, "Remove from list") { model.remove(item) }
         case .failed(let msg):
             iconButton("arrow.clockwise.circle.fill", .secondary, "Retry") { model.queue.retry(item) }
             infoButton(message: msg, title: "Download error")

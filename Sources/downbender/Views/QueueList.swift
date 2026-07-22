@@ -8,15 +8,30 @@ struct QueueList: View {
         if model.queue.items.isEmpty {
             emptyState
         } else {
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    ForEach(model.queue.items) { item in
-                        QueueRow(item: item, model: model)
+            VStack(spacing: 0) {
+                if model.queue.hasSettledItems { clearBar }
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(model.queue.items) { item in
+                            QueueRow(item: item, model: model)
+                        }
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
+    }
+
+    private var clearBar: some View {
+        HStack {
+            Spacer()
+            Button("Clear finished") { model.queue.clearSettled() }
+                .buttonStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(Theme.accent)
+                .help("Remove finished, failed and cancelled downloads from the list")
+        }
+        .padding(.horizontal, 16).padding(.top, 10)
     }
 
     private var emptyState: some View {
