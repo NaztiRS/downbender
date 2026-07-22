@@ -4,6 +4,29 @@ import DownbenderCore
 
 @MainActor
 private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
+    var model: AppModel?
+
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        let active = TerminationPolicy.interruptedCount(model.queue.items)
+        guard active > 0 else {
+            model.saveQueueNow()
+            return .terminateNow
+        }
+        let alert = NSAlert()
+        alert.messageText = active == 1 ? "1 download in progress" : "\(active) downloads in progress"
+        alert.informativeText = "Downloads will be paused — you can resume them next time you open Downbender."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        Task { @MainActor in
+            // Pauses everything, waits (≤3 s) for child processes to be reaped, saves the queue.
+            await model.prepareForTermination()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_: Notification) {
         ChromeIntegrationInstaller.cleanUpTemporaryInstaller()
     }
@@ -48,7 +71,15 @@ struct DownbenderApp: App {
     }
 
     @MainActor private func prepareModel() {
-        if model == nil { model = Self.makeModel() }
+        if model == nil {
+            model = Self.makeModel()
+            if let model {
+                appDelegate.model = model
+                // Restore BEFORE sweeping, so rehydrated paused items protect their .part files.
+                model.restoreQueue()
+                model.sweepTemporary()
+            }
+        }
         guard let model else { return }
         for url in pendingExternalURLs { model.addURL(url.absoluteString) }
         pendingExternalURLs.removeAll()

@@ -28,7 +28,8 @@ struct QueueRow: View {
                 }
                 if showsBar {
                     WaveProgress(
-                        fraction: item.state == .probing ? nil : barFraction,
+                        fraction: item.state == .probing || (item.state == .downloading && item.indeterminateProgress)
+                            ? nil : barFraction,
                         pulsing: item.state == .merging,
                         dimmed: item.state == .paused
                     )
