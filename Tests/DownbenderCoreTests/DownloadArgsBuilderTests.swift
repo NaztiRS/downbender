@@ -220,3 +220,12 @@ private func args(
     #expect(!mp3.contains("--embed-subs"))
     #expect(!mp3.contains("--sub-langs"))
 }
+
+@Test func argumentsIncludeSocketTimeout() {
+    let a = args(.audioMP3)
+    guard let index = a.firstIndex(of: "--socket-timeout") else {
+        Issue.record("missing --socket-timeout")
+        return
+    }
+    #expect(a[index + 1] == "30")
+}

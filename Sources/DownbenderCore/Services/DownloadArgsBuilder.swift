@@ -9,7 +9,9 @@ public enum DownloadArgsBuilder {
     /// Flags common to EVERY yt-dlp invocation (probe and download).
     /// `noPlaylist: false` only when the user explicitly asked to expand a watch+list URL.
     static func baseArgs(denoURL: URL?, cookiesBrowser: String?, noPlaylist: Bool = true) -> [String] {
-        var args = ["--no-config"]
+        // 30 s per network read: a dead socket aborts instead of hanging forever; yt-dlp's
+        // own --retries picks it up. Applies to probe AND download (both build on baseArgs).
+        var args = ["--no-config", "--socket-timeout", "30"]
         if noPlaylist { args.append("--no-playlist") }
         if let denoURL { args += ["--js-runtimes", "deno:\(denoURL.path)"] }
         if let cookiesBrowser { args += ["--cookies-from-browser", cookiesBrowser] }
