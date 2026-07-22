@@ -99,6 +99,20 @@ public final class AppModel {
 
     func queueDidMutate() {
         queuePersistence.scheduleSave(queue.items)
+        // Opportunistic cleanup: the moment nothing could reuse its .part files, reclaim the space.
+        if !hasResumableMediaItems { sweepTemporary() }
+    }
+
+    /// True while any media item could still reuse its .part files after a relaunch.
+    var hasResumableMediaItems: Bool {
+        queue.items.contains { item in
+            item.source == .media &&
+                (item.state == .paused || item.state == .queued || item.state == .downloading || item.state == .merging)
+        }
+    }
+
+    public func sweepTemporary() {
+        TempCleaner.sweep(tmpDirectory: tmpDirectory, keepResumables: hasResumableMediaItems)
     }
 
     /// Writes the queue synchronously — the quit flow's last word.
