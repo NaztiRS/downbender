@@ -17,7 +17,9 @@ struct TermsGate: View {
             .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
-                Button("I understand", action: onAccept).buttonStyle(WaveButtonStyle())
+                Button("I understand", action: onAccept)
+                    .buttonStyle(WaveButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)

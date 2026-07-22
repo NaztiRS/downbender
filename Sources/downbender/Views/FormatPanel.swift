@@ -66,11 +66,13 @@ struct FormatPanel: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .keyboardShortcut(.cancelAction)
                 Button("Download") {
                     // The box can stay checked while switching to MP3: the gate lives here.
                     if let selection { onConfirm(selection, includeSubtitles && subtitlesSelectable) }
                 }
                 .buttonStyle(WaveButtonStyle())
+                .keyboardShortcut(.defaultAction)
                 .disabled(selection == nil)
             }
         }

@@ -18,8 +18,10 @@ struct ConfirmPrompt: View {
             HStack {
                 Spacer()
                 Button("Ignore", action: onDismiss)
+                    .keyboardShortcut(.cancelAction)
                 Button("Download", action: onAccept)
                     .buttonStyle(WaveButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18).frame(width: 360)

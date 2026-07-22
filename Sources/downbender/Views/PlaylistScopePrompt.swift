@@ -17,6 +17,7 @@ struct PlaylistScopePrompt: View {
                 Spacer()
                 Button("Cancel", action: onDismiss)
                     .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .keyboardShortcut(.cancelAction)
                 Button("Only this video", action: onVideo)
                 Button("Whole playlist", action: onPlaylist)
                     .buttonStyle(WaveButtonStyle())

@@ -64,6 +64,7 @@ struct DetectionPanel: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .keyboardShortcut(.cancelAction)
                 if probe == nil {
                     Button("Process with yt-dlp", action: onProcessMedia)
                         .buttonStyle(WaveButtonStyle())

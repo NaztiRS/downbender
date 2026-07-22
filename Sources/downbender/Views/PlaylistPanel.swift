@@ -68,11 +68,13 @@ struct PlaylistPanel: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .keyboardShortcut(.cancelAction)
                 Button("Download \(analysis.playlist.entries.count) videos") {
                     // The box can stay checked while switching to MP3: the gate lives here.
                     onConfirm(selection, includeSubtitles && selection != .audioMP3)
                 }
                 .buttonStyle(WaveButtonStyle())
+                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(22)

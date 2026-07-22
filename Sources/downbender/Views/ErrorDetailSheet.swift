@@ -16,7 +16,11 @@ struct ErrorDetailSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(minHeight: 120, maxHeight: 260)
-            HStack { Spacer(); Button("Close", action: onClose) }
+            HStack {
+                Spacer()
+                Button("Close", action: onClose)
+                    .keyboardShortcut(.cancelAction)
+            }
         }
         .padding(18)
         .frame(width: 480)

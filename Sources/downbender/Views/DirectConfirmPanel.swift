@@ -37,8 +37,10 @@ struct DirectConfirmPanel: View {
                 Spacer()
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .keyboardShortcut(.cancelAction)
                 Button("Download", action: onDownload)
                     .buttonStyle(WaveButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .padding(22)

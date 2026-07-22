@@ -214,6 +214,7 @@ struct QueueRow: View {
             .buttonStyle(.plain)
             .foregroundStyle(style)
             .help(help)
+            .accessibilityLabel(help)
     }
 
     /// Shows the full error text, selectable, since the caption truncates it.
