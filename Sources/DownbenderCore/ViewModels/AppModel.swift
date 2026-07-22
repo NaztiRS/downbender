@@ -94,6 +94,9 @@ public final class AppModel {
         self.showTerms = (defaults.string(forKey: Self.termsAcceptedKey) != Self.currentTermsVersion)
     }
 
+    /// Delay between silent probe retries on transient failures (tests shrink it).
+    var probeRetryDelay: Duration = .seconds(2)
+
     /// In-flight probe tasks, per item: cancelled if the user removes the card.
     private var probeTasks: [UUID: Task<Void, Never>] = [:]
     /// In-flight HEAD tasks for direct files, per item: cancelled if the user removes the card.
@@ -178,49 +181,60 @@ public final class AppModel {
     private func runProbe(for item: DownloadItem) {
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
-            do {
-                let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser, expandPlaylist: item.expandsPlaylist)
-                guard let outcome, !Task.isCancelled else { return }
-                switch outcome {
-                case .video(let result):
-                    item.title = result.title
-                    item.thumbnailURL = result.thumbnailURL
-                    item.probe = result
-                    // The generic extractor matches almost any URL: treat it as ambiguous, not
-                    // confirmed media, so the user gets the detection panel + "download as-is".
-                    if result.isGeneric {
-                        item.source = .ambiguous(DirectFileInfo(suggestedName: URL(string: item.url)?.lastPathComponent))
-                    }
-                    item.state = .readyToChoose
-                case .playlist(let playlist):
-                    guard !playlist.entries.isEmpty else {
-                        item.state = .probeFailed("Playlist is empty.")
-                        return
-                    }
-                    // The probing card becomes the playlist panel: one choice for all entries.
-                    self?.queue.remove(item)
-                    self?.presentAnalysis(playlist)
-                }
-            } catch {
-                guard !Task.isCancelled, let self else { return }
-                // On a known media host (YouTube, Vimeo…) a probe failure is about that site — e.g.
-                // YouTube's cookie gate — NOT "it's a web page", so surface yt-dlp's own error (which
-                // YtdlpErrorHint turns into the cookies suggestion). Only HEAD-sniff unknown hosts.
-                if MediaURL.detect(in: item.url) == nil,
-                   let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()), !Task.isCancelled {
-                    if DirectDownloadService.isDownloadableContentType(info.contentType) {
-                        // Fetchable file: reactivate the EXISTING card; no enqueue → no duplicate.
-                        item.source = .directFile(info)
-                        if let name = info.suggestedName { item.title = name }
+            let maxAttempts = 3
+            for attempt in 1...maxAttempts {
+                do {
+                    let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser, expandPlaylist: item.expandsPlaylist)
+                    guard let outcome, !Task.isCancelled else { return }
+                    switch outcome {
+                    case .video(let result):
+                        item.title = result.title
+                        item.thumbnailURL = result.thumbnailURL
+                        item.probe = result
+                        // The generic extractor matches almost any URL: treat it as ambiguous, not
+                        // confirmed media, so the user gets the detection panel + "download as-is".
+                        if result.isGeneric {
+                            item.source = .ambiguous(DirectFileInfo(suggestedName: URL(string: item.url)?.lastPathComponent))
+                        }
                         item.state = .readyToChoose
+                    case .playlist(let playlist):
+                        guard !playlist.entries.isEmpty else {
+                            item.state = .probeFailed("Playlist is empty.")
+                            return
+                        }
+                        // The probing card becomes the playlist panel: one choice for all entries.
+                        self?.queue.remove(item)
+                        self?.presentAnalysis(playlist)
+                    }
+                    return
+                } catch {
+                    guard !Task.isCancelled, let self else { return }
+                    // Transient blips (DNS flaps, probe timeout) retry silently, like the download does.
+                    if attempt < maxAttempts, TransientFailure.isTransient(error) {
+                        try? await Task.sleep(for: self.probeRetryDelay)
+                        if Task.isCancelled { return }
+                        continue
+                    }
+                    // On a known media host (YouTube, Vimeo…) a probe failure is about that site — e.g.
+                    // YouTube's cookie gate — NOT "it's a web page", so surface yt-dlp's own error (which
+                    // YtdlpErrorHint turns into the cookies suggestion). Only HEAD-sniff unknown hosts.
+                    if MediaURL.detect(in: item.url) == nil,
+                       let info = try? await directDownloader.headInfo(url: item.url, session: directSessionFactory()), !Task.isCancelled {
+                        if DirectDownloadService.isDownloadableContentType(info.contentType) {
+                            // Fetchable file: reactivate the EXISTING card; no enqueue → no duplicate.
+                            item.source = .directFile(info)
+                            if let name = info.suggestedName { item.title = name }
+                            item.state = .readyToChoose
+                            return
+                        }
+                        // Reachable but a web page (or other non-file): a clear message beats yt-dlp's raw error.
+                        item.state = .probeFailed("This looks like a web page, not a video or a downloadable file.")
                         return
                     }
-                    // Reachable but a web page (or other non-file): a clear message beats yt-dlp's raw error.
-                    item.state = .probeFailed("This looks like a web page, not a video or a downloadable file.")
+                    guard !Task.isCancelled else { return }
+                    item.state = .probeFailed(error.localizedDescription)
                     return
                 }
-                guard !Task.isCancelled else { return }
-                item.state = .probeFailed(error.localizedDescription)
             }
         }
     }
