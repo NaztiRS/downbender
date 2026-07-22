@@ -3,6 +3,7 @@ import Foundation
 public enum ProbeError: Error, Equatable {
     case ytdlpFailed(String)
     case badOutput
+    case timedOut
 }
 
 extension ProbeError: LocalizedError {
@@ -13,6 +14,8 @@ extension ProbeError: LocalizedError {
             return trimmed.isEmpty ? "yt-dlp failed with no error message." : trimmed
         case .badOutput:
             return "yt-dlp returned unexpected output."
+        case .timedOut:
+            return "Analyzing timed out — the site didn't respond."
         }
     }
 }
@@ -33,16 +36,29 @@ public struct ProbeService: Sendable {
     /// N full extractions; single videos are unaffected, and --no-playlist (base args) still
     /// keeps watch?v=X&list=Y URLs as the single video the user pasted.
     /// `expandPlaylist: true` drops --no-playlist so a watch?v=X&list=Y URL resolves to the playlist.
-    public func probe(url: String, cookiesBrowser: String? = nil, expandPlaylist: Bool = false) async throws -> ProbeOutcome {
-        let acc = Accumulator()
-        let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser, noPlaylist: !expandPlaylist) + ["--flat-playlist", "-J", url]
-        let result = try await runner.run(
-            executableURL: ytdlpURL,
-            arguments: args,
-            onStdoutLine: { acc.append($0) }
-        )
-        guard result.exitCode == 0 else { throw ProbeError.ytdlpFailed(result.stderr) }
-        guard let data = acc.text.data(using: .utf8), !data.isEmpty else { throw ProbeError.badOutput }
-        return try FormatParser.parseOutcome(data)
+    /// `timeout` bounds the WHOLE probe: an analysis takes seconds, so a wedged yt-dlp is
+    /// cut off (and classified transient, so the caller's auto-retry picks it up).
+    public func probe(
+        url: String,
+        cookiesBrowser: String? = nil,
+        expandPlaylist: Bool = false,
+        timeout: Duration = .seconds(90)
+    ) async throws -> ProbeOutcome {
+        do {
+            return try await withTotalTimeout(timeout) { [self] in
+                let acc = Accumulator()
+                let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser, noPlaylist: !expandPlaylist) + ["--flat-playlist", "-J", url]
+                let result = try await runner.run(
+                    executableURL: ytdlpURL,
+                    arguments: args,
+                    onStdoutLine: { acc.append($0) }
+                )
+                guard result.exitCode == 0 else { throw ProbeError.ytdlpFailed(result.stderr) }
+                guard let data = acc.text.data(using: .utf8), !data.isEmpty else { throw ProbeError.badOutput }
+                return try FormatParser.parseOutcome(data)
+            }
+        } catch is TimedOutError {
+            throw ProbeError.timedOut
+        }
     }
 }

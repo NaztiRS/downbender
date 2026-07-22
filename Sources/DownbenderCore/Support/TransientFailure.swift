@@ -9,6 +9,7 @@ public enum TransientFailure {
     ]
 
     public static func isTransient(_ error: Error) -> Bool {
+        if let probe = error as? ProbeError, probe == .timedOut { return true }
         if let urlError = error as? URLError { return transientURLCodes.contains(urlError.code) }
         return isTransientMessage(error.localizedDescription)
     }
