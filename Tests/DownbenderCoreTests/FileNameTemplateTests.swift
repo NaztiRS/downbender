@@ -76,6 +76,45 @@ private func waitForFileNameTemplateItems(_ items: [DownloadItem]) async {
     #expect(FileNameTemplate.normalized("  %(title)s.%(ext)s  ") == "%(title)s.%(ext)s")
 }
 
+@Test func fileNameTemplatePresetsAreUniqueValidAndRecognized() {
+    let presets = FileNameTemplate.Preset.allCases
+    let expected: [(FileNameTemplate.Preset, String)] = [
+        (.title, "%(title)s.%(ext)s"),
+        (.channelAndTitle, "%(channel)s — %(title)s.%(ext)s"),
+        (.uploadDateAndTitle, "%(upload_date)s — %(title)s.%(ext)s"),
+        (.titleAndIdentifier, "%(title)s [%(id)s].%(ext)s"),
+    ]
+    let templates = expected.map(\.1)
+
+    #expect(presets == expected.map(\.0))
+    #expect(Set(templates).count == presets.count)
+    for (preset, template) in expected {
+        #expect(preset.template == template)
+        #expect(FileNameTemplate.normalized(template) == template)
+        #expect(FileNameTemplate.Preset.matching("  \(template)  ") == preset)
+    }
+    #expect(FileNameTemplate.Preset.matching("%(uploader)s - %(title)s.%(ext)s") == nil)
+    #expect(FileNameTemplate.Preset.matching("../%(title)s.%(ext)s") == nil)
+}
+
+@Test func fileNameTemplateExamplesRenderPresetsAndCustomFields() {
+    #expect(FileNameTemplate.example(for: FileNameTemplate.Preset.title.template) == "My video.mp4")
+    #expect(
+        FileNameTemplate.example(for: FileNameTemplate.Preset.uploadDateAndTitle.template)
+            == "20260725 — My video.mp4"
+    )
+    #expect(
+        FileNameTemplate.example(for: "100%% %(uploader)s - %(title)s [%(id)s].%(ext)s")
+            == "100% Example Creator - My video [a1b2c3].mp4"
+    )
+    #expect(
+        FileNameTemplate.example(for: "%%(title)s - %(title)s.%(ext)s")
+            == "%(title)s - My video.mp4"
+    )
+    #expect(FileNameTemplate.example(for: "%(title).1s.%(ext)s") == nil)
+    #expect(FileNameTemplate.example(for: "../%(title)s.%(ext)s") == nil)
+}
+
 @Test func fileNameTemplateRejectsUnsafeNamesAndMalformedPlaceholders() {
     let tooLong = String(repeating: "a", count: FileNameTemplate.maximumLength + 1)
     let invalidValues = [
@@ -149,6 +188,91 @@ private func waitForFileNameTemplateItems(_ items: [DownloadItem]) async {
     restored.resetFileNameTemplate()
     #expect(restored.fileNameTemplate == FileNameTemplate.defaultValue)
     #expect(defaults.object(forKey: AppModel.fileNameTemplateKey) == nil)
+}
+
+@MainActor
+@Test func lastCustomFileNameTemplateSurvivesPresetChangesAndRelaunch() {
+    let suite = "filename-template-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("filename-template-\(UUID().uuidString)", isDirectory: true)
+    defer {
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    let custom = "%(uploader)s - %(title)s.%(ext)s"
+    let first = makeFileNameTemplateModel(defaults: defaults, root: root)
+    #expect(first.setFileNameTemplate(custom))
+    #expect(first.lastCustomFileNameTemplate == custom)
+    #expect(defaults.string(forKey: AppModel.lastCustomFileNameTemplateKey) == custom)
+
+    let preset = FileNameTemplate.Preset.channelAndTitle.template
+    #expect(first.setFileNameTemplate(preset))
+    #expect(first.fileNameTemplate == preset)
+    #expect(first.lastCustomFileNameTemplate == custom)
+
+    let restored = makeFileNameTemplateModel(defaults: defaults, root: root)
+    #expect(restored.fileNameTemplate == preset)
+    #expect(restored.lastCustomFileNameTemplate == custom)
+
+    let replacement = "%(id)s - %(title)s.%(ext)s"
+    #expect(restored.setFileNameTemplate(replacement))
+    restored.resetFileNameTemplate()
+    #expect(restored.fileNameTemplate == FileNameTemplate.defaultValue)
+    #expect(restored.lastCustomFileNameTemplate == replacement)
+    #expect(defaults.string(forKey: AppModel.lastCustomFileNameTemplateKey) == replacement)
+}
+
+@MainActor
+@Test func legacyCustomFileNameTemplateIsRememberedWhenChoosingAPreset() {
+    let suite = "filename-template-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("filename-template-\(UUID().uuidString)", isDirectory: true)
+    defer {
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    let legacyCustom = "%(uploader)s - %(title)s.%(ext)s"
+    defaults.set(legacyCustom, forKey: AppModel.fileNameTemplateKey)
+    #expect(defaults.object(forKey: AppModel.lastCustomFileNameTemplateKey) == nil)
+
+    let upgraded = makeFileNameTemplateModel(defaults: defaults, root: root)
+    #expect(upgraded.fileNameTemplate == legacyCustom)
+    #expect(upgraded.lastCustomFileNameTemplate == nil)
+    #expect(upgraded.setFileNameTemplate(FileNameTemplate.Preset.uploadDateAndTitle.template))
+    #expect(upgraded.lastCustomFileNameTemplate == legacyCustom)
+
+    let restored = makeFileNameTemplateModel(defaults: defaults, root: root)
+    #expect(restored.fileNameTemplate == FileNameTemplate.Preset.uploadDateAndTitle.template)
+    #expect(restored.lastCustomFileNameTemplate == legacyCustom)
+}
+
+@MainActor
+@Test func invalidOrPresetLastCustomFileNameTemplateIsDiscarded() {
+    let suite = "filename-template-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("filename-template-\(UUID().uuidString)", isDirectory: true)
+    defer {
+        defaults.removePersistentDomain(forName: suite)
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    defaults.set(
+        FileNameTemplate.Preset.titleAndIdentifier.template,
+        forKey: AppModel.lastCustomFileNameTemplateKey
+    )
+    let presetModel = makeFileNameTemplateModel(defaults: defaults, root: root)
+    #expect(presetModel.lastCustomFileNameTemplate == nil)
+    #expect(defaults.object(forKey: AppModel.lastCustomFileNameTemplateKey) == nil)
+
+    defaults.set("../%(title)s.%(ext)s", forKey: AppModel.lastCustomFileNameTemplateKey)
+    let invalidModel = makeFileNameTemplateModel(defaults: defaults, root: root)
+    #expect(invalidModel.lastCustomFileNameTemplate == nil)
+    #expect(defaults.object(forKey: AppModel.lastCustomFileNameTemplateKey) == nil)
 }
 
 @MainActor

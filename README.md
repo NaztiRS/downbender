@@ -63,9 +63,10 @@ row to reveal the file in Finder.
 - **Age-restricted / members-only videos:** set **Settings → Privacy →
   Browser cookies** to the browser where you're signed in. macOS may ask
   for permission once.
-- **Custom file names:** use **Settings → General → File name template**.
-  Keep `%(ext)s` at the end; the setting applies to future media downloads,
-  while direct files retain the name supplied by their server.
+- **File names:** use **Settings → General → File names** and choose a
+  ready-made format with an instant example. Select **Custom…** for advanced
+  yt-dlp fields and keep `%(ext)s` at the end. The setting applies to future
+  media downloads, while direct files retain the name supplied by their server.
 - **Downloads suddenly failing?** YouTube changes constantly. Use
   **Settings → Downloader (yt-dlp) → Check for updates** to update the
   engine without reinstalling the app.

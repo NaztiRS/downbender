@@ -6,7 +6,6 @@ struct SettingsView: View {
     @State private var updater: UnifiedUpdater?
     @State private var chromeIntegration: ChromeIntegrationState?
     @State private var installingBrowser: ChromiumBrowser?
-    @State private var fileNameTemplateDraft = ""
 
     var body: some View {
         Form {
@@ -63,36 +62,7 @@ struct SettingsView: View {
                 }
                 .disabled(model.defaultQuality == nil)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("File name template", systemImage: "textformat")
-                    TextField("%(title)s.%(ext)s", text: $fileNameTemplateDraft)
-                        .font(.system(.body, design: .monospaced))
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { applyFileNameTemplate() }
-
-                    Group {
-                        if let error = FileNameTemplate.validationMessage(for: fileNameTemplateDraft) {
-                            Text(error).foregroundStyle(.red)
-                        } else {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Supported fields include title, id, uploader, channel, and upload_date.")
-                                Text("Media only; direct files keep their server name. Example (no quotes): %(upload_date)s - %(title)s.%(ext)s")
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                    .font(.caption)
-
-                    HStack {
-                        Spacer()
-                        Button("Reset") { resetFileNameTemplate() }
-                            .disabled(model.fileNameTemplate == FileNameTemplate.defaultValue
-                                && fileNameTemplateDraft == FileNameTemplate.defaultValue)
-                        Button("Apply") { applyFileNameTemplate() }
-                            .disabled(!canApplyFileNameTemplate)
-                    }
-                }
-                .accessibilityElement(children: .contain)
+                FileNameSettings(model: model)
             }
 
             Section("Privacy") {
@@ -181,9 +151,6 @@ struct SettingsView: View {
         .background(WashBackground())
         .frame(width: 500, height: 580)
         .task {
-            if fileNameTemplateDraft.isEmpty {
-                fileNameTemplateDraft = model.fileNameTemplate
-            }
             if chromeIntegration == nil {
                 chromeIntegration = ChromeIntegrationInstaller.status()
             }
@@ -207,21 +174,6 @@ struct SettingsView: View {
         if panel.runModal() == .OK, let url = panel.url { model.destination = url }
     }
 
-    private var canApplyFileNameTemplate: Bool {
-        guard let normalized = FileNameTemplate.normalized(fileNameTemplateDraft) else { return false }
-        return normalized != model.fileNameTemplate
-    }
-
-    private func applyFileNameTemplate() {
-        guard model.setFileNameTemplate(fileNameTemplateDraft) else { return }
-        fileNameTemplateDraft = model.fileNameTemplate
-    }
-
-    private func resetFileNameTemplate() {
-        model.resetFileNameTemplate()
-        fileNameTemplateDraft = model.fileNameTemplate
-    }
-
     private func beginBrowserInstallation(in browser: ChromiumBrowser) {
         installingBrowser = browser
         let state = ChromeIntegrationInstaller.beginInstallation(for: browser)
@@ -236,6 +188,215 @@ struct SettingsView: View {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-b", browser.applicationBundleIdentifier, browser.extensionsPage]
         try? process.run()
+    }
+}
+
+private enum FileNameStyle: Hashable {
+    case preset(FileNameTemplate.Preset)
+    case custom
+}
+
+private extension FileNameTemplate.Preset {
+    var settingsTitle: String {
+        switch self {
+        case .title: "Title"
+        case .channelAndTitle: "Channel — Title"
+        case .uploadDateAndTitle: "Date — Title"
+        case .titleAndIdentifier: "Title [Identifier]"
+        }
+    }
+}
+
+private struct FileNameSettings: View {
+    @Bindable var model: AppModel
+    @State private var style: FileNameStyle = .preset(.title)
+    @State private var customDraft = FileNameTemplate.defaultValue
+    @State private var didInitialize = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("File names", systemImage: "textformat")
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Name format")
+                        .fontWeight(.medium)
+                    Text("Choose the result you prefer.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Picker("Name format", selection: styleBinding) {
+                    ForEach(FileNameTemplate.Preset.allCases) { preset in
+                        Text(preset.settingsTitle)
+                            .tag(FileNameStyle.preset(preset))
+                    }
+                    Divider()
+                    Text("Custom…")
+                        .tag(FileNameStyle.custom)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(minWidth: 160)
+            }
+
+            preview
+
+            if style == .custom {
+                customEditor
+            }
+
+            Text(
+                "Applies to new video and audio downloads. The extension follows the selected format. " +
+                    "Channel and date depend on source metadata; direct files keep their server-provided name."
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .task { initialize() }
+    }
+
+    private var styleBinding: Binding<FileNameStyle> {
+        Binding(
+            get: { style },
+            set: { select($0) }
+        )
+    }
+
+    private var selectedTemplate: String {
+        switch style {
+        case let .preset(preset): preset.template
+        case .custom: customDraft
+        }
+    }
+
+    private var previewText: String {
+        if let example = FileNameTemplate.example(for: selectedTemplate) {
+            return example
+        }
+        if FileNameTemplate.normalized(selectedTemplate) != nil {
+            return "Preview unavailable for this advanced format."
+        }
+        return "Fix the custom format to see an example."
+    }
+
+    private var isSaved: Bool {
+        guard let normalized = FileNameTemplate.normalized(selectedTemplate) else { return false }
+        return normalized == model.fileNameTemplate
+    }
+
+    private var statusText: String {
+        if style == .custom,
+           let preset = FileNameTemplate.Preset.matching(selectedTemplate) {
+            return isSaved ? "Using \(preset.settingsTitle)" : "\(preset.settingsTitle) preset"
+        }
+        return isSaved ? "Saved" : "Not saved"
+    }
+
+    private var preview: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Example video")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(previewText)
+                    .fontWeight(.semibold)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 8)
+            Label(
+                statusText,
+                systemImage: isSaved ? "checkmark.circle.fill" : "circle.dashed"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isSaved ? .green : .orange)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: .rect(cornerRadius: 10))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("File name preview")
+        .accessibilityValue("\(previewText). \(statusText).")
+    }
+
+    private var customEditor: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Template")
+                .font(.subheadline.weight(.semibold))
+            TextField("%(title)s.%(ext)s", text: $customDraft)
+                .font(.system(.body, design: .monospaced))
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Custom file name format")
+                .accessibilityHint(
+                    customValidationMessage.map { "Invalid format: \($0)" }
+                        ?? "Fields such as title and channel are replaced when the file is named."
+                )
+                .onSubmit { saveCustomFormat() }
+
+            if let error = customValidationMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Invalid custom format: \(error)")
+            } else {
+                Text("Advanced: fields such as %(title)s and %(channel)s are replaced when the file is named.")
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Use Title Preset") { select(.preset(.title)) }
+                Spacer()
+                Button("Save Custom Format") { saveCustomFormat() }
+                    .disabled(!canSaveCustomFormat)
+            }
+        }
+        .font(.caption)
+        .padding(.top, 2)
+    }
+
+    private var customValidationMessage: String? {
+        FileNameTemplate.validationMessage(for: customDraft)
+    }
+
+    private var canSaveCustomFormat: Bool {
+        guard let normalized = FileNameTemplate.normalized(customDraft) else { return false }
+        return normalized != model.fileNameTemplate
+    }
+
+    private func initialize() {
+        guard !didInitialize else { return }
+        let activeTemplate = model.fileNameTemplate
+        if let preset = FileNameTemplate.Preset.matching(activeTemplate) {
+            style = .preset(preset)
+            customDraft = model.lastCustomFileNameTemplate ?? activeTemplate
+        } else {
+            style = .custom
+            customDraft = activeTemplate
+        }
+        didInitialize = true
+    }
+
+    private func select(_ newStyle: FileNameStyle) {
+        style = newStyle
+        switch newStyle {
+        case .preset(.title):
+            model.resetFileNameTemplate()
+        case let .preset(preset):
+            model.setFileNameTemplate(preset.template)
+        case .custom:
+            break
+        }
+    }
+
+    private func saveCustomFormat() {
+        guard canSaveCustomFormat else { return }
+        guard model.setFileNameTemplate(customDraft) else { return }
+        customDraft = model.fileNameTemplate
+        if let preset = FileNameTemplate.Preset.matching(model.fileNameTemplate) {
+            style = .preset(preset)
+            customDraft = model.lastCustomFileNameTemplate ?? model.fileNameTemplate
+        }
     }
 }
 

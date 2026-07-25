@@ -42,6 +42,8 @@ public final class AppModel {
 
     public static let fileNameTemplateKey = "fileNameTemplate"
     public private(set) var fileNameTemplate: String = FileNameTemplate.defaultValue
+    public static let lastCustomFileNameTemplateKey = "lastCustomFileNameTemplate"
+    public private(set) var lastCustomFileNameTemplate: String?
 
     public static let termsAcceptedKey = "termsAcceptedVersion"
     public static let currentTermsVersion = "1"
@@ -95,6 +97,14 @@ public final class AppModel {
         self.oneClickDownload = defaults.bool(forKey: Self.oneClickKey)
         self.fileNameTemplate = defaults.string(forKey: Self.fileNameTemplateKey)
             .flatMap(FileNameTemplate.normalized) ?? FileNameTemplate.defaultValue
+        if let savedCustom = defaults.string(forKey: Self.lastCustomFileNameTemplateKey),
+           let normalizedCustom = FileNameTemplate.normalized(savedCustom),
+           FileNameTemplate.Preset.matching(normalizedCustom) == nil {
+            self.lastCustomFileNameTemplate = normalizedCustom
+        } else {
+            self.lastCustomFileNameTemplate = nil
+            defaults.removeObject(forKey: Self.lastCustomFileNameTemplateKey)
+        }
         self.tmpDirectory = tmpDirectory
         self.appSupportDirectory = appSupportDirectory
         self.ytdlpURL = binaries.ytdlp
@@ -142,14 +152,25 @@ public final class AppModel {
     @discardableResult
     public func setFileNameTemplate(_ value: String) -> Bool {
         guard let normalized = FileNameTemplate.normalized(value) else { return false }
+        rememberCustomFileNameTemplate(fileNameTemplate)
         fileNameTemplate = normalized
         defaults.set(normalized, forKey: Self.fileNameTemplateKey)
+        rememberCustomFileNameTemplate(normalized)
         return true
     }
 
     public func resetFileNameTemplate() {
+        rememberCustomFileNameTemplate(fileNameTemplate)
         fileNameTemplate = FileNameTemplate.defaultValue
         defaults.removeObject(forKey: Self.fileNameTemplateKey)
+    }
+
+    private func rememberCustomFileNameTemplate(_ value: String) {
+        guard let normalized = FileNameTemplate.normalized(value),
+              FileNameTemplate.Preset.matching(normalized) == nil
+        else { return }
+        lastCustomFileNameTemplate = normalized
+        defaults.set(normalized, forKey: Self.lastCustomFileNameTemplateKey)
     }
 
     func queueDidMutate() {

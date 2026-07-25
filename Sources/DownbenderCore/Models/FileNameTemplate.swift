@@ -12,9 +12,42 @@ public enum FileNameTemplate {
         "height", "width", "format_id", "extractor", "extractor_key",
     ]
 
+    /// Common choices shown by Settings. The exact strings remain the persisted contract so
+    /// queued downloads and older preferences keep the template they originally captured.
+    public enum Preset: String, CaseIterable, Identifiable, Sendable {
+        case title
+        case channelAndTitle
+        case uploadDateAndTitle
+        case titleAndIdentifier
+
+        public var id: String { rawValue }
+
+        public var template: String {
+            switch self {
+            case .title:
+                FileNameTemplate.defaultValue
+            case .channelAndTitle:
+                "%(channel)s — %(title)s.%(ext)s"
+            case .uploadDateAndTitle:
+                "%(upload_date)s — %(title)s.%(ext)s"
+            case .titleAndIdentifier:
+                "%(title)s [%(id)s].%(ext)s"
+            }
+        }
+
+        public static func matching(_ value: String) -> Self? {
+            guard let normalized = FileNameTemplate.normalized(value) else { return nil }
+            return allCases.first { $0.template == normalized }
+        }
+    }
+
     private struct Placeholder {
         let field: String
         let source: String
+
+        var isSimpleString: Bool {
+            source == "%(\(field))s"
+        }
     }
 
     private static let supportedFieldSet = Set(supportedFields + ["ext"])
@@ -62,6 +95,44 @@ public enum FileNameTemplate {
     /// Invalid values never reach yt-dlp, including corrupted preferences restored from disk.
     public static func outputTemplate(for value: String) -> String {
         normalized(value) ?? defaultValue
+    }
+
+    /// Renders a safe, representative filename for Settings without invoking yt-dlp.
+    /// Advanced formatting returns nil instead of presenting an inaccurate result.
+    public static func example(for value: String) -> String? {
+        guard let normalized = normalized(value),
+              let placeholders = parsePlaceholders(normalized),
+              placeholders.allSatisfy(\.isSimpleString)
+        else { return nil }
+
+        let samples = [
+            "title": "My video",
+            "id": "a1b2c3",
+            "uploader": "Example Creator",
+            "uploader_id": "creator123",
+            "channel": "Example Channel",
+            "channel_id": "UC123",
+            "upload_date": "20260725",
+            "release_date": "20260725",
+            "duration_string": "12m34s",
+            "resolution": "1920x1080",
+            "height": "1080",
+            "width": "1920",
+            "format_id": "137+140",
+            "extractor": "youtube",
+            "extractor_key": "Youtube",
+            "ext": "mp4",
+        ]
+
+        // Protect escaped placeholders such as `%%(title)s` before substituting real fields.
+        // Validation excludes control characters, so the marker cannot collide with input.
+        let escapedPercentMarker = "\u{0}"
+        var rendered = normalized.replacingOccurrences(of: "%%", with: escapedPercentMarker)
+        for placeholder in placeholders {
+            guard let sample = samples[placeholder.field] else { continue }
+            rendered = rendered.replacingOccurrences(of: placeholder.source, with: sample)
+        }
+        return rendered.replacingOccurrences(of: escapedPercentMarker, with: "%")
     }
 
     private static func parsePlaceholders(_ value: String) -> [Placeholder]? {
