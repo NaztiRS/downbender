@@ -427,8 +427,8 @@ private func playlistFixtureJSON() throws -> String {
 
     // Calibration replays the probe fixture for all 3 entries: measured rate replaces nominal.
     await waitUntil { analysis.sampleResults.count == 3 }
-    // 3 videos × 33.4 MB over 3 × 212 s = 157547.16… B/s → × 450 s of playlist.
-    let measured = Int64(Double(3 * 33_400_000) / (3 * 212.0) * 450.0)
+    // 3 videos × 30 MB over 3 × 212 s = 141509.43… B/s → × 450 s of playlist.
+    let measured = Int64(Double(3 * 30_000_000) / (3 * 212.0) * 450.0)
     #expect(analysis.estimatedTotalBytes(for: .video(height: 720)) == measured)
     // MP3 stays on the nominal rate (per-video sizes never cover MP3): 450 s × 30 KB/s.
     #expect(analysis.estimatedTotalBytes(for: .audioMP3) == 13_500_000)
@@ -438,8 +438,29 @@ private func playlistFixtureJSON() throws -> String {
     #expect(model.playlistAnalysis == nil)
     #expect(model.queue.items.count == 3)
     for item in model.queue.items {
-        #expect(item.expectedTotalBytes == 33_400_000)
+        #expect(item.expectedTotalBytes == 30_000_000)
     }
+}
+
+@MainActor
+@Test func playlistNominalRatesCoverHighAndMaximumVideo() {
+    #expect(PlaylistAnalysis.nominalRate(for: .video(height: 1440)) == 750_000)
+    #expect(PlaylistAnalysis.nominalRate(for: .video(height: 2160)) == 1_500_000)
+    #expect(PlaylistAnalysis.nominalRate(for: .maximumVideo) == 1_500_000)
+
+    let analysis = PlaylistAnalysis(
+        playlist: PlaylistProbe(
+            title: "High resolution",
+            entries: [
+                PlaylistEntry(url: "https://youtu.be/one", title: "One", durationSeconds: 60),
+                PlaylistEntry(url: "https://youtu.be/two", title: "Two", durationSeconds: 120),
+            ]
+        )
+    )
+
+    #expect(analysis.estimatedTotalBytes(for: .video(height: 1440)) == 135_000_000)
+    #expect(analysis.estimatedTotalBytes(for: .video(height: 2160)) == 270_000_000)
+    #expect(analysis.estimatedTotalBytes(for: .maximumVideo) == 270_000_000)
 }
 
 @MainActor

@@ -54,15 +54,39 @@ public enum DownloadArgsBuilder {
         }
 
         switch format {
-        case .video(let height):
-            // Output is always mp4. The bundled ffmpeg SIGSEGVs muxing VP9/AV1 into mp4, so the
-            // merge is restricted to avc1 video + m4a audio (YouTube serves avc1 up to 1080p,
-            // the panel's cap). Falls back to progressive mp4 for rare videos without avc1.
+        case .video(let height) where height <= 1080:
+            // Compatibility profile. The bundled ffmpeg SIGSEGVs muxing VP9/AV1 into MP4,
+            // so qualities up to 1080p retain the proven AVC1 + M4A selector.
             let selector = "bv*[height=\(height)][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=\(height)][vcodec^=avc1]+ba[ext=m4a]/b[height<=\(height)][ext=mp4]/b[height<=\(height)]"
             args += ["-f", selector, "--merge-output-format", "mp4"]
             if includeSubtitles {
                 // Creator-uploaded tracks only (never --write-auto-subs). Embedded via the bundled
                 // ffmpeg (mov_text) and sidecars removed. live_chat is chat JSON, not a subtitle.
+                args += ["--embed-subs", "--sub-langs", "all,-live_chat"]
+            }
+        case .video(let height):
+            // Quality profile. YouTube commonly serves 1440p+ as VP9/AV1 video with Opus/M4A
+            // audio; MKV preserves those streams without transcoding. Exact-height tiers lead,
+            // followed by the closest lower quality if the source changes after probing.
+            let selector = "bv[height=\(height)]+ba/b[height=\(height)]/bv[height<=\(height)]+ba/b[height<=\(height)]"
+            args += [
+                "-f", selector,
+                "--merge-output-format", "mkv",
+                // A progressive `b` fallback is not merged, so force its final container too.
+                "--remux-video", "mkv",
+            ]
+            if includeSubtitles {
+                args += ["--embed-subs", "--sub-langs", "all,-live_chat"]
+            }
+        case .maximumVideo:
+            // Canonical best-video selection: `bv*` also covers sites whose highest offer is
+            // already muxed. MKV safely carries the original codecs without a lossy transcode.
+            args += [
+                "-f", "bv*+ba/b",
+                "--merge-output-format", "mkv",
+                "--remux-video", "mkv",
+            ]
+            if includeSubtitles {
                 args += ["--embed-subs", "--sub-langs", "all,-live_chat"]
             }
         case .audioMP3:

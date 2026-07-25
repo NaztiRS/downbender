@@ -61,15 +61,24 @@ public final class DownloadCoordinator {
                 // Delivered path recorded for ALL formats (DBPATH is printed for MP3 too): enables "reveal in Finder".
                 if let deliveredURL { item.deliveredFileURL = deliveredURL }
 
-                // Honesty check: confirm the delivered file's real dimensions when a specific height was requested.
-                if case .video(let height) = format, let deliveredURL, let inspect {
-                    if let dims = await inspect(deliveredURL) {
-                        if dims.height == height {
-                            item.deliveredNote = "\(dims.width)×\(dims.height)"
-                        } else {
-                            item.deliveredNote = "Requested \(height)p, got \(dims.height)p"
-                            item.deliveredMismatch = true
+                // Honesty check: confirm exact requests and report the actual dimensions for Maximum.
+                if let deliveredURL, let inspect {
+                    switch format {
+                    case .video(let height):
+                        if let dims = await inspect(deliveredURL) {
+                            if dims.height == height {
+                                item.deliveredNote = "\(dims.width)×\(dims.height)"
+                            } else {
+                                item.deliveredNote = "Requested \(height)p, got \(dims.height)p"
+                                item.deliveredMismatch = true
+                            }
                         }
+                    case .maximumVideo:
+                        if let dims = await inspect(deliveredURL) {
+                            item.deliveredNote = "\(dims.width)×\(dims.height)"
+                        }
+                    case .audioMP3:
+                        break
                     }
                 }
 

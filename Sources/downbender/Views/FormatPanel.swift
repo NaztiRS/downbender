@@ -30,17 +30,20 @@ struct FormatPanel: View {
                 .help("Remove from list")
             }
 
-            Picker("Quality", selection: $selection) {
-                ForEach(probe.availableFormats) { fmt in
-                    if let bytes = probe.approxSizeBytes[fmt] {
-                        Text("\(fmt.label) · ~\(bytes.formatted(.byteCount(style: .file)))").tag(Optional(fmt))
-                    } else {
-                        Text(fmt.label).tag(Optional(fmt))
+            VStack(alignment: .leading, spacing: 7) {
+                Picker("Download quality", selection: $selection) {
+                    ForEach(probe.availableFormats) { format in
+                        Text(optionLabel(for: format))
+                            .accessibilityLabel(optionAccessibilityLabel(for: format))
+                            .tag(Optional(format))
                     }
                 }
+                .pickerStyle(.radioGroup)
+
+                Text("Up to 1080p is saved as MP4. Higher resolutions are saved as MKV.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .labelsHidden()
-            .pickerStyle(.radioGroup)
 
             Toggle(isOn: $includeSubtitles) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -82,11 +85,40 @@ struct FormatPanel: View {
         .background(Theme.wash)
         .onAppear {
             selection = preferred.flatMap { probe.closestMatch(to: $0) }
-                ?? probe.availableFormats.first(where: {
-                    if case .video(let h) = $0 { return h <= 1080 }
-                    return false
-                }) ?? probe.availableFormats.first
+                ?? safeDefaultSelection
         }
+    }
+
+    private var safeDefaultSelection: DownloadFormat? {
+        if let safeVideo = probe.availableFormats.first(where: {
+            if case .video(let height) = $0 { return height <= 1080 }
+            return false
+        }) {
+            return safeVideo
+        }
+        if let firstVideo = probe.availableFormats.first(where: {
+            if case .video = $0 { return true }
+            return false
+        }) {
+            return firstVideo
+        }
+        return probe.availableFormats.first(where: { $0 == .audioMP3 })
+    }
+
+    private func optionLabel(for format: DownloadFormat) -> String {
+        var parts = [format.label, format.containerLabel]
+        if let bytes = probe.approxSizeBytes[format] ?? probe.approxDownloadSize(for: format) {
+            parts.append("~\(bytes.formatted(.byteCount(style: .file)))")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func optionAccessibilityLabel(for format: DownloadFormat) -> String {
+        var parts = [format.label, "\(format.containerLabel) output"]
+        if let bytes = probe.approxSizeBytes[format] ?? probe.approxDownloadSize(for: format) {
+            parts.append("approximately \(bytes.formatted(.byteCount(style: .file)))")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var subtitlesSelectable: Bool {

@@ -13,7 +13,14 @@ struct PlaylistPanel: View {
     @State private var includeSubtitles = false
 
     private static let choices: [DownloadFormat] = [
-        .video(height: 1080), .video(height: 720), .video(height: 480), .video(height: 360), .audioMP3,
+        .maximumVideo,
+        .video(height: 2160),
+        .video(height: 1440),
+        .video(height: 1080),
+        .video(height: 720),
+        .video(height: 480),
+        .video(height: 360),
+        .audioMP3,
     ]
 
     var body: some View {
@@ -31,16 +38,25 @@ struct PlaylistPanel: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Picker("Quality", selection: $selection) {
-                    ForEach(Self.choices) { fmt in
-                        Text(fmt.label).tag(fmt)
+            VStack(alignment: .leading, spacing: 7) {
+                Picker("Quality for all videos", selection: $selection) {
+                    ForEach(Self.choices) { format in
+                        Text("\(format.preferenceLabel) · \(format.containerLabel)")
+                            .accessibilityLabel(
+                                "\(format.preferenceLabel), \(format.containerLabel) output"
+                            )
+                            .tag(format)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.radioGroup)
-                Text("Each video downloads at the closest available quality.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .pickerStyle(.menu)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectionDetail)
+                    Text(outputSummary)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
             }
 
             Toggle(isOn: $includeSubtitles) {
@@ -106,11 +122,28 @@ struct PlaylistPanel: View {
         .frame(width: 110, height: 56)
     }
 
-    /// "129 videos · ~4.3 GB" — instant, refined silently as the sample calibrates.
+    /// Kept separate from the estimate below the picker so the header remains stable.
     private var summary: String {
-        var parts = ["\(analysis.playlist.entries.count) videos"]
+        "\(analysis.playlist.entries.count) videos"
+    }
+
+    private var selectionDetail: String {
+        switch selection {
+        case .maximumVideo:
+            return "Downloads the highest available resolution for each video."
+        case .video(let height):
+            return "Each video uses the closest available resolution at or below \(height)p."
+        case .audioMP3:
+            return "Extracts the audio from every item as MP3."
+        }
+    }
+
+    private var outputSummary: String {
+        var parts = ["\(selection.containerLabel) output"]
         if let bytes = analysis.estimatedTotalBytes(for: selection) {
-            parts.append("~\(bytes.formatted(.byteCount(style: .file)))")
+            parts.append("estimated total ~\(bytes.formatted(.byteCount(style: .file)))")
+        } else {
+            parts.append("size estimate unavailable")
         }
         return parts.joined(separator: " · ")
     }

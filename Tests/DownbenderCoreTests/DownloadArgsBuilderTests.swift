@@ -22,6 +22,13 @@ private func args(
     )
 }
 
+private func value(after flag: String, in arguments: [String]) -> String? {
+    guard let index = arguments.firstIndex(of: flag),
+          arguments.indices.contains(index + 1)
+    else { return nil }
+    return arguments[index + 1]
+}
+
 // Also guards the builder's global arguments: no-playlist, ffmpeg location, destinations, output template, merge format.
 @Test func videoDefaultUsesBestUpTo1080() {
     let a = args(.video(height: 1080))
@@ -63,6 +70,28 @@ private func args(
         return
     }
     #expect(a[mergeFlagIndex + 1] == "mp4")
+    #expect(!a.contains("--remux-video"))
+}
+
+@Test func videoAbove1080UsesExactThenLowerMKVSelector() {
+    let a = args(.video(height: 2160))
+
+    #expect(
+        value(after: "-f", in: a)
+            == "bv[height=2160]+ba/b[height=2160]/bv[height<=2160]+ba/b[height<=2160]"
+    )
+    #expect(value(after: "--merge-output-format", in: a) == "mkv")
+    #expect(value(after: "--remux-video", in: a) == "mkv")
+    #expect(a.last == "https://youtu.be/abc123")
+}
+
+@Test func maximumVideoUsesCanonicalMKVSelector() {
+    let a = args(.maximumVideo)
+
+    #expect(value(after: "-f", in: a) == "bv*+ba/b")
+    #expect(value(after: "--merge-output-format", in: a) == "mkv")
+    #expect(value(after: "--remux-video", in: a) == "mkv")
+    #expect(a.last == "https://youtu.be/abc123")
 }
 
 // --print implies --quiet in yt-dlp; --progress restores DBPROG, and after_move does not imply --simulate so DBPATH still arrives.
@@ -214,8 +243,23 @@ private func args(
     #expect(!a.contains("--write-auto-subs"))
 }
 
+@Test func mkvProfilesEmbedRealSubtitleTracksOnly() {
+    for format in [DownloadFormat.video(height: 1440), .maximumVideo] {
+        let a = args(format, includeSubtitles: true)
+
+        #expect(value(after: "--merge-output-format", in: a) == "mkv")
+        #expect(value(after: "--remux-video", in: a) == "mkv")
+        #expect(a.contains("--embed-subs"))
+        #expect(value(after: "--sub-langs", in: a) == "all,-live_chat")
+        #expect(!a.contains("--write-subs"))
+        #expect(!a.contains("--write-auto-subs"))
+    }
+}
+
 @Test func subtitleFlagsAbsentByDefaultAndForMP3() {
     #expect(!args(.video(height: 1080)).contains("--embed-subs"))
+    #expect(!args(.video(height: 1440)).contains("--embed-subs"))
+    #expect(!args(.maximumVideo).contains("--embed-subs"))
     let mp3 = args(.audioMP3, includeSubtitles: true)
     #expect(!mp3.contains("--embed-subs"))
     #expect(!mp3.contains("--sub-langs"))

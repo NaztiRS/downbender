@@ -9,10 +9,50 @@ private func freshFile() -> URL {
 }
 
 @Test func downloadFormatRoundTripsThroughID() {
+    #expect(DownloadFormat.maximumVideo.id == "vmax")
+    #expect(DownloadFormat(id: "vmax") == .maximumVideo)
     #expect(DownloadFormat(id: "v1080") == .video(height: 1080))
+    #expect(DownloadFormat(id: "v2160") == .video(height: 2160))
     #expect(DownloadFormat(id: "mp3") == .audioMP3)
+    #expect(DownloadFormat(id: "v0") == nil)
+    #expect(DownloadFormat(id: "v-1") == nil)
     #expect(DownloadFormat(id: "junk") == nil)
     #expect(DownloadFormat(id: DownloadFormat.video(height: 720).id) == .video(height: 720))
+}
+
+@Test func downloadFormatLabelsExplainResolutionAndContainer() {
+    #expect(DownloadFormat.maximumVideo.label == "Maximum available")
+    #expect(DownloadFormat.maximumVideo.preferenceLabel == "Maximum available")
+    #expect(DownloadFormat.maximumVideo.containerLabel == "MKV")
+    #expect(DownloadFormat.video(height: 2160).label == "2160p (4K)")
+    #expect(DownloadFormat.video(height: 4320).label == "4320p (8K)")
+    #expect(DownloadFormat.video(height: 1440).containerLabel == "MKV")
+    #expect(DownloadFormat.video(height: 1080).containerLabel == "MP4")
+    #expect(DownloadFormat.audioMP3.containerLabel == "MP3")
+}
+
+@MainActor
+@Test func maximumVideoRoundTripsThroughVersionOneQueue() {
+    let file = freshFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let store = QueuePersistence(fileURL: file)
+    let item = DownloadItem(
+        url: "https://youtu.be/maximum",
+        title: "Maximum",
+        format: .maximumVideo,
+        destination: URL(fileURLWithPath: "/tmp/dest"),
+        state: .queued
+    )
+
+    store.saveNow([item])
+    let loaded = store.load()
+
+    #expect(QueuePersistence.currentVersion == 1)
+    #expect(loaded.count == 1)
+    #expect(loaded[0].formatID == "vmax")
+    let restored = loaded[0].makeItem()
+    #expect(restored.state == .paused)
+    #expect(restored.format == .maximumVideo)
 }
 
 @MainActor

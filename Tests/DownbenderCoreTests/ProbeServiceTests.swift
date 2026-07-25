@@ -13,7 +13,9 @@ import Foundation
         return
     }
     #expect(result.title == "Test video")
-    #expect(result.availableFormats.first == .video(height: 1080))
+    #expect(result.availableFormats.first == .video(height: 2160))
+    #expect(result.availableFormats.contains(.video(height: 1440)))
+    #expect(result.closestMatch(to: .maximumVideo) == .video(height: 2160))
 
     // Playlists must resolve in ONE fast call: flat probing is non-negotiable.
     #expect(runner.recordedArguments.arguments.contains("--flat-playlist"))

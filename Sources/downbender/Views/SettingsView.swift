@@ -42,21 +42,42 @@ struct SettingsView: View {
                     Label("Download folder", systemImage: "folder")
                 }
 
-                Picker(selection: $model.defaultQuality) {
-                    Text("Ask every time").tag(DownloadFormat?.none)
-                    Text("1080p").tag(DownloadFormat?.some(.video(height: 1080)))
-                    Text("720p").tag(DownloadFormat?.some(.video(height: 720)))
-                    Text("480p").tag(DownloadFormat?.some(.video(height: 480)))
-                    Text("360p").tag(DownloadFormat?.some(.video(height: 360)))
-                    Text("Extract MP3").tag(DownloadFormat?.some(.audioMP3))
-                } label: {
-                    Label("Default quality", systemImage: "slider.horizontal.3")
+                VStack(alignment: .leading, spacing: 4) {
+                    Picker(selection: $model.defaultQuality) {
+                        Text("Ask every time").tag(DownloadFormat?.none)
+                        Divider()
+                        Text(DownloadFormat.maximumVideo.preferenceLabel)
+                            .tag(DownloadFormat?.some(.maximumVideo))
+                        Text(DownloadFormat.video(height: 2160).preferenceLabel)
+                            .tag(DownloadFormat?.some(.video(height: 2160)))
+                        Text(DownloadFormat.video(height: 1440).preferenceLabel)
+                            .tag(DownloadFormat?.some(.video(height: 1440)))
+                        Text(DownloadFormat.video(height: 1080).preferenceLabel)
+                            .tag(DownloadFormat?.some(.video(height: 1080)))
+                        Text(DownloadFormat.video(height: 720).preferenceLabel)
+                            .tag(DownloadFormat?.some(.video(height: 720)))
+                        Text(DownloadFormat.video(height: 480).preferenceLabel)
+                            .tag(DownloadFormat?.some(.video(height: 480)))
+                        Text(DownloadFormat.video(height: 360).preferenceLabel)
+                            .tag(DownloadFormat?.some(.video(height: 360)))
+                        Divider()
+                        Text(DownloadFormat.audioMP3.preferenceLabel)
+                            .tag(DownloadFormat?.some(.audioMP3))
+                    } label: {
+                        Label("Default quality", systemImage: "slider.horizontal.3")
+                    }
+
+                    Text(defaultQualityDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Default quality details")
+                        .accessibilityValue(defaultQualityDetail)
                 }
 
                 Toggle(isOn: $model.oneClickDownload) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Download immediately")
-                        Text("Skip the quality panel for videos — uses the default quality (closest available).")
+                        Text("Skip the quality panel for videos — uses the default quality.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -172,6 +193,20 @@ struct SettingsView: View {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url { model.destination = url }
+    }
+
+    private var defaultQualityDetail: String {
+        guard let format = model.defaultQuality else {
+            return "Choose a quality separately for each video."
+        }
+        switch format {
+        case .maximumVideo:
+            return "Downloads the highest resolution available · MP4 through 1080p, MKV above · files can be much larger."
+        case .video(let height):
+            return "Uses the closest available resolution at or below \(height)p · MP4 through 1080p, MKV above."
+        case .audioMP3:
+            return "Extracts the audio as an MP3 file."
+        }
     }
 
     private func beginBrowserInstallation(in browser: ChromiumBrowser) {

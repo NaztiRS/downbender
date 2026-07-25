@@ -37,12 +37,11 @@ public enum FormatParser {
     public static func parse(_ data: Data) throws -> ProbeResult {
         let raw = try JSONDecoder().decode(RawProbe.self, from: data)
 
-        // Capped at 1080p by product decision (YouTube doesn't reliably serve >1080 on download).
         // vcodec == "none" means definitely no video track; nil means UNKNOWN (e.g. archive.org
         // direct files), so a format that declares a height counts as video.
         var heights = Set<Int>()
         for f in raw.formats {
-            guard let h = f.height, h <= 1080 else { continue }
+            guard let h = f.height, h > 0 else { continue }
             if f.vcodec != "none" { heights.insert(h) }
         }
         var formats: [DownloadFormat] = heights.sorted(by: >).map { .video(height: $0) }
@@ -68,10 +67,9 @@ public enum FormatParser {
         )
     }
 
-    /// Mirrors what the real selector (`bv*[height=H]+ba`) would pick. With separate audio the
-    /// estimate is video + audio — yt-dlp merges even if the chosen video is muxed; on
-    /// muxed-only sites the single file IS the download. Never invents: a required piece
-    /// with no `filesize`/`filesize_approx` means no entry for that quality.
+    /// Mirrors the two download profiles: AVC1/M4A at <=1080p and original codecs above it.
+    /// A muxed format already includes audio; a video-only format must include the selected
+    /// audio size. Never invents: missing metadata on a required stream means no estimate.
     private static func computeApproxSizeBytes(_ all: [RawFormat], heights: Set<Int>) -> [DownloadFormat: Int64] {
         func isHLS(_ f: RawFormat) -> Bool { (f.proto ?? "").contains("m3u8") }
         func size(_ f: RawFormat) -> Int64? { f.filesize ?? f.filesizeApprox }
@@ -93,16 +91,41 @@ public enum FormatParser {
 
         let audioOnly = all.filter { ($0.vcodec ?? "none") == "none" && ($0.acodec ?? "none") != "none" }
         let bestAudio = best(among: audioOnly)
+        let bestM4AAudio = best(among: audioOnly.filter { $0.ext == "m4a" })
+
+        func estimatedSize(video: RawFormat, audio: RawFormat?) -> Int64? {
+            guard let videoSize = size(video) else { return nil }
+            // Anything except the explicit yt-dlp sentinel "none" may already be muxed.
+            guard video.acodec == "none" else { return videoSize }
+            guard let audio, let audioSize = size(audio) else { return nil }
+            return videoSize + audioSize
+        }
 
         var result: [DownloadFormat: Int64] = [:]
         for h in heights {
             let videoCandidates = all.filter { $0.height == h && $0.vcodec != "none" }
-            guard let bestVideo = best(among: videoCandidates), let vSize = size(bestVideo) else { continue }
-
-            if let bestAudio {
-                if let aSize = size(bestAudio) { result[.video(height: h)] = vSize + aSize }
+            if h <= 1080 {
+                // The compatible selector prefers AVC1, then progressive MP4, before its
+                // generic last resort. This also prevents a larger VP9 stream from skewing
+                // an estimate for a row that promises MP4.
+                let avc1 = videoCandidates.filter { $0.vcodec?.hasPrefix("avc1") == true }
+                let progressiveMP4 = videoCandidates.filter { $0.ext == "mp4" && $0.acodec != "none" }
+                guard let selected = best(among: avc1)
+                    ?? best(among: progressiveMP4)
+                    ?? best(among: videoCandidates)
+                else { continue }
+                if let estimate = estimatedSize(video: selected, audio: bestM4AAudio) {
+                    result[.video(height: h)] = estimate
+                }
             } else {
-                result[.video(height: h)] = vSize
+                // High-quality selector leads with video-only + best audio, then a muxed
+                // exact-height fallback. Do not add audio twice to an already muxed file.
+                let videoOnly = videoCandidates.filter { $0.acodec == "none" }
+                let muxed = videoCandidates.filter { $0.acodec != "none" }
+                guard let selected = best(among: videoOnly) ?? best(among: muxed) else { continue }
+                if let estimate = estimatedSize(video: selected, audio: bestAudio) {
+                    result[.video(height: h)] = estimate
+                }
             }
         }
         return result

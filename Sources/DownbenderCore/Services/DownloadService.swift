@@ -38,6 +38,13 @@ public struct DownloadService: Sendable {
     private static let deliveredPathPrefix = "DBPATH "
     /// Emitted once per file yt-dlp starts; delimits the unified-progress phases (video → audio).
     private static let destinationMarker = "[download] Destination:"
+    /// Local FFmpeg work may be silent for minutes and must never trip the network watchdog.
+    private static let postprocessingMarkers = [
+        "[Merger]",
+        "[VideoRemuxer]",
+        "[ExtractAudio]",
+        "[EmbedSubtitle]",
+    ]
 
     @discardableResult
     public func download(
@@ -79,8 +86,9 @@ public struct DownloadService: Sendable {
                         monitor.arm()
                         tracker.beginPhase()
                     }
-                    // Coupled to yt-dlp's literal log text; if it changes, only the "Merging…" state is lost.
-                    else if line.contains("[Merger]") || line.contains("Merging formats") {
+                    // Coupled to yt-dlp's postprocessor labels. Remuxing is especially important:
+                    // a large progressive fallback can be silent long enough to trip the watchdog.
+                    else if Self.isPostprocessing(line) {
                         monitor.disarm()
                         onMerging()
                     } else if line.hasPrefix(Self.deliveredPathPrefix) {
@@ -103,6 +111,12 @@ public struct DownloadService: Sendable {
         guard result.exitCode == 0 else { throw DownloadError.ytdlpFailed(result.stderr) }
         let path = deliveredPath.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return path.isEmpty ? nil : URL(fileURLWithPath: path)
+    }
+
+    private static func isPostprocessing(_ line: String) -> Bool {
+        postprocessingMarkers.contains(where: line.contains)
+            || line.contains("Merging formats")
+            || line.contains("Remuxing video")
     }
 }
 

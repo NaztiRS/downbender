@@ -61,6 +61,25 @@ private func makeService(runner: ProcessRunning) -> DownloadService {
     #expect(delivered == nil)   // no DBPATH line — nil is the normal "no path printed" answer
 }
 
+@Test func remuxPhaseSilenceDoesNotTripTheWatchdog() async throws {
+    let runner = SilentAfterLinesRunner(
+        lines: [
+            "[download] Destination: /tmp/a.webm",
+            "[VideoRemuxer] Remuxing video from webm to mkv; Destination: /tmp/a.mkv",
+        ],
+        hang: .milliseconds(400)
+    )
+    let service = makeService(runner: runner)
+    _ = try await service.download(
+        url: "u",
+        format: .video(height: 2160),
+        destination: URL(fileURLWithPath: "/tmp/dest"),
+        tmpDirectory: URL(fileURLWithPath: "/tmp/work"),
+        stallTimeout: .milliseconds(120),
+        onProgress: { _ in }
+    )
+}
+
 @Test func stalledIsTransient() {
     #expect(TransientFailure.isTransient(DownloadError.stalled))
 }

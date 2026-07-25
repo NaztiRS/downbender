@@ -40,12 +40,24 @@ public extension ProbeResult {
         switch format {
         case .audioMP3:
             return nil
+        case .maximumVideo:
+            let highest = availableFormats.compactMap { fmt -> Int? in
+                guard case .video(let h) = fmt else { return nil }
+                return h
+            }.max()
+            guard let highest else { return nil }
+            // Maximum is downloaded with the original-codec MKV profile. The stored estimate
+            // for a <=1080p row describes the compatibility MP4 profile, so it is not reusable.
+            guard highest > 1080 else { return nil }
+            return approxSizeBytes[.video(height: highest)]
         case .video(let requested):
             let heights = availableFormats.compactMap { fmt -> Int? in
                 guard case .video(let h) = fmt, h <= requested else { return nil }
                 return h
             }
             guard let best = heights.max() else { return nil }
+            // A high ceiling keeps the MKV profile even when it falls back below 1440p.
+            guard requested <= 1080 || best > 1080 else { return nil }
             return approxSizeBytes[.video(height: best)]
         }
     }
@@ -53,12 +65,20 @@ public extension ProbeResult {
 
 public extension ProbeResult {
     /// The listed format closest to `preferred`, mirroring the download selector's `height<=H`
-    /// fallback: exact or tallest below the request, else the lowest listed video, else MP3
-    /// when it's the only offer. nil when nothing is listed (caller shows the panel).
+    /// fallback: exact or tallest below the request. A ceiling is never exceeded; nil asks
+    /// the caller to show the panel when every available video is taller than the preference.
+    /// MP3 is returned only when it is the sole kind of offer.
     func closestMatch(to preferred: DownloadFormat) -> DownloadFormat? {
         switch preferred {
         case .audioMP3:
             return .audioMP3
+        case .maximumVideo:
+            let highest = availableFormats.compactMap { fmt -> Int? in
+                guard case .video(let h) = fmt else { return nil }
+                return h
+            }.max()
+            if let highest { return .video(height: highest) }
+            return availableFormats.contains(.audioMP3) ? .audioMP3 : nil
         case .video(let requested):
             let heights = availableFormats.compactMap { fmt -> Int? in
                 guard case .video(let h) = fmt else { return nil }
@@ -68,7 +88,7 @@ public extension ProbeResult {
                 return availableFormats.contains(.audioMP3) ? .audioMP3 : nil
             }
             let below = heights.filter { $0 <= requested }
-            return .video(height: below.max() ?? heights.min()!)
+            return below.max().map { .video(height: $0) }
         }
     }
 }

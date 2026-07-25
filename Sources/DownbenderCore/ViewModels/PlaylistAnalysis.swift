@@ -48,15 +48,22 @@ public final class PlaylistAnalysis {
         return Double(bytes) / seconds
     }
 
-    /// Typical download rates (bytes/second) per quality: avc1+m4a for video, VBR-0 for MP3.
+    /// Typical download rates (bytes/second) per output profile; real samples replace them.
     static func nominalRate(for format: DownloadFormat) -> Double {
         switch format {
+        case .maximumVideo:
+            // A playlist may mix 1080p, 4K and 8K. Sampling replaces this conservative
+            // 4K baseline as soon as yt-dlp exposes real sizes for an entry.
+            return 1_500_000
         case .video(let height):
             switch height {
             case ...399: return 80_000
             case ...599: return 115_000
             case ...799: return 200_000
-            default: return 350_000
+            case ...1199: return 350_000
+            case ...1599: return 750_000
+            case ...2199: return 1_500_000
+            default: return 3_000_000
             }
         case .audioMP3:
             return 30_000

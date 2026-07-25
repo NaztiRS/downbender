@@ -19,7 +19,8 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 
 ## Features
 
-- Video downloads up to 1080p (H.264/MP4) or MP3 audio extraction.
+- Video downloads at every resolution the source exposes, including **Maximum available**:
+  MP4 at 1080p or below, and MKV above 1080p without transcoding.
 - Works with YouTube — the most battle-tested path — and [many other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) supported by yt-dlp (support for non-YouTube sites is still maturing).
 - Reorderable download queue with accessible progress and individual or batch pause, resume, and cancel controls.
 - Clipboard detection: copy a video link anywhere, confirm, download.
@@ -60,6 +61,13 @@ Paste a video URL (or copy one anywhere and confirm the prompt), pick a
 quality or **Extract MP3**, choose a folder, download. Click a finished
 row to reveal the file in Finder.
 
+- **Video quality:** choose **Maximum available** for the highest resolution
+  offered by a video, or choose a resolution limit such as **2160p (4K)**,
+  **1440p**, or **1080p**. A limit uses the closest available resolution at
+  or below that value. Videos through 1080p are saved as MP4 and higher
+  resolutions as MKV. For playlists, the choice is applied independently
+  to every video; **Maximum available** uses MKV so it can preserve whichever
+  codec and resolution each entry offers.
 - **Age-restricted / members-only videos:** set **Settings → Privacy →
   Browser cookies** to the browser where you're signed in. macOS may ask
   for permission once.

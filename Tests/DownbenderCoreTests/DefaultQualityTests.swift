@@ -7,16 +7,27 @@ private func probeResult(formats: [DownloadFormat]) -> ProbeResult {
 }
 
 @Test func closestMatchPrefersExactThenLowerThenLowest() {
-    let probe = probeResult(formats: [.video(height: 1080), .video(height: 720), .video(height: 360), .audioMP3])
+    let probe = probeResult(formats: [
+        .video(height: 2160), .video(height: 1440), .video(height: 1080),
+        .video(height: 720), .video(height: 360), .audioMP3,
+    ])
+    #expect(probe.closestMatch(to: .maximumVideo) == .video(height: 2160))
     #expect(probe.closestMatch(to: .video(height: 720)) == .video(height: 720))
     #expect(probe.closestMatch(to: .video(height: 480)) == .video(height: 360)) // nearest below
-    #expect(probe.closestMatch(to: .video(height: 240)) == .video(height: 360)) // nothing below → lowest listed
+    #expect(probe.closestMatch(to: .video(height: 240)) == nil) // never exceed a saved ceiling
     #expect(probe.closestMatch(to: .audioMP3) == .audioMP3)
+}
+
+@Test func closestMatchNeverExceedsTheRequestedCeiling() {
+    let highOnly = probeResult(formats: [.video(height: 2160), .video(height: 1440), .audioMP3])
+    #expect(highOnly.closestMatch(to: .video(height: 1080)) == nil)
 }
 
 @Test func closestMatchWithoutVideoFallsBackToMP3OrNil() {
     #expect(probeResult(formats: [.audioMP3]).closestMatch(to: .video(height: 1080)) == .audioMP3)
+    #expect(probeResult(formats: [.audioMP3]).closestMatch(to: .maximumVideo) == .audioMP3)
     #expect(probeResult(formats: []).closestMatch(to: .video(height: 1080)) == nil)
+    #expect(probeResult(formats: []).closestMatch(to: .maximumVideo) == nil)
 }
 
 @MainActor private func makeModel(runner: ProcessRunning, defaults: UserDefaults) -> AppModel {
@@ -64,6 +75,12 @@ private func probeFixtureJSON() throws -> String {
     let second = makeModel(runner: FakeProcessRunner(), defaults: defaults)
     #expect(second.defaultQuality == .video(height: 720))
     #expect(second.oneClickDownload == true)
+
+    second.defaultQuality = .maximumVideo
+    #expect(defaults.string(forKey: AppModel.defaultQualityKey) == "vmax")
+    let third = makeModel(runner: FakeProcessRunner(), defaults: defaults)
+    #expect(third.defaultQuality == .maximumVideo)
+    #expect(third.oneClickDownload == true)
 }
 
 @MainActor
@@ -81,7 +98,55 @@ private func probeFixtureJSON() throws -> String {
     await waitWhileProbing(item)
 
     #expect(item.state != .readyToChoose) // panel skipped: straight to the queue pipeline
-    #expect(item.format != nil)
+    #expect(item.format == .video(height: 1080))
+}
+
+@MainActor
+@Test func oneClickMaximumQualityResolvesToHighestProbedHeight() async throws {
+    let suite = "dq-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let runner = FakeProcessRunner(stdoutLines: [try probeFixtureJSON()], exitCode: 0)
+    let model = makeModel(runner: runner, defaults: defaults)
+    model.defaultQuality = .maximumVideo
+    model.oneClickDownload = true
+
+    model.addURL("https://youtu.be/abc123")
+    let item = model.queue.items[0]
+    await waitWhileProbing(item)
+
+    #expect(item.state != .readyToChoose)
+    #expect(item.format == .video(height: 2160))
+}
+
+@MainActor
+@Test func oneClickNeverExceedsTheSavedQualityCeiling() async {
+    let suite = "dq-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let highOnly = """
+    {
+      "id": "high-only",
+      "title": "High only",
+      "formats": [
+        {"format_id": "271", "height": 1440, "vcodec": "vp9", "acodec": "none"},
+        {"format_id": "251", "vcodec": "none", "acodec": "opus"}
+      ]
+    }
+    """
+    let model = makeModel(
+        runner: FakeProcessRunner(stdoutLines: [highOnly], exitCode: 0),
+        defaults: defaults
+    )
+    model.defaultQuality = .video(height: 1080)
+    model.oneClickDownload = true
+
+    model.addURL("https://youtu.be/high-only")
+    let item = model.queue.items[0]
+    await waitWhileProbing(item)
+
+    #expect(item.state == .readyToChoose)
+    #expect(item.format == nil)
 }
 
 @MainActor

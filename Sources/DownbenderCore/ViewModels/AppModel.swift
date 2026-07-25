@@ -467,7 +467,7 @@ public final class AppModel {
         item.includeSubtitles = includeSubtitles
         item.fileNameTemplate = fileNameTemplate
         item.destination = destination
-        item.expectedTotalBytes = item.probe?.approxSizeBytes[format]
+        item.expectedTotalBytes = item.probe?.approxDownloadSize(for: format)
         queue.start(item)
     }
 

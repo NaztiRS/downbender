@@ -2,15 +2,17 @@ import Testing
 import Foundation
 @testable import DownbenderCore
 
-@Test func formatParserBuildsQualityListCappedAt1080() throws {
+@Test func formatParserBuildsQualityListAcrossAllPositiveHeights() throws {
     let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
     let data = try Data(contentsOf: url)
     let result = try FormatParser.parse(data)
 
     #expect(result.videoID == "abc123")
     #expect(result.title == "Test video")
-    // The fixture carries 2160p/1440p, but the panel is capped at <=1080 by user decision (YouTube does not always serve >1080).
+    // Every positive height reported by yt-dlp is offered, including qualities above 1080p.
     #expect(result.availableFormats == [
+        .video(height: 2160),
+        .video(height: 1440),
         .video(height: 1080),
         .video(height: 720),
         .video(height: 360),
@@ -25,13 +27,13 @@ import Foundation
     let data = try Data(contentsOf: url)
     let result = try FormatParser.parse(data)
 
-    // 1080p: the HLS candidate (299, higher tbr) must be discarded by -S proto; 248 wins
-    // (highest tbr among the non-HLS) + audio 140. 48_000_000 + 3_400_000.
-    #expect(result.approxSizeBytes[.video(height: 1080)] == 51_400_000)
+    // 1080p MP4: the VP9 candidate is incompatible and the HLS AVC1 candidate loses to
+    // HTTPS via -S proto. AVC1 format 137 + M4A 140 = 45M + 3.4M.
+    #expect(result.approxSizeBytes[.video(height: 1080)] == 48_400_000)
 
-    // 720p: format 22 is muxed, but the real selector `bv*[height=H]+ba` STILL downloads
-    // separate audio and merges, so the honest size always adds the audio (140). 30M + 3.4M.
-    #expect(result.approxSizeBytes[.video(height: 720)] == 33_400_000)
+    // 720p: format 22 is already muxed. With yt-dlp's default single-audio behavior the
+    // `+ba` part is ignored, so its 30M must not have audio counted twice.
+    #expect(result.approxSizeBytes[.video(height: 720)] == 30_000_000)
 
     // 144p: format 160 only carries filesize_approx, which must serve as a fallback, + audio (140).
     #expect(result.approxSizeBytes[.video(height: 144)] == 8_400_000)
@@ -40,8 +42,10 @@ import Foundation
     // be invented; the quality is listed but gets no entry.
     #expect(result.approxSizeBytes[.video(height: 360)] == nil)
 
-    // >1080 is out of the panel by user decision, even though the fixture carries those formats.
-    #expect(result.approxSizeBytes[.video(height: 1440)] == nil)
+    // 1440p carries filesize_approx, so it remains estimable above the old 1080p cap.
+    #expect(result.approxSizeBytes[.video(height: 1440)] == 123_400_000)
+
+    // 2160p is listed but carries no size metadata: never substitute a lower quality's size.
     #expect(result.approxSizeBytes[.video(height: 2160)] == nil)
 
     // audioMP3 never carries a size: the conversion changes the real weight.
@@ -73,13 +77,15 @@ import Foundation
     ])
 }
 
-@Test func formatParserStillExcludesExplicitNoneCodecs() throws {
+@Test func formatParserExcludesExplicitNoneCodecsAndNonpositiveHeights() throws {
     let json = """
     {
       "id": "x1",
       "title": "Video-only formats",
       "formats": [
         {"format_id": "v", "ext": "mp4", "height": 480, "vcodec": "avc1.64001F", "acodec": "none"},
+        {"format_id": "zero", "ext": "mp4", "height": 0, "vcodec": "avc1", "acodec": "none"},
+        {"format_id": "negative", "ext": "mp4", "height": -144, "vcodec": "avc1", "acodec": "none"},
         {"format_id": "a", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2"}
       ]
     }
@@ -88,6 +94,7 @@ import Foundation
 
     #expect(result.availableFormats.contains(.video(height: 480)))
     #expect(!result.availableFormats.contains(.video(height: 0)))
+    #expect(!result.availableFormats.contains(.video(height: -144)))
     #expect(result.availableFormats.contains(.audioMP3))
 }
 
@@ -134,12 +141,48 @@ import Foundation
 @Test func approxDownloadSizeFallsBackToClosestLowerQuality() throws {
     let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
     let result = try FormatParser.parse(try Data(contentsOf: url))
-    // 2160p is not offered (1080 cap), so the request lands on the best listed at or below it.
-    #expect(result.approxDownloadSize(for: .video(height: 2160)) == 51_400_000)
-    #expect(result.approxDownloadSize(for: .video(height: 720)) == 33_400_000)
+    // Maximum resolves to the actual top height. Its missing size must remain unknown rather
+    // than borrowing the known 1440p estimate.
+    #expect(result.approxDownloadSize(for: .maximumVideo) == nil)
+    #expect(result.approxDownloadSize(for: .video(height: 2160)) == nil)
+    #expect(result.approxDownloadSize(for: .video(height: 2000)) == 123_400_000)
+    #expect(result.approxDownloadSize(for: .video(height: 1440)) == 123_400_000)
+    #expect(result.approxDownloadSize(for: .video(height: 720)) == 30_000_000)
     // 360p exists but carries no size: never invented.
     #expect(result.approxDownloadSize(for: .video(height: 360)) == nil)
     #expect(result.approxDownloadSize(for: .audioMP3) == nil)
+}
+
+@Test func maximumDownloadSizeUsesTheHighestAvailableHeight() {
+    let result = ProbeResult(
+        videoID: "max-size",
+        title: "Maximum size",
+        thumbnailURL: nil,
+        durationSeconds: nil,
+        availableFormats: [.video(height: 1440), .video(height: 2160), .audioMP3],
+        approxSizeBytes: [
+            .video(height: 1440): 900_000_000,
+            .video(height: 2160): 200_000_000,
+        ]
+    )
+
+    // Resolution decides "maximum", not whichever known format happens to have more bytes.
+    #expect(result.approxDownloadSize(for: .maximumVideo) == 200_000_000)
+}
+
+@Test func highMKVProfilesDoNotReuseLowMP4Estimates() {
+    let result = ProbeResult(
+        videoID: "profile-size",
+        title: "Profile size",
+        thumbnailURL: nil,
+        durationSeconds: nil,
+        availableFormats: [.video(height: 1080), .audioMP3],
+        approxSizeBytes: [.video(height: 1080): 48_400_000]
+    )
+
+    #expect(result.approxDownloadSize(for: .video(height: 1080)) == 48_400_000)
+    #expect(result.approxDownloadSize(for: .video(height: 2160)) == nil)
+    #expect(result.approxDownloadSize(for: .maximumVideo) == nil)
 }
 
 // MARK: - Playlists

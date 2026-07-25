@@ -59,6 +59,36 @@ import Foundation
     #expect(item.deliveredMismatch == true)
 }
 
+@MainActor
+@Test func coordinatorRecordsMaximumDimensionsWithoutMismatch() async {
+    let runner = FakeProcessRunner(stdoutLines: [
+        "DBPROG 100.0% 2MiB/s 00:00",
+        "DBPATH /tmp/out/video.mkv",
+    ], exitCode: 0)
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(
+        download: download,
+        inspect: { _ in (width: 3840, height: 2160) }
+    )
+    let item = DownloadItem(
+        url: "u",
+        title: "t",
+        format: .maximumVideo,
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+
+    #expect(item.state == .done)
+    #expect(item.deliveredNote == "3840×2160")
+    #expect(item.deliveredMismatch == false)
+    #expect(item.deliveredFileURL == URL(fileURLWithPath: "/tmp/out/video.mkv"))
+}
+
 // The ffprobe verification adds a suspension point after the download: a cancel while it
 // runs (inspect returns nil without propagating the error) must end in .cancelled, not .done.
 @MainActor
