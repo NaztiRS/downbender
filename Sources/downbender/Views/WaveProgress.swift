@@ -5,6 +5,7 @@ struct WaveProgress: View {
     var fraction: Double?
     var pulsing: Bool = false
     var dimmed: Bool = false
+    var updatesFrequently: Bool = false
     var height: CGFloat = 7
 
     @Environment(\.colorScheme) private var scheme
@@ -50,8 +51,38 @@ struct WaveProgress: View {
             }
         }
         .frame(height: height)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Download progress")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityAddTraits(accessibilityTraits)
         .onAppear(perform: startMotion)
         .onChange(of: pulsing) { _, _ in startMotion() }
+    }
+
+    private var accessibilityValue: String {
+        if dimmed {
+            guard let fraction else { return "Paused" }
+            return "Paused, \(percentage(for: fraction)) percent"
+        }
+        if pulsing {
+            return "Finalizing"
+        }
+        guard let fraction else {
+            return "In progress, percentage unavailable"
+        }
+
+        let clamped = max(0, min(1, fraction))
+        return clamped == 1 ? "Complete" : "\(percentage(for: clamped)) percent"
+    }
+
+    private var accessibilityTraits: AccessibilityTraits {
+        guard updatesFrequently, !dimmed, !pulsing else { return [] }
+        if let fraction, max(0, min(1, fraction)) == 1 { return [] }
+        return .updatesFrequently
+    }
+
+    private func percentage(for fraction: Double) -> Int {
+        Int((max(0, min(1, fraction)) * 100).rounded())
     }
 
     private var currentGlow: Double {

@@ -12,33 +12,7 @@ struct QueueRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            thumbnail
-                // Sheets on separate nodes (project pattern) avoid collisions with the row's other sheets.
-                .sheet(isPresented: Binding(
-                    get: { deleteError != nil },
-                    set: { if !$0 { deleteError = nil } }
-                )) {
-                    ErrorDetailSheet(title: "Couldn't delete", message: deleteError ?? "", onClose: { deleteError = nil })
-                }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(item.title).lineLimit(1).font(.body.weight(.medium))
-                    Spacer(minLength: 0)
-                    if let format = item.format { formatChip(format) }
-                }
-                if showsBar {
-                    WaveProgress(
-                        fraction: item.state == .probing || (item.state == .downloading && item.indeterminateProgress)
-                            ? nil : barFraction,
-                        pulsing: item.state == .merging,
-                        dimmed: item.state == .paused
-                    )
-                }
-                Text(statusLine).font(.caption)
-                    .foregroundStyle(captionColor)
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-            }
+            primaryArea
             trailingButtons
         }
         .padding(12)
@@ -52,10 +26,7 @@ struct QueueRow: View {
                 )
         )
         .shadow(color: isActive ? Theme.glow.opacity(0.18) : .black.opacity(0.25), radius: isActive ? 10 : 6, y: 3)
-        // Buttons take priority over onTapGesture in SwiftUI, so this gesture doesn't steal their clicks.
         .contentShape(Rectangle())
-        .onTapGesture(perform: primaryAction)
-        .help(helpText)
         .sheet(isPresented: $choosing) {
             chooserSheet
         }
@@ -76,6 +47,62 @@ struct QueueRow: View {
             Text("“\(item.title)” is no longer on disk. It may have been moved or deleted.")
         }
         .contextMenu { contextMenuItems }
+    }
+
+    @ViewBuilder private var primaryArea: some View {
+        Group {
+            if hasPrimaryAction {
+                Button(action: primaryAction) {
+                    rowSummary
+                }
+                .buttonStyle(.plain)
+                .help(primaryActionLabel)
+                .accessibilityLabel(item.title)
+                .accessibilityValue(accessibilityStatus)
+                .accessibilityHint(primaryActionHint)
+            } else {
+                rowSummary
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(item.title)
+                    .accessibilityValue(accessibilityStatus)
+            }
+        }
+        .modifier(DeliveredFileDragModifier(fileURL: draggableFileURL))
+    }
+
+    private var rowSummary: some View {
+        HStack(spacing: 14) {
+            thumbnail
+                // Sheets on separate nodes (project pattern) avoid collisions with the row's other sheets.
+                .sheet(isPresented: Binding(
+                    get: { deleteError != nil },
+                    set: { if !$0 { deleteError = nil } }
+                )) {
+                    ErrorDetailSheet(title: "Couldn't delete", message: deleteError ?? "", onClose: { deleteError = nil })
+                }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(item.title).lineLimit(1).font(.body.weight(.medium))
+                    Spacer(minLength: 0)
+                    if let format = item.format { formatChip(format) }
+                }
+                if showsBar {
+                    WaveProgress(
+                        fraction: item.state == .probing || (item.state == .downloading && item.indeterminateProgress)
+                            ? nil : barFraction,
+                        pulsing: item.state == .merging,
+                        dimmed: item.state == .paused,
+                        updatesFrequently: item.state == .probing || item.state == .downloading
+                    )
+                }
+                Text(statusLine).font(.caption)
+                    .foregroundStyle(captionColor)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder private var chooserSheet: some View {
@@ -194,6 +221,7 @@ struct QueueRow: View {
             iconButton("pause.circle.fill", .secondary, "Pause") { model.queue.pause(item) }
             iconButton("xmark.circle.fill", .tertiary, "Cancel") { model.queue.cancel(item) }
         case .merging:
+            iconButton("pause.circle.fill", .secondary, "Pause") { model.queue.pause(item) }
             iconButton("xmark.circle.fill", .tertiary, "Cancel") { model.queue.cancel(item) }
         case .paused:
             iconButton("play.circle.fill", .tint, "Resume") { model.queue.resume(item) }
@@ -222,6 +250,8 @@ struct QueueRow: View {
     private func infoButton(message: String, title: String) -> some View {
         Button { showingError = true } label: { Image(systemName: "info.circle").font(.title3) }
             .buttonStyle(.plain).foregroundStyle(.secondary)
+            .help("Show full error")
+            .accessibilityLabel("Show full error")
             .sheet(isPresented: $showingError) {
                 ErrorDetailSheet(title: title, message: message, onClose: { showingError = false })
             }
@@ -243,6 +273,7 @@ struct QueueRow: View {
             Button("Pause") { model.queue.pause(item) }
             Button("Cancel") { model.queue.cancel(item) }
         case .merging:
+            Button("Pause") { model.queue.pause(item) }
             Button("Cancel") { model.queue.cancel(item) }
         case .paused:
             Button("Resume") { model.queue.resume(item) }
@@ -291,6 +322,53 @@ struct QueueRow: View {
 
     private var isActive: Bool {
         item.state == .downloading || item.state == .merging
+    }
+
+    private var hasPrimaryAction: Bool {
+        item.state == .readyToChoose || item.state == .done
+    }
+
+    private var primaryActionLabel: String {
+        switch item.state {
+        case .readyToChoose:
+            switch item.source {
+            case .media: "Choose quality"
+            case .directFile: "Review download"
+            case .ambiguous: "Choose download method"
+            }
+        case .done: "Show in Finder"
+        default: ""
+        }
+    }
+
+    private var primaryActionHint: String {
+        switch item.state {
+        case .readyToChoose: "Opens the download options"
+        case .done: "Reveals the downloaded file in Finder"
+        default: ""
+        }
+    }
+
+    private var accessibilityStatus: String {
+        switch item.state {
+        case .readyToChoose:
+            switch item.source {
+            case .media: return "Awaiting quality selection"
+            case .directFile: return "Awaiting download review"
+            case .ambiguous: return "Awaiting download method"
+            }
+        case .downloading where item.indeterminateProgress:
+            return "Downloading, progress unknown"
+        default:
+            return statusLine
+        }
+    }
+
+    private var draggableFileURL: URL? {
+        guard item.state == .done, let url = item.deliveredFileURL,
+              FileManager.default.fileExists(atPath: url.path)
+        else { return nil }
+        return url
     }
 
     private var barFraction: Double? {
@@ -348,11 +426,17 @@ struct QueueRow: View {
         }
     }
 
-    private var helpText: String {
-        switch item.state {
-        case .done: return "Click to show in Finder"
-        case .readyToChoose: return "Click to choose quality"
-        default: return ""
+}
+
+private struct DeliveredFileDragModifier: ViewModifier {
+    let fileURL: URL?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let fileURL {
+            content.draggable(fileURL)
+        } else {
+            content
         }
     }
 }

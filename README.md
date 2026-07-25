@@ -21,11 +21,12 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 
 - Video downloads up to 1080p (H.264/MP4) or MP3 audio extraction.
 - Works with YouTube — the most battle-tested path — and [many other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) supported by yt-dlp (support for non-YouTube sites is still maturing).
-- Download queue with per-item progress, pause/resume and cancel.
+- Reorderable download queue with accessible progress and individual or batch pause, resume, and cancel controls.
 - Clipboard detection: copy a video link anywhere, confirm, download.
+- Drag links into the window to enqueue them, or drag a completed file from the queue into Finder.
 - Optional extension for sending videos from Chrome, Brave, Edge, or Chromium to Downbender.
 - Configurable file names for media downloads, with safe yt-dlp fields such as title, uploader, and upload date.
-- Dock bounce and completion sound when a download finishes in the background.
+- Live queue status in the menu bar and Dock, plus actionable completion notices; system banners are used when macOS permits them.
 - Self-contained: yt-dlp, FFmpeg and Deno ship inside the app. Nothing to install.
 - One-click updater for the download engine (yt-dlp) in Settings.
 

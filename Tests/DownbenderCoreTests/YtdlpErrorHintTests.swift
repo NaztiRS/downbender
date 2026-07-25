@@ -5,11 +5,20 @@ import Testing
     let raw = "ERROR: [youtube] jVRcI47Hhp0: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication."
     let hint = YtdlpErrorHint.friendly(raw)
     #expect(hint?.contains("Browser cookies") == true)
+    #expect(hint?.contains("Open Settings") == false)
+}
+
+@Test func botGateHintCarriesAnOpenSettingsAction() {
+    let raw = "ERROR: Sign in to confirm you're not a bot. Use --cookies-from-browser."
+    let hint = YtdlpErrorHint.hint(for: raw)
+    #expect(hint?.suggestedAction == .openSettings)
+    #expect(hint?.message.contains("Browser cookies") == true)
 }
 
 @Test func friendlyReturnsNilForUnrelatedErrors() {
     #expect(YtdlpErrorHint.friendly("ERROR: Unsupported URL: https://example.com/") == nil)
     #expect(YtdlpErrorHint.friendly("") == nil)
+    #expect(YtdlpErrorHint.hint(for: "ERROR: Unsupported URL: https://example.com/") == nil)
 }
 
 @Test func friendlyMapsDNSResolutionFailureToNetworkHint() {
@@ -18,4 +27,5 @@ import Testing
     let lower = hint?.lowercased()
     #expect(lower?.contains("connection") == true)
     #expect(lower?.contains("network") == true)
+    #expect(YtdlpErrorHint.hint(for: raw)?.suggestedAction == nil)
 }

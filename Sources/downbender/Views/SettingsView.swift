@@ -353,7 +353,7 @@ private struct UpdateProgressView: View {
             .font(.callout)
             .foregroundStyle(.secondary)
 
-            WaveProgress(fraction: fraction, height: 11)
+            WaveProgress(fraction: fraction, updatesFrequently: true, height: 11)
         }
         .padding(.vertical, 6)
         .animation(.easeOut(duration: 0.3), value: fraction)

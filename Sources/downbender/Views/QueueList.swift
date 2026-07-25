@@ -3,35 +3,116 @@ import DownbenderCore
 
 struct QueueList: View {
     @Bindable var model: AppModel
+    @State private var confirmingCancelAll = false
 
     var body: some View {
         if model.queue.items.isEmpty {
             emptyState
         } else {
             VStack(spacing: 0) {
-                if model.queue.hasSettledItems { clearBar }
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(model.queue.items) { item in
-                            QueueRow(item: item, model: model)
-                        }
-                    }
-                    .padding(16)
+                if showsQueueBar {
+                    queueActionsBar
+                    Divider()
                 }
+                List {
+                    ForEach(model.queue.items) { item in
+                        QueueRow(item: item, model: model)
+                            .moveDisabled(!model.queue.canReorder(item))
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                    .onMove { source, destination in
+                        model.queue.move(fromOffsets: source, toOffset: destination)
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+            }
+            .confirmationDialog(
+                cancelAllTitle,
+                isPresented: $confirmingCancelAll,
+                titleVisibility: .visible
+            ) {
+                Button(cancelAllButtonTitle, role: .destructive) {
+                    model.queue.cancelAll()
+                }
+                .disabled(model.queue.cancellableCount == 0)
+                Button("Keep downloads", role: .cancel) {}
+            } message: {
+                Text("Queued, downloading, finalizing, and paused downloads will be marked Cancelled. Partial progress may be lost. Finished files won’t be deleted.")
             }
         }
     }
 
-    private var clearBar: some View {
-        HStack {
+    private var showsQueueBar: Bool {
+        model.queue.cancellableCount > 0 || model.queue.hasSettledItems
+    }
+
+    private var queueActionsBar: some View {
+        HStack(spacing: 14) {
+            if model.queue.cancellableCount > 0 {
+                Button {
+                    model.queue.pauseAllActive()
+                } label: {
+                    Label("Pause all", systemImage: "pause.circle.fill")
+                }
+                .disabled(model.queue.pausableCount == 0)
+                .opacity(model.queue.pausableCount == 0 ? 0.45 : 1)
+                .help(batchHelp("Pause", count: model.queue.pausableCount))
+                .accessibilityLabel("Pause all downloads")
+                .accessibilityHint(batchHelp("Pause", count: model.queue.pausableCount))
+
+                Button {
+                    model.queue.resumeAllPaused()
+                } label: {
+                    Label("Resume all", systemImage: "play.circle.fill")
+                }
+                .disabled(model.queue.resumableCount == 0)
+                .opacity(model.queue.resumableCount == 0 ? 0.45 : 1)
+                .help(batchHelp("Resume", count: model.queue.resumableCount))
+                .accessibilityLabel("Resume all downloads")
+                .accessibilityHint(batchHelp("Resume", count: model.queue.resumableCount))
+
+                Button {
+                    confirmingCancelAll = true
+                } label: {
+                    Label("Cancel all…", systemImage: "xmark.circle.fill")
+                }
+                .foregroundStyle(.red)
+                .help(batchHelp("Cancel", count: model.queue.cancellableCount))
+                .accessibilityLabel("Cancel all downloads")
+                .accessibilityHint(batchHelp("Cancel", count: model.queue.cancellableCount))
+            }
+
             Spacer()
-            Button("Clear finished") { model.queue.clearSettled() }
-                .buttonStyle(.plain)
-                .font(.callout)
-                .foregroundStyle(Theme.accent)
-                .help("Remove finished, failed and cancelled downloads from the list")
+
+            if model.queue.hasSettledItems {
+                Button("Clear finished") { model.queue.clearSettled() }
+                    .foregroundStyle(Theme.accent)
+                    .help("Remove finished, failed and cancelled downloads from the list")
+            }
         }
-        .padding(.horizontal, 16).padding(.top, 10)
+        .buttonStyle(.plain)
+        .font(.callout)
+        .foregroundStyle(Theme.accent)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Theme.surface)
+    }
+
+    private var cancelAllTitle: String {
+        let count = model.queue.cancellableCount
+        return count == 1 ? "Cancel 1 download?" : "Cancel \(count) downloads?"
+    }
+
+    private var cancelAllButtonTitle: String {
+        model.queue.cancellableCount == 1 ? "Cancel download" : "Cancel downloads"
+    }
+
+    private func batchHelp(_ action: String, count: Int) -> String {
+        guard count > 0 else { return "No downloads to \(action.lowercased())" }
+        return "\(action) \(count) download\(count == 1 ? "" : "s")"
     }
 
     private var emptyState: some View {

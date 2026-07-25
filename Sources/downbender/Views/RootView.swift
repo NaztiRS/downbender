@@ -1,9 +1,11 @@
 import SwiftUI
+import CoreTransferable
 import DownbenderCore
 
 struct RootView: View {
     @State var model: AppModel
     @State private var urlText = ""
+    @State private var isDropTargeted = false
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
@@ -71,14 +73,14 @@ struct RootView: View {
         // Anchored to the outer VStack: URLBar owns the clipboard sheet and QueueList the playlist panel.
         .sheet(isPresented: Binding(
             get: { model.pendingPlaylistChoice != nil },
-            set: { if !$0 { model.pendingPlaylistChoice = nil } }
+            set: { if !$0 { model.dismissPlaylistChoice() } }
         )) {
             if let url = model.pendingPlaylistChoice {
                 PlaylistScopePrompt(
                     url: url,
                     onVideo: { model.chooseVideoOnly() },
                     onPlaylist: { model.chooseWholePlaylist() },
-                    onDismiss: { model.pendingPlaylistChoice = nil }
+                    onDismiss: { model.dismissPlaylistChoice() }
                 )
             }
         }
@@ -88,6 +90,29 @@ struct RootView: View {
         }
         .background(AtmosphereBackground())
         .frame(minWidth: 560, minHeight: 420)
+        .dropDestination(for: DroppedWebContent.self) { items, _ in
+            enqueueDropped(items.map(\.text))
+        } isTargeted: {
+            isDropTargeted = $0
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Theme.surface.opacity(0.92))
+                    .overlay {
+                        Label("Drop links to download", systemImage: "link.badge.plus")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+                    }
+                    .padding(8)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 SettingsLink {
@@ -107,5 +132,29 @@ struct RootView: View {
         guard !urls.isEmpty else { return }
         urlText = ""
         for url in urls { model.addURL(url) }
+    }
+
+    /// Browser drags usually arrive as URL, while selections and some apps expose plain
+    /// text. Both representations land here and may contain more than one link.
+    private func enqueueDropped(_ items: [String]) -> Bool {
+        let urls = URLBatch.droppedWebURLs(items)
+        guard !urls.isEmpty else { return false }
+        for url in urls { model.addURL(url) }
+        return true
+    }
+}
+
+/// One drop payload with URL and plain-text import representations. URL comes first so
+/// browser link drags keep their canonical URL; the text fallback also supports batches.
+private struct DroppedWebContent: Transferable {
+    let text: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation { (url: URL) in
+            DroppedWebContent(text: url.absoluteString)
+        }
+        ProxyRepresentation { (text: String) in
+            DroppedWebContent(text: text)
+        }
     }
 }

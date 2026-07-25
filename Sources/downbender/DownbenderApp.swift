@@ -1,10 +1,31 @@
 import AppKit
+import Observation
 import SwiftUI
 import DownbenderCore
 
 @MainActor
 private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
+    let notifier = DownloadNotifier()
+    var openMainWindowHandler: (() -> Void)? {
+        didSet {
+            guard shouldOpenMainWindowWhenReady, openMainWindowHandler != nil else { return }
+            shouldOpenMainWindowWhenReady = false
+            presentMainWindow()
+        }
+    }
+    private var shouldOpenMainWindowWhenReady = false
+
+    func bind(model: AppModel) {
+        self.model = model
+        observeQueue()
+    }
+
+    func applicationWillFinishLaunching(_: Notification) {
+        // Apple requires the notification delegate before launch finishes so a response
+        // that launches the app is not lost.
+        notifier.configure { [weak self] in self?.presentMainWindow() }
+    }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
@@ -30,6 +51,152 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_: Notification) {
         ChromeIntegrationInstaller.cleanUpTemporaryInstaller()
     }
+
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+        presentMainWindow()
+        return true
+    }
+
+    func applicationDockMenu(_: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        if let model {
+            let summary = QueueActivitySummary(items: model.queue.items)
+            let status = NSMenuItem(title: dockStatusText(summary), action: nil, keyEquivalent: "")
+            status.isEnabled = false
+            menu.addItem(status)
+            menu.addItem(.separator())
+
+            if model.queue.cancellableCount > 0 {
+                addDockItem(
+                    to: menu,
+                    title: "Pause All",
+                    action: #selector(pauseAllFromSystemSurface),
+                    enabled: model.queue.pausableCount > 0
+                )
+                addDockItem(
+                    to: menu,
+                    title: "Resume All",
+                    action: #selector(resumeAllFromSystemSurface),
+                    enabled: model.queue.resumableCount > 0
+                )
+                menu.addItem(.separator())
+            }
+
+            if let notice = notifier.currentNotice {
+                addDockItem(
+                    to: menu,
+                    title: notice.actionTitle,
+                    action: #selector(openLatestCompletion)
+                )
+            }
+            addDockItem(
+                to: menu,
+                title: "Open Downloads Folder",
+                action: #selector(openDownloadsFolder)
+            )
+        }
+        addDockItem(to: menu, title: "Open Downbender", action: #selector(openMainWindowFromSystemSurface))
+        return menu
+    }
+
+    private func observeQueue() {
+        guard let model else {
+            NSApp.dockTile.badgeLabel = nil
+            return
+        }
+        withObservationTracking {
+            updateDockBadge(QueueActivitySummary(items: model.queue.items))
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.observeQueue() }
+        }
+    }
+
+    private func updateDockBadge(_ summary: QueueActivitySummary) {
+        if summary.activeCount > 0 {
+            if let fraction = summary.progressFraction {
+                NSApp.dockTile.badgeLabel = "\(Int((fraction * 100).rounded()))%"
+            } else {
+                NSApp.dockTile.badgeLabel = "\(summary.activeCount)"
+            }
+        } else if summary.pausedCount > 0 {
+            NSApp.dockTile.badgeLabel = "Ⅱ \(summary.pausedCount)"
+        } else if summary.failedCount > 0 {
+            NSApp.dockTile.badgeLabel = "!"
+        } else if summary.analyzingCount > 0 {
+            NSApp.dockTile.badgeLabel = "…"
+        } else if summary.choosingCount > 0 {
+            NSApp.dockTile.badgeLabel = "?"
+        } else {
+            NSApp.dockTile.badgeLabel = nil
+        }
+    }
+
+    private func dockStatusText(_ summary: QueueActivitySummary) -> String {
+        if summary.activeCount > 0 {
+            let noun = summary.activeCount == 1 ? "download" : "downloads"
+            if let fraction = summary.progressFraction {
+                return "\(summary.activeCount) \(noun) · \(Int((fraction * 100).rounded()))%"
+            }
+            return "\(summary.activeCount) \(noun) active"
+        }
+        if summary.pausedCount > 0 {
+            return "\(summary.pausedCount) paused"
+        }
+        if summary.failedCount > 0 {
+            return "\(summary.failedCount) failed"
+        }
+        if summary.analyzingCount > 0 {
+            return "\(summary.analyzingCount) analyzing"
+        }
+        if summary.choosingCount > 0 {
+            return "\(summary.choosingCount) awaiting choice"
+        }
+        return "No active downloads"
+    }
+
+    private func addDockItem(
+        to menu: NSMenu,
+        title: String,
+        action: Selector,
+        enabled: Bool = true
+    ) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.isEnabled = enabled
+        menu.addItem(item)
+    }
+
+    @objc private func pauseAllFromSystemSurface() {
+        model?.queue.pauseAllActive()
+    }
+
+    @objc private func resumeAllFromSystemSurface() {
+        model?.queue.resumeAllPaused()
+    }
+
+    @objc private func openDownloadsFolder() {
+        guard let destination = model?.destination else { return }
+        NSWorkspace.shared.open(destination)
+    }
+
+    @objc private func openMainWindowFromSystemSurface() {
+        presentMainWindow()
+    }
+
+    @objc private func openLatestCompletion() {
+        guard let notice = notifier.currentNotice else { return }
+        notifier.performPrimaryAction(for: notice)
+    }
+
+    private func presentMainWindow() {
+        guard let openMainWindowHandler else {
+            shouldOpenMainWindowWhenReady = true
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        openMainWindowHandler()
+        bringMainWindowForward()
+    }
 }
 
 @main
@@ -50,6 +217,9 @@ struct DownbenderApp: App {
             Group {
                 if let model {
                     RootView(model: model)
+                        .overlay(alignment: .top) {
+                            CompletionBannerHost(notifier: appDelegate.notifier)
+                        }
                 } else {
                     Text("Embedded binaries not found.").padding()
                 }
@@ -57,6 +227,11 @@ struct DownbenderApp: App {
             .onAppear { prepareModel() }
             .onOpenURL(perform: receiveExternalURL)
             .handlesExternalEvents(preferring: ["add"], allowing: ["add"])
+            .background {
+                MainWindowOpenBridge { handler in
+                    appDelegate.openMainWindowHandler = handler
+                }
+            }
             .tint(Theme.accent)
             // Dark mode only, by design decision.
             .preferredColorScheme(.dark)
@@ -80,13 +255,28 @@ struct DownbenderApp: App {
                     .preferredColorScheme(.dark)
             }
         }
+        MenuBarExtra {
+            if let model {
+                MenuBarQueueView(model: model, notifier: appDelegate.notifier)
+            } else {
+                Text("Downbender is starting…")
+                    .padding()
+            }
+        } label: {
+            if let model {
+                MenuBarQueueLabel(model: model)
+            } else {
+                Label("Downbender", systemImage: "arrow.down.circle")
+            }
+        }
+        .menuBarExtraStyle(.window)
     }
 
     @MainActor private func prepareModel() {
         if model == nil {
-            model = Self.makeModel()
+            model = makeModel()
             if let model {
-                appDelegate.model = model
+                appDelegate.bind(model: model)
                 // Restore BEFORE sweeping, so rehydrated paused items protect their .part files.
                 model.restoreQueue()
                 model.sweepTemporary()
@@ -124,9 +314,9 @@ struct DownbenderApp: App {
             .appendingPathComponent("Downbender")
     }
 
-    @MainActor private static func makeModel() -> AppModel? {
+    @MainActor private func makeModel() -> AppModel? {
         let fm = FileManager.default
-        let support = appSupportDirectory(fileManager: fm)
+        let support = Self.appSupportDirectory(fileManager: fm)
         ChromeIntegrationInstaller.prepareIntegration()
         guard let binaries = BundledBinaries.locate(appSupportDirectory: support) else { return nil }
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
@@ -136,7 +326,23 @@ struct DownbenderApp: App {
             binaries: binaries, destination: downloads, tmpDirectory: tmp,
             appSupportDirectory: support,
             cookiesBrowser: UserDefaults.standard.string(forKey: AppModel.cookiesBrowserKey),
-            notifier: DownloadNotifier()
+            notifier: appDelegate.notifier
         )
+    }
+}
+
+private struct MainWindowOpenBridge: View {
+    @Environment(\.openWindow) private var openWindow
+    let install: (@escaping () -> Void) -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                install {
+                    openWindow(id: "main")
+                }
+            }
+            .accessibilityHidden(true)
     }
 }

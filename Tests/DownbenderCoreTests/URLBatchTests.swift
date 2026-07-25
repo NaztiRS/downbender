@@ -18,3 +18,27 @@ import Foundation
     // ftp token alongside a web URL: only the web URL is a batch entry.
     #expect(URLBatch.split("ftp://x.org/f https://a.com/v") == ["https://a.com/v"])
 }
+
+@Test func droppedWebURLsAcceptMultipleURLAndTextPayloads() {
+    let items = [
+        "https://youtu.be/a",
+        "https://example.com/b.zip\nhttp://plain.org/c",
+    ]
+    #expect(URLBatch.droppedWebURLs(items) == [
+        "https://youtu.be/a",
+        "https://example.com/b.zip",
+        "http://plain.org/c",
+    ])
+}
+
+@Test func droppedWebURLsRejectMalformedLocalAndNonWebURLs() {
+    let items = [
+        "",
+        "not-a-link",
+        "file:///Users/test/movie.mp4",
+        "ftp://example.com/archive.zip",
+        "https://",
+        "http://valid.example/video",
+    ]
+    #expect(URLBatch.droppedWebURLs(items) == ["http://valid.example/video"])
+}

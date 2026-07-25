@@ -207,15 +207,17 @@ public final class AppModel {
     /// Direct items whose insecure-http download the user explicitly confirmed.
     private var httpConfirmed: Set<UUID> = []
 
-    /// Watch link that also carries a `list=`: parked here until the user picks video vs playlist.
-    public var pendingPlaylistChoice: String?
+    /// Watch links that also carry a `list=`: handled in arrival order so a multi-URL
+    /// paste/drop never overwrites an earlier scope choice.
+    private var pendingPlaylistChoices: [String] = []
+    public var pendingPlaylistChoice: String? { pendingPlaylistChoices.first }
 
     /// Creates the card immediately ("probing" state) and probes in a background Task, one per URL.
     /// Watch+list URLs stop first at a scope prompt (RootView) instead of probing right away.
     @discardableResult
     public func addURL(_ url: String) -> Bool {
         if MediaURL.pointsToVideoInPlaylist(url) {
-            pendingPlaylistChoice = url
+            pendingPlaylistChoices.append(url)
             return false
         }
         switch DetectionService.classify(url) {
@@ -256,7 +258,7 @@ public final class AppModel {
 
     public func chooseVideoOnly() {
         guard let url = pendingPlaylistChoice else { return }
-        pendingPlaylistChoice = nil
+        pendingPlaylistChoices.removeFirst()
         addVideoURL(url)
     }
 
@@ -264,11 +266,16 @@ public final class AppModel {
     /// included); the panel appears once the entry list is known.
     public func chooseWholePlaylist() {
         guard let url = pendingPlaylistChoice else { return }
-        pendingPlaylistChoice = nil
+        pendingPlaylistChoices.removeFirst()
         let item = DownloadItem(url: url, title: url, destination: destination, state: .probing)
         item.expandsPlaylist = true
         queue.add(item)
         runProbe(for: item)
+    }
+
+    public func dismissPlaylistChoice() {
+        guard !pendingPlaylistChoices.isEmpty else { return }
+        pendingPlaylistChoices.removeFirst()
     }
 
     private func addVideoURL(_ url: String) {

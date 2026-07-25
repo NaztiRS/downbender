@@ -14,6 +14,10 @@ public final class QueueViewModel {
     public var onMutation: (@MainActor () -> Void)?
 
     public var hasLiveTasks: Bool { !tasks.isEmpty }
+    /// Counts drive the batch-action bar; settled and not-yet-confirmed cards are excluded.
+    public var pausableCount: Int { items.filter(isPausable).count }
+    public var resumableCount: Int { items.filter { $0.state == .paused }.count }
+    public var cancellableCount: Int { items.filter(isCancellable).count }
 
     public init(maxConcurrent: Int = 2, perform: @escaping @MainActor (DownloadItem) async -> Void) {
         self.maxConcurrent = maxConcurrent
@@ -55,36 +59,60 @@ public final class QueueViewModel {
         onMutation?()
     }
 
-    public func cancel(_ item: DownloadItem) {
-        switch item.state {
-        case .queued, .paused:
-            item.state = .cancelled
-        default:
-            tasks[item.id]?.cancel()
+    /// Changes the priority of waiting work using SwiftUI's `onMove` index semantics.
+    ///
+    /// Running/finalizing work cannot move: apart from keeping the UI stable, validating the
+    /// state again here closes the race where an item starts between beginning and ending a
+    /// drag. Paused work can move because its position becomes its priority when it resumes.
+    @discardableResult
+    public func move(fromOffsets source: IndexSet, toOffset destination: Int) -> Bool {
+        guard !source.isEmpty,
+              destination >= 0, destination <= items.count,
+              source.allSatisfy({ items.indices.contains($0) }),
+              source.allSatisfy({ canReorder(items[$0]) }) else { return false }
+
+        let moving = source.sorted().map { items[$0] }
+        var reordered = items
+        for index in source.sorted(by: >) {
+            reordered.remove(at: index)
         }
+
+        // `destination` addresses the original collection. Removing source elements before it
+        // shifts the insertion point left, matching Array/SwiftUI move behavior.
+        let removedBeforeDestination = source.lazy.filter { $0 < destination }.count
+        let insertionIndex = min(destination - removedBeforeDestination, reordered.count)
+        reordered.insert(contentsOf: moving, at: insertionIndex)
+
+        guard reordered.map(\.id) != items.map(\.id) else { return false }
+        items = reordered
+        onMutation?()
+        return true
+    }
+
+    /// Only work whose scheduling priority can still change is draggable.
+    public func canReorder(_ item: DownloadItem) -> Bool {
+        item.state == .queued || item.state == .paused
+    }
+
+    public func cancel(_ item: DownloadItem) {
+        guard cancelWithoutNotifying(item) else { return }
         onMutation?()
     }
 
     /// Pause: terminates the process but leaves the item resumable (yt-dlp continues the .part files).
     public func pause(_ item: DownloadItem) {
-        switch item.state {
-        case .queued:
-            item.state = .paused
-        case .downloading, .merging:
-            // State set BEFORE cancelling the Task: that's how the coordinator distinguishes pause from cancel.
-            item.state = .paused
-            tasks[item.id]?.cancel()
-        default:
-            break
-        }
+        guard pauseWithoutNotifying(item) else { return }
         onMutation?()
     }
 
     /// Pauses everything queued or running (the quit flow uses this before terminating).
-    public func pauseAllActive() {
-        for item in items where item.state == .queued || item.state == .downloading || item.state == .merging {
-            pause(item)
-        }
+    @discardableResult
+    public func pauseAllActive() -> Int {
+        let targets = items.filter(isPausable)
+        guard !targets.isEmpty else { return 0 }
+        for item in targets { _ = pauseWithoutNotifying(item) }
+        onMutation?()
+        return targets.count
     }
 
     /// True when the list holds anything a "Clear finished" would remove.
@@ -114,11 +142,33 @@ public final class QueueViewModel {
 
     public func resume(_ item: DownloadItem) {
         guard item.state == .paused else { return }
-        item.speedText = ""
-        item.etaText = ""
-        item.state = .queued
+        prepareToResume(item)
         pump()
         onMutation?()
+    }
+
+    /// Resumes every paused download as one scheduling mutation. Existing concurrency limits
+    /// still decide how many start; the rest remain queued.
+    @discardableResult
+    public func resumeAllPaused() -> Int {
+        let targets = items.filter { $0.state == .paused }
+        guard !targets.isEmpty else { return 0 }
+        for item in targets { prepareToResume(item) }
+        pump()
+        onMutation?()
+        return targets.count
+    }
+
+    /// Cancels queued, active and paused downloads. Analysis/choice cards and settled rows
+    /// are intentionally untouched. Running tasks keep their execution state until they
+    /// unwind so AppModel cannot sweep their temporary files out from under them.
+    @discardableResult
+    public func cancelAll() -> Int {
+        let targets = items.filter(isCancellable)
+        guard !targets.isEmpty else { return 0 }
+        for item in targets { _ = cancelWithoutNotifying(item) }
+        onMutation?()
+        return targets.count
     }
 
     public func retry(_ item: DownloadItem) {
@@ -140,6 +190,54 @@ public final class QueueViewModel {
     public func setMaxConcurrent(_ value: Int) {
         maxConcurrent = value
         pump()
+    }
+
+    private func isPausable(_ item: DownloadItem) -> Bool {
+        item.state == .queued || item.state == .downloading || item.state == .merging
+    }
+
+    private func isCancellable(_ item: DownloadItem) -> Bool {
+        isPausable(item) || item.state == .paused
+    }
+
+    private func pauseWithoutNotifying(_ item: DownloadItem) -> Bool {
+        switch item.state {
+        case .queued:
+            item.state = .paused
+        case .downloading, .merging:
+            // State set BEFORE cancelling the Task: that's how the coordinator distinguishes pause from cancel.
+            item.state = .paused
+            tasks[item.id]?.cancel()
+        default:
+            return false
+        }
+        return true
+    }
+
+    private func cancelWithoutNotifying(_ item: DownloadItem) -> Bool {
+        switch item.state {
+        case .queued, .paused:
+            item.state = .cancelled
+            item.resumeData = nil
+        case .downloading, .merging:
+            if let task = tasks[item.id] {
+                task.cancel()
+            } else {
+                // Defensive: a restored/manually constructed execution state has no process
+                // to unwind and mark it cancelled for us.
+                item.state = .cancelled
+                item.resumeData = nil
+            }
+        default:
+            return false
+        }
+        return true
+    }
+
+    private func prepareToResume(_ item: DownloadItem) {
+        item.speedText = ""
+        item.etaText = ""
+        item.state = .queued
     }
 
     private func pump() {

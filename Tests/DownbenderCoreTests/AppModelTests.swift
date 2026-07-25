@@ -367,6 +367,25 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
+@Test func multiplePlaylistScopeChoicesAreHandledInArrivalOrder() {
+    let runner = FakeProcessRunner(exitCode: 0)
+    let model = makeModel(runner: runner)
+    let first = "https://www.youtube.com/watch?v=first&list=RDfirst"
+    let second = "https://www.youtube.com/watch?v=second&list=RDsecond"
+
+    model.addURL(first)
+    model.addURL(second)
+
+    #expect(model.pendingPlaylistChoice == first)
+    model.chooseVideoOnly()
+    #expect(model.pendingPlaylistChoice == second)
+    #expect(model.queue.items.map(\.url) == [first])
+
+    model.dismissPlaylistChoice()
+    #expect(model.pendingPlaylistChoice == nil)
+}
+
+@MainActor
 @Test func chooseWholePlaylistExpandsThroughTheNormalProbingCard() async throws {
     let runner = FakeProcessRunner(stdoutLines: [try playlistFixtureJSON()], exitCode: 0)
     let model = makeModel(runner: runner)
