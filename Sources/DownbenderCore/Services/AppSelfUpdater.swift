@@ -5,6 +5,7 @@ public enum SelfUpdateError: Error, Equatable, LocalizedError {
     case extractionFailed(String)
     case appNotFoundInArchive
     case bundleMismatch(expected: String, found: String?)
+    case invalidCodeSignature(String)
 
     public var errorDescription: String? {
         switch self {
@@ -17,6 +18,11 @@ public enum SelfUpdateError: Error, Equatable, LocalizedError {
             return "The downloaded update doesn't contain the app."
         case .bundleMismatch(let expected, let found):
             return "The downloaded app is \(found ?? "unidentified"), expected \(expected)."
+        case .invalidCodeSignature(let details):
+            let trimmed = details.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty
+                ? "The downloaded app has an invalid code signature."
+                : "The downloaded app has an invalid code signature: \(trimmed)"
         }
     }
 }
@@ -31,12 +37,30 @@ public struct AppSelfUpdater: Sendable {
     let installURL: URL
     let expectedBundleID: String
     let appSupportDirectory: URL
+    private let replaceInstalledApp: @Sendable (URL, URL) throws -> Void
 
     public init(runner: ProcessRunning, installURL: URL, expectedBundleID: String, appSupportDirectory: URL) {
+        self.init(
+            runner: runner,
+            installURL: installURL,
+            expectedBundleID: expectedBundleID,
+            appSupportDirectory: appSupportDirectory,
+            replaceInstalledApp: Self.replaceSafely
+        )
+    }
+
+    init(
+        runner: ProcessRunning,
+        installURL: URL,
+        expectedBundleID: String,
+        appSupportDirectory: URL,
+        replaceInstalledApp: @escaping @Sendable (URL, URL) throws -> Void
+    ) {
         self.runner = runner
         self.installURL = installURL
         self.expectedBundleID = expectedBundleID
         self.appSupportDirectory = appSupportDirectory
+        self.replaceInstalledApp = replaceInstalledApp
     }
 
     /// Full pipeline: download → extract → validate → swap → engine cleanup.
@@ -52,7 +76,7 @@ public struct AppSelfUpdater: Sendable {
         onProgress(0.92)
         let extracted = try await extract(zip: zip)
         onProgress(0.97)
-        try install(appAt: extracted)
+        try await install(appAt: extracted)
         onProgress(1)
     }
 
@@ -106,27 +130,37 @@ public struct AppSelfUpdater: Sendable {
         return app
     }
 
-    /// Swaps the new bundle into place with rollback on failure, then drops the Application
-    /// Support engine copy: a stale override would shadow the fresh bundled engine (BinaryLocator prefers it).
-    public func install(appAt newApp: URL) throws {
+    /// Validates and swaps the new bundle with Foundation's safe-save operation, then drops the
+    /// Application Support engine copy: a stale override would shadow the fresh bundled engine
+    /// (BinaryLocator prefers it).
+    public func install(appAt newApp: URL) async throws {
         let plist = newApp.appendingPathComponent("Contents/Info.plist")
         let found = (NSDictionary(contentsOf: plist)?["CFBundleIdentifier"]) as? String
         guard found == expectedBundleID else {
             throw SelfUpdateError.bundleMismatch(expected: expectedBundleID, found: found)
         }
 
-        let fm = FileManager.default
-        // Same-directory hidden backup guarantees a same-volume rename.
-        let backup = installURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(installURL.lastPathComponent).old-\(UUID().uuidString)")
-        try fm.moveItem(at: installURL, to: backup)
-        do {
-            try fm.moveItem(at: newApp, to: installURL)
-        } catch {
-            try? fm.moveItem(at: backup, to: installURL)
-            throw error
+        let signature = try await runner.run(
+            executableURL: URL(fileURLWithPath: "/usr/bin/codesign"),
+            arguments: ["--verify", "--deep", "--strict", "--verbose=2", newApp.path],
+            onStdoutLine: { _ in }
+        )
+        guard signature.exitCode == 0 else {
+            throw SelfUpdateError.invalidCodeSignature(signature.stderr)
         }
-        try? fm.removeItem(at: backup)
-        try? fm.removeItem(at: appSupportDirectory.appendingPathComponent("yt-dlp_macos"))
+
+        // A single safe-save replacement removes the crash window created by moving the
+        // installed app away first. If replacement fails, the original remains at installURL.
+        try replaceInstalledApp(installURL, newApp)
+        try? FileManager.default.removeItem(at: appSupportDirectory.appendingPathComponent("yt-dlp_macos"))
+    }
+
+    private static func replaceSafely(installed: URL, replacement: URL) throws {
+        _ = try FileManager.default.replaceItemAt(
+            installed,
+            withItemAt: replacement,
+            backupItemName: nil,
+            options: .usingNewMetadataOnly
+        )
     }
 }

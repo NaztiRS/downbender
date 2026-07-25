@@ -36,7 +36,7 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
 struct DownbenderApp: App {
     @NSApplicationDelegateAdaptor(DownbenderAppDelegate.self) private var appDelegate
     @State private var model: AppModel?
-    @State private var pendingExternalURLs: [URL] = []
+    @State private var pendingExternalRequests: [BrowserDeepLinkRequest] = []
 
     init() {
         DispatchQueue.main.async {
@@ -93,23 +93,40 @@ struct DownbenderApp: App {
             }
         }
         guard let model else { return }
-        for url in pendingExternalURLs { model.addURL(url.absoluteString) }
-        pendingExternalURLs.removeAll()
+        for request in pendingExternalRequests {
+            enqueueExternalRequest(request, with: model)
+        }
+        pendingExternalRequests.removeAll()
     }
 
     @MainActor private func receiveExternalURL(_ deepLink: URL) {
-        guard let webURL = BrowserBridge.webURL(from: deepLink) else { return }
+        guard let request = BrowserBridge.deepLinkRequest(from: deepLink) else { return }
         NSApp.activate(ignoringOtherApps: true)
         if let model {
-            model.addURL(webURL.absoluteString)
+            enqueueExternalRequest(request, with: model)
         } else {
-            pendingExternalURLs.append(webURL)
+            pendingExternalRequests.append(request)
         }
+    }
+
+    @MainActor private func enqueueExternalRequest(_ request: BrowserDeepLinkRequest, with model: AppModel) {
+        guard model.addURL(request.webURL.absoluteString), let acknowledgementID = request.acknowledgementID else {
+            return
+        }
+        try? BrowserEnqueueAcknowledgement.signal(
+            acknowledgementID,
+            appSupportDirectory: Self.appSupportDirectory()
+        )
+    }
+
+    private static func appSupportDirectory(fileManager: FileManager = .default) -> URL {
+        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Downbender")
     }
 
     @MainActor private static func makeModel() -> AppModel? {
         let fm = FileManager.default
-        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Downbender")
+        let support = appSupportDirectory(fileManager: fm)
         ChromeIntegrationInstaller.prepareIntegration()
         guard let binaries = BundledBinaries.locate(appSupportDirectory: support) else { return nil }
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]

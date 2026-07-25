@@ -21,6 +21,14 @@ assert.equal(
   "https://www.youtube.com/shorts/shortID",
 );
 assert.equal(
+  canonicalDownloadURL("https://www.youtube.com/embed/embedVideo?autoplay=1"),
+  "https://www.youtube.com/watch?v=embedVideo",
+);
+assert.equal(
+  canonicalDownloadURL("https://www.youtube-nocookie.com/embed/privateVideo?rel=0"),
+  "https://www.youtube.com/watch?v=privateVideo",
+);
+assert.equal(
   canonicalDownloadURL("https://www.youtube.com/playlist?list=PLintentional"),
   "https://www.youtube.com/playlist?list=PLintentional",
 );
@@ -29,6 +37,12 @@ assert.equal(
   singleVideoDownloadURL("https://www.youtube.com/watch?v=video123&list=RDvideo123&index=4"),
   "https://www.youtube.com/watch?v=video123",
 );
+assert.equal(
+  singleVideoDownloadURL("https://www.youtube.com/embed/embedVideo?autoplay=1"),
+  "https://www.youtube.com/watch?v=embedVideo",
+);
+assert.equal(singleVideoDownloadURL("https://www.youtube.com/embed/"), null);
+assert.equal(singleVideoDownloadURL("https://www.youtube.com/embed/videoseries?list=PLhuge"), null);
 assert.equal(singleVideoDownloadURL("https://www.youtube.com/playlist?list=PLhuge"), null);
 assert.equal(singleVideoDownloadURL("https://www.youtube.com/feed/subscriptions"), null);
 assert.equal(singleVideoDownloadURL("https://vimeo.com/123"), "https://vimeo.com/123");

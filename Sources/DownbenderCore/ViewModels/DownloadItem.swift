@@ -40,6 +40,9 @@ public final class DownloadItem: Identifiable {
     public var thumbnailURL: URL?
     public var format: DownloadFormat?
     public var includeSubtitles: Bool = false
+    /// Frozen when the user confirms a media download. Retries and relaunches must reuse it
+    /// so yt-dlp can find the same partial files even if the preference later changes.
+    public var fileNameTemplate: String
     /// The user asked to expand this watch+list URL into its playlist; survives probe retries.
     public var expandsPlaylist: Bool = false
     public var destination: URL
@@ -66,6 +69,7 @@ public final class DownloadItem: Identifiable {
         title: String,
         thumbnailURL: URL? = nil,
         format: DownloadFormat? = nil,
+        fileNameTemplate: String = FileNameTemplate.defaultValue,
         destination: URL,
         state: State = .queued
     ) {
@@ -73,6 +77,8 @@ public final class DownloadItem: Identifiable {
         self.title = title
         self.thumbnailURL = thumbnailURL
         self.format = format
+        self.fileNameTemplate = FileNameTemplate.normalized(fileNameTemplate)
+            ?? FileNameTemplate.defaultValue
         self.destination = destination
         self.state = state
     }

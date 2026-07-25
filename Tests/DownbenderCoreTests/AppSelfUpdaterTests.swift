@@ -19,7 +19,9 @@ private func tempDir() throws -> URL {
     return url
 }
 
-@Test func installSwapsBundleValidatingIdentifier() throws {
+private struct ForcedReplacementError: Error {}
+
+@Test func installSwapsBundleAfterValidatingIdentityAndSignature() async throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     let installed = root.appendingPathComponent("Installed/Downbender.app")
@@ -27,22 +29,26 @@ private func tempDir() throws -> URL {
     try makeFakeApp(at: installed, bundleID: "com.naztirs.downbender", marker: "old")
     try makeFakeApp(at: fresh, bundleID: "com.naztirs.downbender", marker: "new")
 
+    let runner = FakeProcessRunner()
     let updater = AppSelfUpdater(
-        runner: FakeProcessRunner(),
+        runner: runner,
         installURL: installed,
         expectedBundleID: "com.naztirs.downbender",
         appSupportDirectory: root.appendingPathComponent("Support")
     )
-    try updater.install(appAt: fresh)
+    try await updater.install(appAt: fresh)
 
     let marker = try String(contentsOf: installed.appendingPathComponent("Contents/MacOS/marker"), encoding: .utf8)
     #expect(marker == "new")
+    #expect(runner.recordedArguments.arguments == [
+        "--verify", "--deep", "--strict", "--verbose=2", fresh.path,
+    ])
     // No leftover backup directories next to the installed app.
     let siblings = try FileManager.default.contentsOfDirectory(atPath: installed.deletingLastPathComponent().path)
     #expect(siblings == ["Downbender.app"])
 }
 
-@Test func installRejectsForeignBundle() throws {
+@Test func installRejectsForeignBundle() async throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     let installed = root.appendingPathComponent("Installed/Downbender.app")
@@ -50,20 +56,89 @@ private func tempDir() throws -> URL {
     try makeFakeApp(at: installed, bundleID: "com.naztirs.downbender", marker: "old")
     try makeFakeApp(at: fresh, bundleID: "com.evil.impostor", marker: "evil")
 
+    let runner = FakeProcessRunner()
     let updater = AppSelfUpdater(
-        runner: FakeProcessRunner(),
+        runner: runner,
         installURL: installed,
         expectedBundleID: "com.naztirs.downbender",
         appSupportDirectory: root.appendingPathComponent("Support")
     )
-    #expect(throws: SelfUpdateError.self) { try updater.install(appAt: fresh) }
+    await #expect(throws: SelfUpdateError.self) { try await updater.install(appAt: fresh) }
 
     // The installed copy is untouched.
     let marker = try String(contentsOf: installed.appendingPathComponent("Contents/MacOS/marker"), encoding: .utf8)
     #expect(marker == "old")
+    #expect(runner.recordedArguments.allArguments.isEmpty)
 }
 
-@Test func installRemovesStaleEngineOverride() throws {
+@Test func installRejectsInvalidSignatureBeforeTouchingCurrentApp() async throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let installed = root.appendingPathComponent("Installed/Downbender.app")
+    let fresh = root.appendingPathComponent("Extracted/Downbender.app")
+    try makeFakeApp(at: installed, bundleID: "com.naztirs.downbender", marker: "old")
+    try makeFakeApp(at: fresh, bundleID: "com.naztirs.downbender", marker: "tampered")
+
+    let runner = FakeProcessRunner(stderr: "code object is not signed at all", exitCode: 1)
+    let updater = AppSelfUpdater(
+        runner: runner,
+        installURL: installed,
+        expectedBundleID: "com.naztirs.downbender",
+        appSupportDirectory: root.appendingPathComponent("Support")
+    )
+    await #expect(throws: SelfUpdateError.invalidCodeSignature("code object is not signed at all")) {
+        try await updater.install(appAt: fresh)
+    }
+
+    let marker = try String(
+        contentsOf: installed.appendingPathComponent("Contents/MacOS/marker"),
+        encoding: .utf8
+    )
+    #expect(marker == "old")
+    #expect(FileManager.default.fileExists(atPath: fresh.path))
+}
+
+@Test func safeSaveReplacementFailureLeavesInstalledAppAndEngineUntouched() async throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let installed = root.appendingPathComponent("Installed/Downbender.app")
+    let fresh = root.appendingPathComponent("Extracted/Downbender.app")
+    let support = root.appendingPathComponent("Support")
+    let engine = support.appendingPathComponent("yt-dlp_macos")
+    try makeFakeApp(at: installed, bundleID: "com.naztirs.downbender", marker: "old")
+    try makeFakeApp(at: fresh, bundleID: "com.naztirs.downbender", marker: "new")
+    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    try Data("current engine".utf8).write(to: engine)
+
+    let updater = AppSelfUpdater(
+        runner: FakeProcessRunner(),
+        installURL: installed,
+        expectedBundleID: "com.naztirs.downbender",
+        appSupportDirectory: support,
+        replaceInstalledApp: { _, _ in throw ForcedReplacementError() }
+    )
+    await #expect(throws: ForcedReplacementError.self) {
+        try await updater.install(appAt: fresh)
+    }
+
+    let installedMarker = try String(
+        contentsOf: installed.appendingPathComponent("Contents/MacOS/marker"),
+        encoding: .utf8
+    )
+    let freshMarker = try String(
+        contentsOf: fresh.appendingPathComponent("Contents/MacOS/marker"),
+        encoding: .utf8
+    )
+    #expect(installedMarker == "old")
+    #expect(freshMarker == "new")
+    #expect(FileManager.default.fileExists(atPath: engine.path))
+    let installedSiblings = try FileManager.default.contentsOfDirectory(
+        atPath: installed.deletingLastPathComponent().path
+    )
+    #expect(installedSiblings == ["Downbender.app"])
+}
+
+@Test func installRemovesStaleEngineOverride() async throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     let installed = root.appendingPathComponent("Installed/Downbender.app")
@@ -81,7 +156,7 @@ private func tempDir() throws -> URL {
         expectedBundleID: "com.naztirs.downbender",
         appSupportDirectory: support
     )
-    try updater.install(appAt: fresh)
+    try await updater.install(appAt: fresh)
 
     // The new app ships a fresh engine; the Application Support override must not shadow it (BinaryLocator prefers it).
     #expect(!FileManager.default.fileExists(atPath: engine.path))

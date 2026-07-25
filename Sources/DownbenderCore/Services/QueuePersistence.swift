@@ -8,6 +8,8 @@ public struct PersistedItem: Codable, Equatable, Sendable {
     public var thumbnailURL: URL?
     public var formatID: String?
     public var includeSubtitles: Bool
+    /// Optional keeps version-1 queue files from older Downbender builds decodable.
+    public var fileNameTemplate: String?
     public var destinationPath: String
     public var state: String
     public var stateMessage: String?
@@ -31,6 +33,7 @@ public extension PersistedItem {
         thumbnailURL = item.thumbnailURL
         formatID = item.format?.id
         includeSubtitles = item.includeSubtitles
+        fileNameTemplate = item.fileNameTemplate
         destinationPath = item.destination.path
         let encoded = Self.encode(item.state)
         state = encoded.0
@@ -77,6 +80,7 @@ public extension PersistedItem {
         let item = DownloadItem(
             url: url, title: title, thumbnailURL: thumbnailURL,
             format: formatID.flatMap(DownloadFormat.init(id:)),
+            fileNameTemplate: fileNameTemplate ?? FileNameTemplate.defaultValue,
             destination: URL(fileURLWithPath: destinationPath), state: restored
         )
         item.includeSubtitles = includeSubtitles

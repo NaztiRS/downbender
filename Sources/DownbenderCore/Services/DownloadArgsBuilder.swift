@@ -26,6 +26,7 @@ public enum DownloadArgsBuilder {
         ffmpegDirectory: URL,
         denoURL: URL? = nil,
         cookiesBrowser: String? = nil,
+        fileNameTemplate: String = FileNameTemplate.defaultValue,
         includeSubtitles: Bool = false,
         useTVClient: Bool = false
     ) -> [String] {
@@ -43,7 +44,7 @@ public enum DownloadArgsBuilder {
             "--ffmpeg-location", ffmpegDirectory.path,
             "-P", destination.path,
             "-P", "temp:\(tmpDirectory.path)",
-            "-o", "%(title)s.%(ext)s",
+            "-o", FileNameTemplate.outputTemplate(for: fileNameTemplate),
             // lang after proto: preserves the ORIGINAL audio track (YouTube generates AI dubs with language_preference=-1); before proto it would promote muxed HLS.
             "-S", "res,fps,proto,lang,br",
         ]

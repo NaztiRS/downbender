@@ -2,14 +2,15 @@
 
 This extension is distributed unpacked inside Downbender. The app creates a temporary
 `Downbender Extension Installer` shortcut in Downloads and registers the native-messaging helper
-when the user starts installation.
+for the selected Chromium browser when the user starts installation.
 
-Click **Install Chrome Extension** in Downbender. After the app takes you to Chrome:
+Click **Install Browser Extension** in Downbender and choose Google Chrome, Brave, Microsoft Edge,
+or Chromium. After the app opens that browser's extensions page:
 
 1. Enable **Developer mode**.
 2. Click **Load unpacked**.
 3. Choose **Downloads** in the sidebar and select `Downbender Extension Installer`.
-4. Chrome confirms the installation to Downbender's native host, which removes the temporary
+4. The browser confirms the installation to Downbender's native host, which removes the temporary
    shortcut automatically. Downbender also removes it when the app quits or after one hour.
 
 The floating control is deliberately singular: it appears only over the video that is playing

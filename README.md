@@ -23,7 +23,8 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 - Works with YouTube — the most battle-tested path — and [many other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) supported by yt-dlp (support for non-YouTube sites is still maturing).
 - Download queue with per-item progress, pause/resume and cancel.
 - Clipboard detection: copy a video link anywhere, confirm, download.
-- Optional Chrome extension for sending videos from the browser to Downbender.
+- Optional extension for sending videos from Chrome, Brave, Edge, or Chromium to Downbender.
+- Configurable file names for media downloads, with safe yt-dlp fields such as title, uploader, and upload date.
 - Dock bounce and completion sound when a download finishes in the background.
 - Self-contained: yt-dlp, FFmpeg and Deno ship inside the app. Nothing to install.
 - One-click updater for the download engine (yt-dlp) in Settings.
@@ -61,20 +62,23 @@ row to reveal the file in Finder.
 - **Age-restricted / members-only videos:** set **Settings → Privacy →
   Browser cookies** to the browser where you're signed in. macOS may ask
   for permission once.
+- **Custom file names:** use **Settings → General → File name template**.
+  Keep `%(ext)s` at the end; the setting applies to future media downloads,
+  while direct files retain the name supplied by their server.
 - **Downloads suddenly failing?** YouTube changes constantly. Use
   **Settings → Downloader (yt-dlp) → Check for updates** to update the
   engine without reinstalling the app.
 
-### Chrome extension (manual install)
+### Browser extension (manual install)
 
-No Chrome Web Store account is required. Open **Settings → Chrome extension** and click
-**Install Chrome Extension**. Downbender creates a temporary shortcut in Downloads and takes you
-to Chrome's extension screen. Then:
+No browser-store account is required. Open **Settings → Browser extension** and choose Google
+Chrome, Brave, Microsoft Edge, or Chromium from the install control. Downbender creates a temporary
+shortcut in Downloads and opens that browser's extension screen. Then:
 
 1. Enable **Developer mode**.
 2. Click **Load unpacked**, choose **Downloads** in the sidebar and select
    `Downbender Extension Installer`.
-3. Once Chrome loads the extension, the temporary shortcut is removed automatically. Downbender
+3. Once the browser loads the extension, the temporary shortcut is removed automatically. Downbender
    also removes it when the app quits or after one hour.
 
 The app registers its native-messaging helper automatically. The page overlay is deliberately

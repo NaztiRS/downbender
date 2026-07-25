@@ -1,6 +1,6 @@
 import Foundation
 
-/// JSON sent by the Chrome extension to Downbender's native-messaging host.
+/// JSON sent by the browser extension to Downbender's native-messaging host.
 public struct BrowserExtensionRequest: Codable, Equatable, Sendable {
     public let command: String
     public let url: String?
@@ -37,8 +37,19 @@ public struct BrowserExtensionResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct BrowserDeepLinkRequest: Equatable, Sendable {
+    public let webURL: URL
+    public let acknowledgementID: UUID?
+
+    public init(webURL: URL, acknowledgementID: UUID?) {
+        self.webURL = webURL
+        self.acknowledgementID = acknowledgementID
+    }
+}
+
 /// Validation and deep-link conversion shared by the app and its native-messaging helper.
 public enum BrowserBridge {
+    public static let appBundleIdentifier = "com.naztirs.downbender"
     public static let deepLinkScheme = "downbender"
     public static let deepLinkHost = "add"
     public static let nativeHostName = "com.naztirs.downbender"
@@ -102,21 +113,39 @@ public enum BrowserBridge {
         return output.url
     }
 
-    public static func deepLink(for webURL: URL) -> URL? {
+    public static func deepLink(for webURL: URL, acknowledgementID: UUID? = nil) -> URL? {
         guard let validated = validatedWebURL(webURL.absoluteString) else { return nil }
         var components = URLComponents()
         components.scheme = deepLinkScheme
         components.host = deepLinkHost
         components.queryItems = [URLQueryItem(name: "url", value: validated.absoluteString)]
+        if let acknowledgementID {
+            components.queryItems?.append(URLQueryItem(name: "ack", value: acknowledgementID.uuidString))
+        }
         return components.url
     }
 
-    public static func webURL(from deepLink: URL) -> URL? {
+    public static func deepLinkRequest(from deepLink: URL) -> BrowserDeepLinkRequest? {
         guard deepLink.scheme?.lowercased() == deepLinkScheme,
               deepLink.host?.lowercased() == deepLinkHost,
               let components = URLComponents(url: deepLink, resolvingAgainstBaseURL: false),
-              let value = components.queryItems?.first(where: { $0.name == "url" })?.value
+              let queryItems = components.queryItems,
+              let value = queryItems.first(where: { $0.name == "url" })?.value,
+              let webURL = validatedWebURL(value)
         else { return nil }
-        return validatedWebURL(value)
+
+        let acknowledgementValue = queryItems.first(where: { $0.name == "ack" })?.value
+        let acknowledgementID: UUID?
+        if let acknowledgementValue {
+            guard let parsed = UUID(uuidString: acknowledgementValue) else { return nil }
+            acknowledgementID = parsed
+        } else {
+            acknowledgementID = nil
+        }
+        return BrowserDeepLinkRequest(webURL: webURL, acknowledgementID: acknowledgementID)
+    }
+
+    public static func webURL(from deepLink: URL) -> URL? {
+        deepLinkRequest(from: deepLink)?.webURL
     }
 }

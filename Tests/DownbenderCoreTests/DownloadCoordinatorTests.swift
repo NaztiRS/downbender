@@ -166,6 +166,47 @@ import Foundation
 }
 
 @MainActor
+@Test func coordinatorKeepsItemsFileNameTemplateAcrossRetries() async {
+    let runner = FakeProcessRunner(replays: [
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+        .init(stdoutLines: ["DBPATH /tmp/out/20260725 - Video.mp4"], exitCode: 0),
+    ])
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(download: download, retryDelay: .milliseconds(50))
+    let template = "%(upload_date)s - %(title)s.%(ext)s"
+    let item = DownloadItem(
+        url: "u",
+        title: "t",
+        format: .video(height: 1080),
+        fileNameTemplate: template,
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    let run = Task {
+        await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    }
+    try? await Task.sleep(for: .milliseconds(10))
+    item.fileNameTemplate = "%(id)s.%(ext)s"
+    await run.value
+
+    #expect(item.state == .done)
+    let perCall = runner.recordedArguments.allArguments
+    #expect(perCall.count == 3)
+    for arguments in perCall {
+        guard let outputIndex = arguments.firstIndex(of: "-o") else {
+            Issue.record("missing -o")
+            continue
+        }
+        #expect(arguments[outputIndex + 1] == template)
+    }
+}
+
+@MainActor
 @Test func coordinatorDoesNotRetryNon403Errors() async {
     let runner = FakeProcessRunner(stderr: "ERROR: Video unavailable", exitCode: 1)
     let download = DownloadService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/x"), ffmpegDirectory: URL(fileURLWithPath: "/y"))

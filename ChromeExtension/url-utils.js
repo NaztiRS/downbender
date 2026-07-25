@@ -12,11 +12,25 @@
     return parsedWebURL(value) !== null;
   }
 
+  function isYouTubeHostname(hostname) {
+    return hostname === "youtu.be" ||
+      hostname === "youtube.com" ||
+      hostname.endsWith(".youtube.com") ||
+      hostname === "youtube-nocookie.com" ||
+      hostname.endsWith(".youtube-nocookie.com");
+  }
+
   function isYouTubeURL(value) {
     const url = parsedWebURL(value);
     if (!url) return false;
-    const hostname = url.hostname.toLowerCase();
-    return hostname === "youtu.be" || hostname === "youtube.com" || hostname.endsWith(".youtube.com");
+    return isYouTubeHostname(url.hostname.toLowerCase());
+  }
+
+  function embeddedYouTubeVideoID(url) {
+    const match = url.pathname.match(/^\/embed\/([^/?#]+)/);
+    if (!match) return null;
+    const videoID = match[1];
+    return videoID === "videoseries" || videoID === "live_stream" ? null : videoID;
   }
 
   function canonicalDownloadURL(value) {
@@ -28,13 +42,18 @@
       const videoID = url.pathname.split("/").filter(Boolean)[0];
       return videoID ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoID)}` : value;
     }
-    if (hostname !== "youtube.com" && !hostname.endsWith(".youtube.com")) return value;
+    if (!isYouTubeHostname(hostname)) return value;
 
     if (url.pathname === "/watch") {
       const videoID = url.searchParams.get("v");
       // A playing video is always a single-video action. Deliberately discard list/index,
       // including YouTube's enormous auto-generated Mix playlists.
       return videoID ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoID)}` : value;
+    }
+
+    const embeddedVideoID = embeddedYouTubeVideoID(url);
+    if (embeddedVideoID) {
+      return `https://www.youtube.com/watch?v=${encodeURIComponent(embeddedVideoID)}`;
     }
 
     const standalonePath = url.pathname.match(/^\/(shorts|live)\/([^/?#]+)/);
@@ -61,6 +80,10 @@
     if (url.pathname === "/watch") {
       const videoID = url.searchParams.get("v");
       return videoID ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoID)}` : null;
+    }
+    const embeddedVideoID = embeddedYouTubeVideoID(url);
+    if (embeddedVideoID) {
+      return `https://www.youtube.com/watch?v=${encodeURIComponent(embeddedVideoID)}`;
     }
     const standalonePath = url.pathname.match(/^\/(shorts|live)\/([^/?#]+)/);
     return standalonePath

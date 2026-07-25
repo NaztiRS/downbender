@@ -7,14 +7,16 @@ private enum NativeHostError: LocalizedError {
     case incompleteMessage
     case unsupportedRequest
     case appUnavailable
+    case enqueueNotConfirmed
 
     var errorDescription: String? {
         switch self {
-        case .invalidHeader: "Chrome sent an invalid native-messaging header."
+        case .invalidHeader: "The browser sent an invalid native-messaging header."
         case .messageTooLarge: "The native-messaging request is too large."
-        case .incompleteMessage: "Chrome closed the request before it was complete."
+        case .incompleteMessage: "The browser closed the request before it was complete."
         case .unsupportedRequest: "The extension sent an unsupported or invalid URL."
         case .appUnavailable: "Downbender could not be opened. Is it installed?"
+        case .enqueueNotConfirmed: "Downbender opened but did not confirm that the link was added."
         }
     }
 }
@@ -52,7 +54,7 @@ private func writeResponse(_ response: BrowserExtensionResponse) {
 private func openDownbender(_ deepLink: URL) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = [deepLink.absoluteString]
+    process.arguments = ["-b", BrowserBridge.appBundleIdentifier, deepLink.absoluteString]
     // Child output must never reach stdout: Chrome reserves it for framed JSON messages.
     process.standardOutput = Pipe()
     process.standardError = Pipe()
@@ -82,10 +84,33 @@ do {
     case "extension-installed":
         try cleanUpTemporaryInstaller()
     case "enqueue":
+        let acknowledgementID = UUID()
         guard let webURL = BrowserBridge.downloadURL(for: request),
-              let deepLink = BrowserBridge.deepLink(for: webURL)
+              let deepLink = BrowserBridge.deepLink(
+                  for: webURL,
+                  acknowledgementID: acknowledgementID
+              )
         else { throw NativeHostError.unsupportedRequest }
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        )[0].appendingPathComponent("Downbender")
+        try BrowserEnqueueAcknowledgement.prepare(
+            acknowledgementID,
+            appSupportDirectory: appSupport
+        )
+        defer {
+            try? BrowserEnqueueAcknowledgement.clear(
+                acknowledgementID,
+                appSupportDirectory: appSupport
+            )
+        }
         try openDownbender(deepLink)
+        guard BrowserEnqueueAcknowledgement.waitForSignal(
+            acknowledgementID,
+            appSupportDirectory: appSupport,
+            timeout: 10
+        ) else { throw NativeHostError.enqueueNotConfirmed }
     default:
         throw NativeHostError.unsupportedRequest
     }

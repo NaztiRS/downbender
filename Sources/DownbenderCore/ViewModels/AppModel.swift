@@ -40,6 +40,9 @@ public final class AppModel {
         didSet { defaults.set(oneClickDownload, forKey: Self.oneClickKey) }
     }
 
+    public static let fileNameTemplateKey = "fileNameTemplate"
+    public private(set) var fileNameTemplate: String = FileNameTemplate.defaultValue
+
     public static let termsAcceptedKey = "termsAcceptedVersion"
     public static let currentTermsVersion = "1"
     /// True once the user accepted the current terms version. Backed by the injected defaults.
@@ -90,6 +93,8 @@ public final class AppModel {
         if (1...4).contains(savedConcurrent) { self.maxConcurrent = savedConcurrent }
         self.defaultQuality = defaults.string(forKey: Self.defaultQualityKey).flatMap(DownloadFormat.init(id:))
         self.oneClickDownload = defaults.bool(forKey: Self.oneClickKey)
+        self.fileNameTemplate = defaults.string(forKey: Self.fileNameTemplateKey)
+            .flatMap(FileNameTemplate.normalized) ?? FileNameTemplate.defaultValue
         self.tmpDirectory = tmpDirectory
         self.appSupportDirectory = appSupportDirectory
         self.ytdlpURL = binaries.ytdlp
@@ -112,7 +117,11 @@ public final class AppModel {
         self.queue = QueueViewModel(maxConcurrent: maxConcurrent, perform: { [weak self, coordinator, directCoordinator, tmpDirectory] item in
             switch item.source {
             case .media:
-                await coordinator.run(item, tmpDirectory: tmpDirectory, cookiesBrowser: self?.cookiesBrowser)
+                await coordinator.run(
+                    item,
+                    tmpDirectory: tmpDirectory,
+                    cookiesBrowser: self?.cookiesBrowser
+                )
             case .directFile, .ambiguous:
                 await directCoordinator.run(item, tmpDirectory: tmpDirectory,
                                             allowInsecureHTTP: self?.httpConfirmed.contains(item.id) == true)
@@ -128,6 +137,19 @@ public final class AppModel {
         })
         self.showTerms = (defaults.string(forKey: Self.termsAcceptedKey) != Self.currentTermsVersion)
         self.queue.onMutation = { [weak self] in self?.queueDidMutate() }
+    }
+
+    @discardableResult
+    public func setFileNameTemplate(_ value: String) -> Bool {
+        guard let normalized = FileNameTemplate.normalized(value) else { return false }
+        fileNameTemplate = normalized
+        defaults.set(normalized, forKey: Self.fileNameTemplateKey)
+        return true
+    }
+
+    public func resetFileNameTemplate() {
+        fileNameTemplate = FileNameTemplate.defaultValue
+        defaults.removeObject(forKey: Self.fileNameTemplateKey)
     }
 
     func queueDidMutate() {
@@ -190,16 +212,18 @@ public final class AppModel {
 
     /// Creates the card immediately ("probing" state) and probes in a background Task, one per URL.
     /// Watch+list URLs stop first at a scope prompt (RootView) instead of probing right away.
-    public func addURL(_ url: String) {
+    @discardableResult
+    public func addURL(_ url: String) -> Bool {
         if MediaURL.pointsToVideoInPlaylist(url) {
             pendingPlaylistChoice = url
-            return
+            return false
         }
         switch DetectionService.classify(url) {
         case .directFile: addDirectFileURL(url)
         case .mediaFile: addMediaFileURL(url)
         case .probe: addVideoURL(url)
         }
+        return true
     }
 
     /// A clearly-a-file URL: create a probing card, HEAD for the size, then present the
@@ -398,6 +422,7 @@ public final class AppModel {
                 state: .queued
             )
             item.includeSubtitles = includeSubtitles
+            item.fileNameTemplate = fileNameTemplate
             if let known = playlistAnalysis?.sampleResults[entry.url] {
                 item.probe = known
                 item.expectedTotalBytes = known.approxDownloadSize(for: format)
@@ -412,6 +437,7 @@ public final class AppModel {
         item.source = .media
         item.format = format
         item.includeSubtitles = includeSubtitles
+        item.fileNameTemplate = fileNameTemplate
         item.destination = destination
         item.expectedTotalBytes = item.probe?.approxSizeBytes[format]
         queue.start(item)

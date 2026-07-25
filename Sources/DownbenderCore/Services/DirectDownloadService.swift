@@ -25,6 +25,8 @@ public enum DirectDownloadError: Error, Equatable, LocalizedError {
 /// Native URLSession file downloader — the non-yt-dlp engine. Mirrors UpdaterService's
 /// download/replaceItemAt pattern and adds the safety yt-dlp handled for free (see the spec §3).
 public struct DirectDownloadService: Sendable {
+    static let maximumRedirects = 10
+
     public init() {}
 
     public static func makeSession(configuration: URLSessionConfiguration = .default) -> URLSession {
@@ -51,12 +53,10 @@ public struct DirectDownloadService: Sendable {
         onProgress: @Sendable @escaping (DownloadProgress) -> Void,
         onResumeData: (@Sendable (Data) -> Void)? = nil
     ) async throws -> URL {
-        guard let parsed = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            throw DirectDownloadError.invalidURL
-        }
-        let scheme = parsed.scheme?.lowercased()
-        if scheme == "http", !allowInsecureHTTP { throw DirectDownloadError.insecureScheme }
-        guard scheme == "https" || scheme == "http" else { throw DirectDownloadError.invalidURL }
+        let parsed = try Self.validatedURL(url, allowInsecureHTTP: allowInsecureHTTP)
+        // Consent for plaintext transport applies only when the URL the user approved was
+        // already HTTP. Passing the flag for an HTTPS URL must never permit a downgrade.
+        let permitsHTTPRedirects = parsed.scheme?.lowercased() == "http"
 
         // Resume data must be a property-list DICTIONARY (URLSession's format); anything else
         // raises an ObjC exception inside downloadTask(withResumeData:) — even a bare string
@@ -67,24 +67,42 @@ public struct DirectDownloadService: Sendable {
         }
         let (tmpURL, response): (URL, URLResponse)
         if let usableResumeData {
-            do {
-                (tmpURL, response) = try await Self.perform(
-                    task: session.downloadTask(withResumeData: usableResumeData),
-                    tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData
-                )
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                // Stale or server-rejected resume data: restart from scratch instead of failing.
+            let resumedTask = session.downloadTask(withResumeData: usableResumeData)
+            let resumedURL = resumedTask.currentRequest?.url ?? resumedTask.originalRequest?.url
+            if DirectRedirectGuard.permitsTransfer(to: resumedURL, permitsHTTPRedirects: permitsHTTPRedirects) {
+                do {
+                    (tmpURL, response) = try await Self.perform(
+                        task: resumedTask,
+                        tmpDirectory: tmpDirectory, permitsHTTPRedirects: permitsHTTPRedirects,
+                        onProgress: onProgress, onResumeData: onResumeData
+                    )
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch let error as DirectDownloadError {
+                    throw error
+                } catch {
+                    // Stale or server-rejected resume data: restart from scratch instead of failing.
+                    (tmpURL, response) = try await Self.perform(
+                        task: session.downloadTask(with: parsed),
+                        tmpDirectory: tmpDirectory, permitsHTTPRedirects: permitsHTTPRedirects,
+                        onProgress: onProgress, onResumeData: onResumeData
+                    )
+                }
+            } else {
+                // Resume data is persisted external input. Never start a task whose embedded URL
+                // would bypass the transport policy of the URL the user approved.
+                resumedTask.cancel()
                 (tmpURL, response) = try await Self.perform(
                     task: session.downloadTask(with: parsed),
-                    tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData
+                    tmpDirectory: tmpDirectory, permitsHTTPRedirects: permitsHTTPRedirects,
+                    onProgress: onProgress, onResumeData: onResumeData
                 )
             }
         } else {
             (tmpURL, response) = try await Self.perform(
                 task: session.downloadTask(with: parsed),
-                tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData
+                tmpDirectory: tmpDirectory, permitsHTTPRedirects: permitsHTTPRedirects,
+                onProgress: onProgress, onResumeData: onResumeData
             )
         }
         // Never leak the body: every early throw below leaves the temp file cleaned up.
@@ -120,10 +138,17 @@ public struct DirectDownloadService: Sendable {
     static func perform(
         task: URLSessionDownloadTask,
         tmpDirectory: URL,
+        permitsHTTPRedirects: Bool,
         onProgress: @Sendable @escaping (DownloadProgress) -> Void,
         onResumeData: (@Sendable (Data) -> Void)?
     ) async throws -> (URL, URLResponse) {
-        let executor = DirectDownloadExecutor(tmpDirectory: tmpDirectory, onProgress: onProgress, onResumeData: onResumeData)
+        let executor = DirectDownloadExecutor(
+            tmpDirectory: tmpDirectory,
+            permitsHTTPRedirects: permitsHTTPRedirects,
+            maximumRedirects: maximumRedirects,
+            onProgress: onProgress,
+            onResumeData: onResumeData
+        )
         task.delegate = executor
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -137,13 +162,23 @@ public struct DirectDownloadService: Sendable {
 
     /// Issues a HEAD to learn size/name/type BEFORE downloading (drives the mini-confirmation).
     /// Never throws on a missing Content-Length — an unknown size is a valid, expected answer.
-    public func headInfo(url: String, session: URLSession = makeSession()) async throws -> DirectFileInfo {
-        guard let parsed = URL(string: url.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            throw DirectDownloadError.invalidURL
-        }
+    public func headInfo(
+        url: String,
+        allowInsecureHTTP: Bool = false,
+        session: URLSession = makeSession()
+    ) async throws -> DirectFileInfo {
+        let parsed = try Self.validatedURL(url, allowInsecureHTTP: allowInsecureHTTP)
+        let permitsHTTPRedirects = parsed.scheme?.lowercased() == "http"
         var request = URLRequest(url: parsed)
         request.httpMethod = "HEAD"
-        let (_, response) = try await session.data(for: request)
+        let redirectDelegate = DirectRedirectDelegate(
+            permitsHTTPRedirects: permitsHTTPRedirects,
+            maximumRedirects: Self.maximumRedirects
+        )
+        let (_, response) = try await session.data(for: request, delegate: redirectDelegate)
+        if let redirectError = redirectDelegate.validationError(for: response) {
+            throw redirectError
+        }
         let http = response as? HTTPURLResponse
         let status = http?.statusCode ?? -1
         if status == 401 || status == 403 { throw DirectDownloadError.accessDenied }
@@ -155,6 +190,16 @@ public struct DirectDownloadService: Sendable {
             sizeBytes: size > 0 ? size : nil,
             contentType: http?.value(forHTTPHeaderField: "Content-Type")
         )
+    }
+
+    private static func validatedURL(_ raw: String, allowInsecureHTTP: Bool) throws -> URL {
+        guard let parsed = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw DirectDownloadError.invalidURL
+        }
+        let scheme = parsed.scheme?.lowercased()
+        if scheme == "http", !allowInsecureHTTP { throw DirectDownloadError.insecureScheme }
+        guard scheme == "https" || scheme == "http" else { throw DirectDownloadError.invalidURL }
+        return parsed
     }
 
     /// Reduces an attacker-controlled name to a safe last path component. Percent-decodes,
@@ -219,6 +264,97 @@ public struct DirectDownloadService: Sendable {
     }
 }
 
+/// Per-task redirect policy. URLSession follows redirects automatically unless its task delegate
+/// rejects them, so every hop must be revalidated rather than trusting only the pasted URL.
+final class DirectRedirectGuard: @unchecked Sendable {
+    private let lock = NSLock()
+    private let permitsHTTPRedirects: Bool
+    private let maximumRedirects: Int
+    private var redirectCount = 0
+    private var storedRejection: DirectDownloadError?
+
+    init(permitsHTTPRedirects: Bool, maximumRedirects: Int) {
+        self.permitsHTTPRedirects = permitsHTTPRedirects
+        self.maximumRedirects = maximumRedirects
+    }
+
+    static func permitsTransfer(to url: URL?, permitsHTTPRedirects: Bool) -> Bool {
+        guard let scheme = url?.scheme?.lowercased() else { return false }
+        return scheme == "https" || (scheme == "http" && permitsHTTPRedirects)
+    }
+
+    func requestToFollow(_ request: URLRequest, from response: HTTPURLResponse) -> URLRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard storedRejection == nil else { return nil }
+
+        redirectCount += 1
+        if redirectCount > maximumRedirects {
+            storedRejection = .tooManyRedirects
+            return nil
+        }
+        guard let sourceScheme = response.url?.scheme?.lowercased(),
+              sourceScheme == "https" || sourceScheme == "http"
+        else {
+            storedRejection = .invalidURL
+            return nil
+        }
+        if request.url?.scheme?.lowercased() == "http", sourceScheme == "https" {
+            storedRejection = .insecureScheme
+            return nil
+        }
+        if let error = schemeError(for: request.url) {
+            storedRejection = error
+            return nil
+        }
+        return request
+    }
+
+    var rejection: DirectDownloadError? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedRejection
+    }
+
+    func validationError(for response: URLResponse) -> DirectDownloadError? {
+        if let rejection { return rejection }
+        return schemeError(for: response.url)
+    }
+
+    private func schemeError(for url: URL?) -> DirectDownloadError? {
+        guard let scheme = url?.scheme?.lowercased() else { return .invalidURL }
+        guard scheme == "https" || scheme == "http" else { return .invalidURL }
+        return Self.permitsTransfer(to: url, permitsHTTPRedirects: permitsHTTPRedirects)
+            ? nil : .insecureScheme
+    }
+}
+
+/// HEAD/data-task delegate counterpart of DirectDownloadExecutor.
+final class DirectRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let redirectGuard: DirectRedirectGuard
+
+    init(permitsHTTPRedirects: Bool, maximumRedirects: Int) {
+        self.redirectGuard = DirectRedirectGuard(
+            permitsHTTPRedirects: permitsHTTPRedirects,
+            maximumRedirects: maximumRedirects
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(redirectGuard.requestToFollow(request, from: response))
+    }
+
+    func validationError(for response: URLResponse) -> DirectDownloadError? {
+        redirectGuard.validationError(for: response)
+    }
+}
+
 /// Delegate bridge for a manually-driven URLSessionDownloadTask. The async
 /// `session.download(from:)` API can neither produce resume data on cancel nor choose where
 /// the temp file lives; driving the task by hand fixes both. The finished file is moved into
@@ -228,17 +364,24 @@ final class DirectDownloadExecutor: NSObject, URLSessionDownloadDelegate, @unche
     private let tmpDirectory: URL
     private let onProgress: @Sendable (DownloadProgress) -> Void
     private let onResumeData: (@Sendable (Data) -> Void)?
+    private let redirectGuard: DirectRedirectGuard
     private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
     private var movedURL: URL?
 
     init(
         tmpDirectory: URL,
+        permitsHTTPRedirects: Bool = false,
+        maximumRedirects: Int = DirectDownloadService.maximumRedirects,
         onProgress: @escaping @Sendable (DownloadProgress) -> Void,
         onResumeData: (@Sendable (Data) -> Void)?
     ) {
         self.tmpDirectory = tmpDirectory
         self.onProgress = onProgress
         self.onResumeData = onResumeData
+        self.redirectGuard = DirectRedirectGuard(
+            permitsHTTPRedirects: permitsHTTPRedirects,
+            maximumRedirects: maximumRedirects
+        )
     }
 
     func begin(continuation: CheckedContinuation<(URL, URLResponse), Error>, task: URLSessionDownloadTask) {
@@ -259,6 +402,16 @@ final class DirectDownloadExecutor: NSObject, URLSessionDownloadDelegate, @unche
             downloadedBytes: totalBytesWritten,
             totalBytes: known ? totalBytesExpectedToWrite : nil
         ))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(redirectGuard.requestToFollow(request, from: response))
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
@@ -284,7 +437,11 @@ final class DirectDownloadExecutor: NSObject, URLSessionDownloadDelegate, @unche
         self.continuation = nil
         let moved = movedURL
         lock.unlock()
-        if let error {
+        if let rejection = redirectGuard.rejection {
+            if let moved { try? FileManager.default.removeItem(at: moved) }
+            continuation?.resume(throwing: rejection)
+        } else if let error {
+            if let moved { try? FileManager.default.removeItem(at: moved) }
             if let resume = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
                 onResumeData?(resume)
             }
@@ -294,7 +451,12 @@ final class DirectDownloadExecutor: NSObject, URLSessionDownloadDelegate, @unche
                 continuation?.resume(throwing: error)
             }
         } else if let moved, let response = task.response {
-            continuation?.resume(returning: (moved, response))
+            if let redirectError = redirectGuard.validationError(for: response) {
+                try? FileManager.default.removeItem(at: moved)
+                continuation?.resume(throwing: redirectError)
+            } else {
+                continuation?.resume(returning: (moved, response))
+            }
         } else {
             continuation?.resume(throwing: URLError(.cannotWriteToFile))
         }

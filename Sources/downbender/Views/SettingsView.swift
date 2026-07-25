@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var updater: UnifiedUpdater?
     @State private var chromeIntegration: ChromeIntegrationState?
+    @State private var installingBrowser: ChromiumBrowser?
+    @State private var fileNameTemplateDraft = ""
 
     var body: some View {
         Form {
@@ -60,6 +62,37 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(model.defaultQuality == nil)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("File name template", systemImage: "textformat")
+                    TextField("%(title)s.%(ext)s", text: $fileNameTemplateDraft)
+                        .font(.system(.body, design: .monospaced))
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { applyFileNameTemplate() }
+
+                    Group {
+                        if let error = FileNameTemplate.validationMessage(for: fileNameTemplateDraft) {
+                            Text(error).foregroundStyle(.red)
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Supported fields include title, id, uploader, channel, and upload_date.")
+                                Text("Media only; direct files keep their server name. Example (no quotes): %(upload_date)s - %(title)s.%(ext)s")
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.caption)
+
+                    HStack {
+                        Spacer()
+                        Button("Reset") { resetFileNameTemplate() }
+                            .disabled(model.fileNameTemplate == FileNameTemplate.defaultValue
+                                && fileNameTemplateDraft == FileNameTemplate.defaultValue)
+                        Button("Apply") { applyFileNameTemplate() }
+                            .disabled(!canApplyFileNameTemplate)
+                    }
+                }
+                .accessibilityElement(children: .contain)
             }
 
             Section("Privacy") {
@@ -77,11 +110,11 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("Chrome extension") {
+            Section("Browser extension") {
                 Label {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Downbender Chrome extension")
-                        Text("Send videos from Chrome to Downbender")
+                        Text("Downbender browser extension")
+                        Text("Send videos from Chrome, Brave, Edge, or Chromium")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } icon: {
@@ -92,16 +125,37 @@ struct SettingsView: View {
                     Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                     Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    Button("Try again") { beginChromeInstallation() }
-                        .buttonStyle(WaveButtonStyle())
+                    if let browser = installingBrowser ?? ChromeIntegrationInstaller.installedBrowsers().first {
+                        Button("Try again") { beginBrowserInstallation(in: browser) }
+                            .buttonStyle(WaveButtonStyle())
+                    }
                 } else if chromeIntegration?.isAvailable == true {
-                    Button("Install Chrome Extension") { beginChromeInstallation() }
+                    let browsers = ChromeIntegrationInstaller.installedBrowsers()
+                    if browsers.isEmpty {
+                        Label("Install a supported Chromium browser first", systemImage: "info.circle")
+                            .foregroundStyle(.secondary)
+                    } else if let browser = browsers.first, browsers.count == 1 {
+                        Button("Install for \(browser.displayName)") {
+                            beginBrowserInstallation(in: browser)
+                        }
                         .buttonStyle(WaveButtonStyle())
+                    } else {
+                        Menu("Install Browser Extension") {
+                            ForEach(browsers, id: \.self) { browser in
+                                Button(browser.displayName) {
+                                    beginBrowserInstallation(in: browser)
+                                }
+                            }
+                        }
+                    }
 
                     if let integration = chromeIntegration, integration.isInstalling,
                        let shortcut = integration.temporaryShortcut {
-                        Text("In Load unpacked, select “Downbender Extension Installer”.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text(
+                            "In \(installingBrowser?.displayName ?? "your browser"), " +
+                                "choose Load unpacked and select “Downbender Extension Installer”."
+                        )
+                        .font(.caption).foregroundStyle(.secondary)
 
                         HStack {
                             Button("Show installer") {
@@ -109,6 +163,7 @@ struct SettingsView: View {
                             }
                             Button("Cancel") {
                                 chromeIntegration = ChromeIntegrationInstaller.cancelInstallation()
+                                installingBrowser = nil
                             }
                         }
                     }
@@ -126,6 +181,9 @@ struct SettingsView: View {
         .background(WashBackground())
         .frame(width: 500, height: 580)
         .task {
+            if fileNameTemplateDraft.isEmpty {
+                fileNameTemplateDraft = model.fileNameTemplate
+            }
             if chromeIntegration == nil {
                 chromeIntegration = ChromeIntegrationInstaller.status()
             }
@@ -149,18 +207,34 @@ struct SettingsView: View {
         if panel.runModal() == .OK, let url = panel.url { model.destination = url }
     }
 
-    private func beginChromeInstallation() {
-        let state = ChromeIntegrationInstaller.beginInstallation()
+    private var canApplyFileNameTemplate: Bool {
+        guard let normalized = FileNameTemplate.normalized(fileNameTemplateDraft) else { return false }
+        return normalized != model.fileNameTemplate
+    }
+
+    private func applyFileNameTemplate() {
+        guard model.setFileNameTemplate(fileNameTemplateDraft) else { return }
+        fileNameTemplateDraft = model.fileNameTemplate
+    }
+
+    private func resetFileNameTemplate() {
+        model.resetFileNameTemplate()
+        fileNameTemplateDraft = model.fileNameTemplate
+    }
+
+    private func beginBrowserInstallation(in browser: ChromiumBrowser) {
+        installingBrowser = browser
+        let state = ChromeIntegrationInstaller.beginInstallation(for: browser)
         chromeIntegration = state
         guard let shortcut = state.temporaryShortcut else { return }
         NSWorkspace.shared.activateFileViewerSelecting([shortcut])
-        openChromeExtensions()
+        openExtensionsPage(in: browser)
     }
 
-    private func openChromeExtensions() {
+    private func openExtensionsPage(in browser: ChromiumBrowser) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", "Google Chrome", "chrome://extensions/"]
+        process.arguments = ["-b", browser.applicationBundleIdentifier, browser.extensionsPage]
         try? process.run()
     }
 }

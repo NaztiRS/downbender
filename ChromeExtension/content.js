@@ -382,10 +382,9 @@
   }
 
   function youtubeCardURL(video) {
-    if (!/(^|\.)youtube\.com$/i.test(location.hostname)) return null;
-    if (/^\/(watch|shorts\/|live\/)/.test(location.pathname)) {
-      return singleVideoDownloadURL(location.href);
-    }
+    if (!isYouTubeURL(location.href)) return null;
+    const pageTarget = singleVideoDownloadURL(location.href);
+    if (pageTarget) return pageTarget;
 
     const nestedTarget = youtubeURLFromElement(video);
     if (nestedTarget) return nestedTarget;
@@ -470,6 +469,10 @@
     overlayButton.dataset.state = state;
     overlayText.textContent = text;
     overlayButton.title = title;
+    if (state === "sending") {
+      feedbackTimer = null;
+      return;
+    }
     feedbackTimer = setTimeout(() => {
       overlayButton.dataset.state = "";
       overlayText.textContent = "Download";
@@ -501,7 +504,7 @@
       setFeedback("sent", "Added", "Video added to Downbender");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not reach Downbender.";
-      setFeedback("error", "Offline", message);
+      setFeedback("error", "Not confirmed", message);
     }
   }
 

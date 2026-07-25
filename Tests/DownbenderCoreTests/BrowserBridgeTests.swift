@@ -11,6 +11,22 @@ import Testing
     #expect(BrowserBridge.webURL(from: deepLink)?.absoluteString == source.absoluteString)
 }
 
+@Test func browserBridgeRoundTripsAnEnqueueAcknowledgementID() throws {
+    let source = try #require(URL(string: "https://example.com/video"))
+    let acknowledgementID = UUID()
+    let deepLink = try #require(BrowserBridge.deepLink(
+        for: source,
+        acknowledgementID: acknowledgementID
+    ))
+    let request = try #require(BrowserBridge.deepLinkRequest(from: deepLink))
+
+    #expect(request.webURL == source)
+    #expect(request.acknowledgementID == acknowledgementID)
+    #expect(BrowserBridge.deepLinkRequest(
+        from: URL(string: "downbender://add?url=https%3A%2F%2Fexample.com&ack=not-a-uuid")!
+    ) == nil)
+}
+
 @Test func browserBridgeRejectsUntrustedSchemesAndMalformedLinks() {
     #expect(BrowserBridge.validatedWebURL("javascript:alert(1)") == nil)
     #expect(BrowserBridge.validatedWebURL("file:///tmp/video.mp4") == nil)

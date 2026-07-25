@@ -46,6 +46,18 @@ import Foundation
 }
 
 @MainActor
+@Test func addURLConfirmsOnlyWhenItCreatesAQueueCard() {
+    let model = makeRoutingModel(runner: FakeProcessRunner())
+
+    #expect(model.addURL("https://example.com/clip.mp4"))
+    #expect(model.queue.items.count == 1)
+
+    #expect(!model.addURL("https://www.youtube.com/watch?v=oneVideo&list=PLscope"))
+    #expect(model.queue.items.count == 1)
+    #expect(model.pendingPlaylistChoice != nil)
+}
+
+@MainActor
 @Test func genericExtractorProbeYieldsAmbiguousCard() async throws {
     let json = #"{"id":"x","title":"Raw","extractor":"generic","formats":[{"format_id":"0","height":720,"vcodec":"avc1","acodec":"mp4a"}]}"#
     let runner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)

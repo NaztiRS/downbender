@@ -16,13 +16,18 @@ public final class DownloadCoordinator {
         self.retryDelay = retryDelay
     }
 
-    public func run(_ item: DownloadItem, tmpDirectory: URL, cookiesBrowser: String? = nil) async {
+    public func run(
+        _ item: DownloadItem,
+        tmpDirectory: URL,
+        cookiesBrowser: String? = nil
+    ) async {
         // Defensive: pump() only starts items that went through start(), which requires a format.
         guard let format = item.format else {
             item.state = .failed("No format selected.")
             return
         }
         item.state = .downloading
+        let fileNameTemplate = item.fileNameTemplate
         // YouTube 403s are intermittent: a FRESH yt-dlp invocation renegotiates the session's
         // signed URLs from scratch, so the manual retry that used to work is automated here.
         let maxAttempts = 3
@@ -36,6 +41,7 @@ public final class DownloadCoordinator {
                     // The FINAL attempt escalates to the TV client (dodges the persistent PO-token 403).
                     useTVClient: attempt == maxAttempts,
                     cookiesBrowser: cookiesBrowser,
+                    fileNameTemplate: fileNameTemplate,
                     includeSubtitles: item.includeSubtitles,
                     expectedTotalBytes: item.expectedTotalBytes,
                     onProgress: { progress in

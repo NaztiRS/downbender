@@ -1,3 +1,4 @@
+import AppKit
 import DownbenderCore
 import Foundation
 
@@ -44,11 +45,11 @@ enum ChromeIntegrationInstaller {
 
     /// Creates only a temporary, visible symlink. Chrome resolves it to the extension bundled
     /// inside Downbender, so the symlink can be removed after the user confirms installation.
-    static func beginInstallation() -> ChromeIntegrationState {
+    static func beginInstallation(for browser: ChromiumBrowser) -> ChromeIntegrationState {
         do {
             let fileManager = FileManager.default
             let extensionDirectory = try bundledExtensionDirectory()
-            try installNativeHostManifest(fileManager: fileManager)
+            try installNativeHostManifest(for: browser, fileManager: fileManager)
 
             let shortcut = temporaryShortcutURL()
             if fileManager.fileExists(atPath: shortcut.path) {
@@ -94,10 +95,18 @@ enum ChromeIntegrationInstaller {
     /// A shortcut left by an interrupted previous run is also removed on the next launch.
     static func prepareIntegration() {
         cleanUpTemporaryInstaller()
-        try? installNativeHostManifest(fileManager: .default)
+        for browser in installedBrowsers() {
+            try? installNativeHostManifest(for: browser, fileManager: .default)
+        }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Downbender")
         cleanupLegacyCopies(appSupportDirectory: support, fileManager: .default)
+    }
+
+    static func installedBrowsers() -> [ChromiumBrowser] {
+        ChromiumBrowser.allCases.filter {
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.applicationBundleIdentifier) != nil
+        }
     }
 
     private static func bundledExtensionDirectory() throws -> URL {
@@ -167,31 +176,18 @@ enum ChromeIntegrationInstaller {
         return object["key"] is String && object["name"] as? String == "Downbender Companion"
     }
 
-    private static func nativeHostManifestURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-            "Library/Application Support/Google/Chrome/NativeMessagingHosts/\(BrowserBridge.nativeHostName).json"
-        )
-    }
-
-    private static func installNativeHostManifest(fileManager: FileManager) throws {
+    private static func installNativeHostManifest(
+        for browser: ChromiumBrowser,
+        fileManager: FileManager
+    ) throws {
         guard let executableDirectory = Bundle.main.executableURL?.deletingLastPathComponent() else {
             throw CocoaError(.fileNoSuchFile)
         }
         let hostExecutable = executableDirectory.appendingPathComponent("downbender-native-host")
-        guard fileManager.isExecutableFile(atPath: hostExecutable.path) else {
-            throw CocoaError(.fileNoSuchFile)
-        }
-
-        let destination = nativeHostManifestURL()
-        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let manifest: [String: Any] = [
-            "name": BrowserBridge.nativeHostName,
-            "description": "Send Chrome video links to Downbender",
-            "path": hostExecutable.path,
-            "type": "stdio",
-            "allowed_origins": ["chrome-extension://\(BrowserBridge.chromeExtensionID)/"],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: destination, options: .atomic)
+        try ChromiumNativeMessaging.installDownbenderHost(
+            executable: hostExecutable,
+            for: browser,
+            fileManager: fileManager
+        )
     }
 }
