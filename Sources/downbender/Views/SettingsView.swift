@@ -250,8 +250,6 @@ private struct FileNameSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("File names", systemImage: "textformat")
-
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Name format")
@@ -280,13 +278,6 @@ private struct FileNameSettings: View {
             if style == .custom {
                 customEditor
             }
-
-            Text(
-                "Applies to new video and audio downloads. The extension follows the selected format. " +
-                    "Channel and date depend on source metadata; direct files keep their server-provided name."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
         }
         .task { initialize() }
     }
