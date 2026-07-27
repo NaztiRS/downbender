@@ -19,7 +19,7 @@ async function showBadge(tabId, text, color) {
 async function sendToDownbender(message, tabId) {
   if (!isWebURL(message?.url)) {
     const result = { ok: false, message: "This is not a downloadable web address." };
-    await showBadge(tabId, "!", "#d97706");
+    await showBadge(tabId, "!", "#F1BA62");
     return result;
   }
 
@@ -29,7 +29,7 @@ async function sendToDownbender(message, tabId) {
       : canonicalDownloadURL(message.url);
     if (!target) {
       const result = { ok: false, message: "Could not identify a single video." };
-      await showBadge(tabId, "!", "#d97706");
+      await showBadge(tabId, "!", "#F1BA62");
       return result;
     }
     const response = await chrome.runtime.sendNativeMessage(NATIVE_HOST, {
@@ -41,10 +41,10 @@ async function sendToDownbender(message, tabId) {
       mediaURL: message.mediaURL || null,
     });
     if (!response?.ok) throw new Error(response?.message || "Downbender did not accept the link.");
-    await showBadge(tabId, "✓", "#16a34a");
+    await showBadge(tabId, "✓", "#67D391");
     return { ok: true };
   } catch (error) {
-    await showBadge(tabId, "!", "#dc2626");
+    await showBadge(tabId, "!", "#FF6B6B");
     return {
       ok: false,
       message: error instanceof Error ? error.message : "Could not reach Downbender.",

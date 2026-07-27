@@ -1,40 +1,30 @@
 import SwiftUI
 
-/// Downbender's visual identity tokens; adapt to macOS light/dark.
+/// Command Mono: a compact, flat interface inspired by developer tools.
 enum Theme {
-    static let accent = Color.adaptive(light: 0x1478D8, dark: 0x3AA0F7)
-    static let glow = Color.adaptive(light: 0x1FA2E0, dark: 0x6FD6FF)
+    static let canvas = Color(hex: 0x080808)
+    static let surface = Color(hex: 0x111111)
+    static let raised = Color(hex: 0x171717)
+    static let border = Color(hex: 0x292929)
+    static let borderStrong = Color(hex: 0x454545)
+    static let textPrimary = Color(hex: 0xF4F4F4)
+    static let muted = Color(hex: 0x898989)
+    static let accent = Color(hex: 0x66D9FF)
+    static let success = Color(hex: 0x67D391)
+    static let warning = Color(hex: 0xF1BA62)
+    static let danger = Color(hex: 0xFF6B6B)
 
-    static let wave = LinearGradient(colors: [accent, glow], startPoint: .leading, endPoint: .trailing)
+    static let track = border
+    static let hairline = border
+    static let wash = canvas
 
-    static let track = Color.adaptive(lightColor: .black.opacity(0.08), darkColor: .white.opacity(0.12))
-    static let hairline = Color.adaptive(lightColor: .black.opacity(0.08), darkColor: .white.opacity(0.10))
-    static let surface = Color.adaptive(lightColor: .white.opacity(0.60), darkColor: .white.opacity(0.05))
-
-    static let wash = LinearGradient(
-        colors: [
-            Color.adaptive(light: 0xEDF5FD, dark: 0x0B1E38),
-            Color.adaptive(light: 0xFBFDFE, dark: 0x07111F),
-        ],
-        startPoint: .top, endPoint: .bottom
-    )
-
-    /// Card surface with depth: lit from above, like the icon's orb.
-    static let surfaceDepth = LinearGradient(
-        colors: [
-            Color.adaptive(lightColor: .white.opacity(0.72), darkColor: .white.opacity(0.085)),
-            Color.adaptive(lightColor: .white.opacity(0.52), darkColor: .white.opacity(0.03)),
-        ],
-        startPoint: .top, endPoint: .bottom
-    )
-
-    /// Glass rim for cards: bright top edge fading down.
-    static let rim = LinearGradient(
-        colors: [
-            Color.adaptive(lightColor: .white.opacity(0.9), darkColor: .white.opacity(0.22)),
-            Color.adaptive(lightColor: .black.opacity(0.06), darkColor: .white.opacity(0.04)),
-        ],
-        startPoint: .top, endPoint: .bottom
+    /// These retain the exact pre-refactor empty-state avatar colors.
+    static let avatarGlow = Color.adaptive(light: 0x1FA2E0, dark: 0x6FD6FF)
+    static let avatarAccent = Color.adaptive(light: 0x1478D8, dark: 0x3AA0F7)
+    static let avatarWave = LinearGradient(
+        colors: [avatarAccent, avatarGlow],
+        startPoint: .leading,
+        endPoint: .trailing
     )
 }
 
@@ -62,29 +52,24 @@ extension Color {
 
 struct WaveButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var scheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.canvas)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
             .background(
-                Capsule().fill(Theme.wave)
-                    // Glossy top light, like the icon's orb.
-                    .overlay(
-                        Capsule()
-                            .fill(LinearGradient(
-                                colors: [.white.opacity(0.32), .white.opacity(0)],
-                                startPoint: .top, endPoint: .center))
-                            .padding(1)
-                    )
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Theme.accent)
             )
-            .shadow(color: Theme.glow.opacity(isEnabled ? (scheme == .dark ? 0.55 : 0.30) : 0),
-                    radius: 8, y: 2)
-            .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.4)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.textPrimary.opacity(isEnabled ? 0.28 : 0.08))
+            }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.78 : 1) : 0.35)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

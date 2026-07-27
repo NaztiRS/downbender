@@ -29,15 +29,18 @@ struct RootView: View {
                 }
             if let version = model.appUpdate.availableVersion, !model.appUpdate.dismissed {
                 HStack(spacing: 8) {
-                    Image(systemName: "sparkles").foregroundStyle(Theme.glow)
+                    Image(systemName: "arrow.down.square.fill")
+                        .foregroundStyle(Theme.accent)
                     Text("Downbender v\(version) is available")
-                        .font(.callout)
+                        .font(.system(size: 11, design: .monospaced))
                     Button {
                         // Auto-run the update check on arrival so the user doesn't have to press it in Settings.
                         model.checkUpdatesOnOpen = true
                         openSettings()
                     } label: {
-                        Text("Update").font(.callout.weight(.semibold)).foregroundStyle(Theme.glow)
+                        Text("UPDATE")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.accent)
                     }
                     .buttonStyle(.plain)
                     Spacer()
@@ -50,8 +53,12 @@ struct RootView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .background(Theme.surface)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                }
             }
             Divider()
+                .overlay(Theme.border)
                 // Anchored here (not the VStack, which owns the playlist-choice sheet): one sheet per view.
                 .sheet(isPresented: $model.showTerms) {
                     TermsGate(onAccept: { model.termsAccepted = true; model.showTerms = false })
@@ -108,16 +115,17 @@ struct RootView: View {
         }
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Theme.surface.opacity(0.92))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.raised.opacity(0.98))
                     .overlay {
                         Label("Drop links to download", systemImage: "link.badge.plus")
-                            .font(.title3.weight(.semibold))
+                            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                            .textCase(.uppercase)
                             .foregroundStyle(Theme.accent)
                     }
                     .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [8, 5]))
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 1, dash: [6, 4]))
                     }
                     .padding(8)
                     .allowsHitTesting(false)
@@ -131,9 +139,9 @@ struct RootView: View {
                 }
             }
         }
-        // Title bar in the app's own deep blue instead of the system gray.
-        .toolbarBackground(Color.adaptive(light: 0xEDF5FD, dark: 0x0B1E38), for: .windowToolbar)
+        .toolbarBackground(Theme.canvas, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
+        .tint(Theme.accent)
         .environment(\.continuousVisualEffectsAllowed, continuousVisualEffectsAllowed)
     }
 

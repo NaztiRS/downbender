@@ -1,57 +1,38 @@
 import SwiftUI
 
-/// Progress as flowing water: determinate flow, indeterminate sweep (`fraction == nil`), pulsing glow while merging.
+/// Flat Command Mono progress. Indeterminate and finalizing motion remains visibility-aware.
 struct WaveProgress: View {
     var fraction: Double?
     var pulsing: Bool = false
     var dimmed: Bool = false
     var updatesFrequently: Bool = false
-    var height: CGFloat = 7
+    var height: CGFloat = 4
 
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.continuousVisualEffectsAllowed) private var continuousVisualEffectsAllowed
     @State private var sweep = false
     @State private var pulse = false
 
-    private var baseGlow: Double { scheme == .dark ? 0.52 : 0.26 }
-    private var glowRadius: CGFloat { scheme == .dark ? 4 : 2 }
-
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.track)
+                RoundedRectangle(cornerRadius: max(1, height / 2), style: .continuous)
+                    .fill(Theme.track)
 
                 if let fraction {
                     let clamped = max(0, min(1, fraction))
-                    let fillWidth = determinateWidth(in: width, fraction: clamped)
                     ProgressCapsule(progress: clamped)
-                        .fill(Theme.wave)
-                        .opacity(dimmed ? 0.5 : 1)
-                        .shadow(color: Theme.glow.opacity(currentGlow), radius: currentRadius)
+                        .fill(Theme.accent)
+                        .opacity(fillOpacity)
                         .animation(progressAnimation, value: clamped)
                         .animation(pulseAnimation, value: pulse)
-
-                    if showHead(clamped) {
-                        let headSize = height + 3
-                        let headOffset = max(0, min(width - headSize, fillWidth - headSize))
-                        Circle()
-                            .fill(Theme.glow)
-                            .frame(width: headSize, height: headSize)
-                            .offset(x: headOffset)
-                            .animation(progressAnimation, value: clamped)
-                    }
                 } else {
                     let segmentWidth = max(height, width * 0.28)
-                    Capsule()
-                        .fill(Theme.wave)
+                    RoundedRectangle(cornerRadius: max(1, height / 2), style: .continuous)
+                        .fill(Theme.accent)
                         .frame(width: segmentWidth)
-                        .opacity(dimmed ? 0.5 : 1)
-                        .shadow(
-                            color: Theme.glow.opacity(motionEnabled ? baseGlow : 0),
-                            radius: glowRadius
-                        )
+                        .opacity(dimmed ? 0.38 : 1)
                         .offset(x: sweep ? max(0, width - segmentWidth) : 0)
                         .animation(sweepAnimation, value: sweep)
                 }
@@ -107,9 +88,10 @@ struct WaveProgress: View {
         }
     }
 
-    private func determinateWidth(in containerWidth: CGFloat, fraction: Double) -> CGFloat {
-        guard fraction > 0 else { return 0 }
-        return min(containerWidth, max(height, containerWidth * fraction))
+    private var fillOpacity: Double {
+        if dimmed { return 0.38 }
+        guard pulsing, motionEnabled else { return 1 }
+        return pulse ? 1 : 0.52
     }
 
     private var accessibilityValue: String {
@@ -138,19 +120,6 @@ struct WaveProgress: View {
         Int((max(0, min(1, fraction)) * 100).rounded())
     }
 
-    private var currentGlow: Double {
-        guard motionEnabled else { return 0 }
-        guard pulsing else { return baseGlow }
-        return pulse ? 0.68 : 0.18
-    }
-
-    private var currentRadius: CGFloat {
-        pulsing && pulse ? glowRadius + 2 : glowRadius
-    }
-
-    private func showHead(_ clamped: Double) -> Bool {
-        !dimmed && clamped > 0.02 && clamped < 0.999
-    }
 }
 
 private struct MotionConfiguration: Hashable {

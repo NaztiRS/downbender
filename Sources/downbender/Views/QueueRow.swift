@@ -11,23 +11,29 @@ struct QueueRow: View {
     @State private var fileMissing = false
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             primaryArea
             trailingButtons
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surfaceDepth))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Theme.surface)
+        )
         .overlay(
-            // Glass rim (lit top edge); active rows switch to the accent border.
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(
-                    isActive ? AnyShapeStyle(Theme.accent.opacity(0.55)) : AnyShapeStyle(Theme.rim),
-                    lineWidth: isActive ? 1.5 : 1
+                    isActive ? Theme.accent.opacity(0.72) : Theme.border,
+                    lineWidth: 1
                 )
         )
-        // The rim already separates settled rows. Reserve one small glow for active work
-        // instead of forcing an offscreen shadow pass for every item in the list.
-        .modifier(ActiveRowGlow(isActive: isActive))
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(stateColor)
+                .frame(width: 2)
+                .padding(.vertical, 5)
+        }
         .contentShape(Rectangle())
         .sheet(isPresented: $choosing) {
             chooserSheet
@@ -73,7 +79,7 @@ struct QueueRow: View {
     }
 
     private var rowSummary: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             thumbnail
                 // Sheets on separate nodes (project pattern) avoid collisions with the row's other sheets.
                 .sheet(isPresented: Binding(
@@ -82,12 +88,28 @@ struct QueueRow: View {
                 )) {
                     ErrorDetailSheet(title: "Couldn't delete", message: deleteError ?? "", onClose: { deleteError = nil })
                 }
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 8) {
-                    Text(item.title).lineLimit(1).font(.body.weight(.medium))
+                    Text(item.title)
+                        .lineLimit(1)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Theme.textPrimary)
                     Spacer(minLength: 0)
                     if let format = item.format { formatChip(format) }
                 }
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(stateColor)
+                        .frame(width: 6, height: 6)
+                    Text(stateLabel)
+                        .foregroundStyle(stateColor)
+                    Spacer(minLength: 8)
+                    Text(sourceLabel)
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .tracking(0.35)
                 if showsBar {
                     WaveProgress(
                         fraction: item.state == .probing || (item.state == .downloading && item.indeterminateProgress)
@@ -97,7 +119,9 @@ struct QueueRow: View {
                         updatesFrequently: item.state == .probing || item.state == .downloading
                     )
                 }
-                Text(statusLine).font(.caption)
+                Text(statusLine)
+                    .font(.system(size: 10, design: .monospaced))
+                    .monospacedDigit()
                     .foregroundStyle(captionColor)
                     .textSelection(.enabled)
                     .lineLimit(1)
@@ -163,20 +187,20 @@ struct QueueRow: View {
                 } placeholder: {
                     fallbackIcon
                 }
-                .frame(width: 84, height: 48)
-                .clipShape(.rect(cornerRadius: 8))
+                .frame(width: 76, height: 46)
+                .clipShape(.rect(cornerRadius: 5))
             } else {
                 fallbackIcon
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.hairline))
+        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Theme.border))
         .overlay(alignment: .bottomTrailing) {
             if let seconds = item.probe?.durationSeconds, item.format != .audioMP3 {
                 Text(durationLabel(seconds))
-                    .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced).monospacedDigit())
                     .foregroundStyle(.white)
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(.black.opacity(0.65), in: .rect(cornerRadius: 4))
+                    .background(Theme.canvas.opacity(0.88), in: .rect(cornerRadius: 3))
                     .padding(3)
             }
         }
@@ -185,9 +209,9 @@ struct QueueRow: View {
     private var fallbackIcon: some View {
         Image(systemName: fallbackSymbol)
             .font(.title3)
-            .foregroundStyle(Theme.accent.opacity(0.7))
-            .frame(width: 84, height: 48)
-            .background(Theme.surface, in: .rect(cornerRadius: 8))
+            .foregroundStyle(Theme.accent.opacity(0.82))
+            .frame(width: 76, height: 46)
+            .background(Theme.raised, in: .rect(cornerRadius: 5))
     }
 
     private var fallbackSymbol: String {
@@ -199,11 +223,11 @@ struct QueueRow: View {
 
     private func formatChip(_ format: DownloadFormat) -> some View {
         Text(format.label)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 7).padding(.vertical, 2)
-            .background(Theme.surface, in: .capsule)
-            .overlay(Capsule().strokeBorder(Theme.hairline))
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Theme.textPrimary)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Theme.raised, in: .rect(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.border))
     }
 
     // MARK: - Per-state buttons
@@ -241,11 +265,20 @@ struct QueueRow: View {
     }
 
     private func iconButton<S: ShapeStyle>(_ symbol: String, _ style: S, _ help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: symbol).font(.title3) }
-            .buttonStyle(.plain)
-            .foregroundStyle(style)
-            .help(help)
-            .accessibilityLabel(help)
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .background(Theme.raised, in: .rect(cornerRadius: 4))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Theme.border)
+                }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(style)
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     /// Shows the full error text, selectable, since the caption truncates it.
@@ -324,6 +357,43 @@ struct QueueRow: View {
 
     private var isActive: Bool {
         item.state == .downloading || item.state == .merging
+    }
+
+    private var stateLabel: String {
+        switch item.state {
+        case .probing: "ANALYZING"
+        case .probeFailed: "ANALYSIS_ERROR"
+        case .readyToChoose: "AWAITING_INPUT"
+        case .queued: "QUEUED"
+        case .downloading: "ACTIVE"
+        case .merging: "FINALIZING"
+        case .paused: "PAUSED"
+        case .done: "DONE"
+        case .failed: "FAILED"
+        case .cancelled: "CANCELLED"
+        }
+    }
+
+    private var stateColor: Color {
+        switch item.state {
+        case .probeFailed, .failed: Theme.danger
+        case .paused: Theme.warning
+        case .done: Theme.success
+        case .cancelled: Theme.muted
+        case .probing, .readyToChoose, .queued, .downloading, .merging: Theme.accent
+        }
+    }
+
+    private var sourceLabel: String {
+        let host = URL(string: item.url)?.host?
+            .replacingOccurrences(of: "www.", with: "")
+            .uppercased()
+        let kind = switch item.source {
+        case .media: "MEDIA"
+        case .directFile: "DIRECT"
+        case .ambiguous: "DETECT"
+        }
+        return [host, kind].compactMap { $0 }.joined(separator: " / ")
     }
 
     private var hasPrimaryAction: Bool {
@@ -421,26 +491,15 @@ struct QueueRow: View {
 
     private var captionColor: Color {
         switch item.state {
-        case .probeFailed, .failed: return .orange
+        case .probeFailed, .failed: return Theme.danger
         case .readyToChoose: return Theme.accent
-        case .done where item.deliveredMismatch: return .orange
-        default: return .secondary
+        case .paused: return Theme.warning
+        case .done where item.deliveredMismatch: return Theme.warning
+        case .done: return Theme.success
+        default: return Theme.muted
         }
     }
 
-}
-
-private struct ActiveRowGlow: ViewModifier {
-    let isActive: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if isActive {
-            content.shadow(color: Theme.glow.opacity(0.12), radius: 5, y: 1)
-        } else {
-            content
-        }
-    }
 }
 
 private struct DeliveredFileDragModifier: ViewModifier {

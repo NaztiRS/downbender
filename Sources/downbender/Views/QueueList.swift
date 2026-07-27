@@ -6,43 +6,192 @@ struct QueueList: View {
     @State private var confirmingCancelAll = false
 
     var body: some View {
-        if model.queue.items.isEmpty {
-            emptyState
-        } else {
-            VStack(spacing: 0) {
-                if showsQueueBar {
-                    queueActionsBar
-                    Divider()
-                }
-                List {
-                    ForEach(model.queue.items) { item in
-                        QueueRow(item: item, model: model)
-                            .moveDisabled(!model.queue.canReorder(item))
-                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                    }
-                    .onMove { source, destination in
-                        model.queue.move(fromOffsets: source, toOffset: destination)
+        Group {
+            if model.queue.items.isEmpty {
+                emptyState
+            } else {
+                GeometryReader { proxy in
+                    if proxy.size.width >= 780 {
+                        HStack(spacing: 0) {
+                            summaryRail
+                                .frame(width: 164)
+                            Rectangle()
+                                .fill(Theme.border)
+                                .frame(width: 1)
+                            queueColumn(showsCompactSummary: false)
+                        }
+                    } else {
+                        queueColumn(showsCompactSummary: true)
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            }
-            .confirmationDialog(
-                cancelAllTitle,
-                isPresented: $confirmingCancelAll,
-                titleVisibility: .visible
-            ) {
-                Button(cancelAllButtonTitle, role: .destructive) {
-                    model.queue.cancelAll()
-                }
-                .disabled(model.queue.cancellableCount == 0)
-                Button("Keep downloads", role: .cancel) {}
-            } message: {
-                Text("Queued, downloading, finalizing, and paused downloads will be marked Cancelled. Partial progress may be lost. Finished files won’t be deleted.")
             }
         }
+        .confirmationDialog(
+            cancelAllTitle,
+            isPresented: $confirmingCancelAll,
+            titleVisibility: .visible
+        ) {
+            Button(cancelAllButtonTitle, role: .destructive) {
+                model.queue.cancelAll()
+            }
+            .disabled(model.queue.cancellableCount == 0)
+            Button("Keep downloads", role: .cancel) {}
+        } message: {
+            Text("Queued, downloading, finalizing, and paused downloads will be marked Cancelled. Partial progress may be lost. Finished files won’t be deleted.")
+        }
+    }
+
+    private func queueColumn(showsCompactSummary: Bool) -> some View {
+        VStack(spacing: 0) {
+            if showsCompactSummary {
+                compactSummaryBar
+                Rectangle().fill(Theme.border).frame(height: 1)
+            }
+            if showsQueueBar {
+                queueActionsBar
+                Rectangle().fill(Theme.border).frame(height: 1)
+            }
+            queueHeader
+            Rectangle().fill(Theme.border).frame(height: 1)
+            List {
+                ForEach(model.queue.items) { item in
+                    QueueRow(item: item, model: model)
+                        .moveDisabled(!model.queue.canReorder(item))
+                        .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+                .onMove { source, destination in
+                    model.queue.move(fromOffsets: source, toOffset: destination)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private var queueHeader: some View {
+        HStack {
+            Text("ITEM / STATUS / TRANSFER")
+            Spacer()
+            Text("ACTIONS")
+        }
+        .font(.system(size: 9, weight: .medium, design: .monospaced))
+        .tracking(0.8)
+        .foregroundStyle(Theme.muted)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(Theme.canvas)
+        .accessibilityHidden(true)
+    }
+
+    private var compactSummaryBar: some View {
+        HStack(spacing: 16) {
+            Text("QUEUE")
+                .foregroundStyle(Theme.textPrimary)
+            Text(twoDigit(summary.totalCount))
+                .foregroundStyle(Theme.textPrimary)
+            Spacer(minLength: 4)
+            compactMetric("ACTIVE", value: summary.activeCount, color: Theme.accent)
+            compactMetric("PAUSED", value: summary.pausedCount, color: Theme.warning)
+            compactMetric("DONE", value: summary.completedCount, color: Theme.success)
+            compactMetric("FAILED", value: summary.failedCount, color: Theme.danger)
+        }
+        .font(.system(size: 9, weight: .medium, design: .monospaced))
+        .tracking(0.5)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(Theme.surface)
+    }
+
+    private func compactMetric(_ label: String, value: Int, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text("\(label) \(twoDigit(value))")
+                .foregroundStyle(Theme.muted)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label.capitalized): \(value)")
+    }
+
+    private var summaryRail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("TRANSFER STATE")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(Theme.muted)
+
+            Text(twoDigit(summary.totalCount))
+                .font(.system(size: 48, weight: .light, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.top, 18)
+
+            Text(summary.totalCount == 1 ? "job total" : "jobs total")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(Theme.muted)
+                .padding(.top, 2)
+
+            VStack(spacing: 0) {
+                railMetric("ACTIVE", value: summary.activeCount, color: Theme.accent)
+                railMetric("PAUSED", value: summary.pausedCount, color: Theme.warning)
+                railMetric("COMPLETE", value: summary.completedCount, color: Theme.success)
+                railMetric("FAILED", value: summary.failedCount, color: Theme.danger)
+            }
+            .padding(.top, 26)
+
+            Spacer(minLength: 18)
+
+            Text("OUTPUT")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(Theme.muted)
+            Text(outputLabel)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.accent)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .padding(.top, 7)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.canvas)
+    }
+
+    private func railMetric(_ label: String, value: Int, color: Color) -> some View {
+        HStack {
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(label)
+            }
+            Spacer()
+            Text(twoDigit(value))
+                .foregroundStyle(Theme.textPrimary)
+        }
+        .font(.system(size: 9, weight: .medium, design: .monospaced))
+        .foregroundStyle(Theme.muted)
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.border).frame(height: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label.capitalized): \(value)")
+    }
+
+    private var summary: QueueActivitySummary {
+        QueueActivitySummary(items: model.queue.items)
+    }
+
+    private var outputLabel: String {
+        let path = model.destination.path
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard path.hasPrefix(home) else { return path }
+        return "~" + path.dropFirst(home.count)
+    }
+
+    private func twoDigit(_ value: Int) -> String {
+        String(format: "%02d", value)
     }
 
     private var showsQueueBar: Bool {
@@ -79,7 +228,7 @@ struct QueueList: View {
                 } label: {
                     Label("Cancel all…", systemImage: "xmark.circle.fill")
                 }
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.danger)
                 .help(batchHelp("Cancel", count: model.queue.cancellableCount))
                 .accessibilityLabel("Cancel all downloads")
                 .accessibilityHint(batchHelp("Cancel", count: model.queue.cancellableCount))
@@ -94,10 +243,10 @@ struct QueueList: View {
             }
         }
         .buttonStyle(.plain)
-        .font(.callout)
-        .foregroundStyle(Theme.accent)
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .foregroundStyle(Theme.textPrimary)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 9)
         .background(Theme.surface)
     }
 
@@ -118,10 +267,17 @@ struct QueueList: View {
     private var emptyState: some View {
         VStack(spacing: 20) {
             BendingMark()
-            VStack(spacing: 4) {
-                Text("Nothing here yet").font(.title3.weight(.semibold))
+            VStack(spacing: 6) {
+                Text("QUEUE_EMPTY")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .tracking(1)
+                    .foregroundStyle(Theme.accent)
+                Text("Nothing here yet")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
                 Text("Paste a video link to download it.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout)
+                    .foregroundStyle(Theme.muted)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -152,14 +308,14 @@ private struct AnimatedBendingMark: View {
         ZStack {
             // Soft halo pooled under the icon.
             Circle()
-                .fill(Theme.glow.opacity(0.16))
+                .fill(Theme.avatarGlow.opacity(0.16))
                 .frame(width: 190, height: 190)
                 .blur(radius: 40)
 
             // Emanating currents: blurred, low-opacity rings that expand and fade.
             ForEach(0..<4, id: \.self) { i in
                 Circle()
-                    .strokeBorder(Theme.glow.opacity(0.28), lineWidth: 2)
+                    .strokeBorder(Theme.avatarGlow.opacity(0.28), lineWidth: 2)
                     .frame(width: 150, height: 150)
                     .blur(radius: 2.5)
                     .scaleEffect(animate ? 2.1 : 0.8)
@@ -172,7 +328,7 @@ private struct AnimatedBendingMark: View {
             }
             iconOrb
                 .frame(width: 146, height: 146)
-                .shadow(color: Theme.glow.opacity(0.4), radius: 24)
+                .shadow(color: Theme.avatarGlow.opacity(0.4), radius: 24)
                 .offset(y: animate ? -5 : 5)
                 .animation(
                     reduceMotion ? nil : .easeInOut(duration: 3.2).repeatForever(autoreverses: true),
@@ -195,7 +351,7 @@ private struct AnimatedBendingMark: View {
                     center: .init(x: 0.4, y: 0.35), startRadius: 4, endRadius: 70))
                 Image(systemName: "arrow.down")
                     .font(.system(size: 40, weight: .bold))
-                    .foregroundStyle(Theme.wave)
+                    .foregroundStyle(Theme.avatarWave)
             }
         }
     }
@@ -206,13 +362,13 @@ private struct StaticBendingMark: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Theme.glow.opacity(0.16))
+                .fill(Theme.avatarGlow.opacity(0.16))
                 .frame(width: 190, height: 190)
                 .blur(radius: 40)
 
             iconOrb
                 .frame(width: 146, height: 146)
-                .shadow(color: Theme.glow.opacity(0.4), radius: 24)
+                .shadow(color: Theme.avatarGlow.opacity(0.4), radius: 24)
                 .offset(y: -5)
         }
         .frame(height: 210)
@@ -230,7 +386,7 @@ private struct StaticBendingMark: View {
                     center: .init(x: 0.4, y: 0.35), startRadius: 4, endRadius: 70))
                 Image(systemName: "arrow.down")
                     .font(.system(size: 40, weight: .bold))
-                    .foregroundStyle(Theme.wave)
+                    .foregroundStyle(Theme.avatarWave)
             }
         }
     }

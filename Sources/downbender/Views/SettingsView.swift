@@ -10,157 +10,234 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                HStack(spacing: 14) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable().frame(width: 54, height: 54)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 0) {
-                            Text("Down").fontWeight(.light).foregroundStyle(.secondary)
-                            Text("bender").fontWeight(.bold).foregroundStyle(Theme.accent)
-                        }
-                        .font(.title2)
-                        Text("The last download master · v\(Downbender.version)")
-                            .font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 16) {
+                    ZStack {
+                        Rectangle()
+                            .fill(Theme.raised)
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(7)
                     }
-                    Spacer()
+                    .frame(width: 54, height: 54)
+                    .overlay(Rectangle().strokeBorder(Theme.borderStrong))
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("DOWNBENDER")
+                                .font(.system(size: 19, weight: .semibold))
+                                .tracking(-0.3)
+                                .foregroundStyle(Theme.textPrimary)
+                            Spacer()
+                            Text("PREFERENCES")
+                                .commandMetadata()
+                        }
+
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Theme.success)
+                                .frame(width: 6, height: 6)
+                            Text("DOWNLOAD CONTROL")
+                                .commandMetadata()
+                            Spacer()
+                            Text("V\(Downbender.version)")
+                                .commandMetadata()
+                        }
+                    }
                 }
-                .padding(.vertical, 6)
+                .commandPanel(padding: 14)
             }
 
-            Section("General") {
-                Stepper(value: $model.maxConcurrent, in: 1...4) {
-                    Label("Simultaneous downloads: \(model.maxConcurrent)", systemImage: "square.stack.3d.up.fill")
-                }
-                .onChange(of: model.maxConcurrent) { _, newValue in model.queue.setMaxConcurrent(newValue) }
-
-                LabeledContent {
-                    HStack(spacing: 8) {
-                        Text(model.destination.lastPathComponent).lineLimit(1)
-                        Button("Change…") { pickDownloadFolder() }
+            Section {
+                VStack(alignment: .leading, spacing: 0) {
+                    Stepper(value: $model.maxConcurrent, in: 1...4) {
+                        Label("Simultaneous downloads: \(model.maxConcurrent)", systemImage: "square.stack.3d.up.fill")
                     }
-                } label: {
-                    Label("Download folder", systemImage: "folder")
-                }
+                    .onChange(of: model.maxConcurrent) { _, newValue in model.queue.setMaxConcurrent(newValue) }
+                    .commandRow()
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Picker(selection: $model.defaultQuality) {
-                        Text("Ask every time").tag(DownloadFormat?.none)
-                        Divider()
-                        Text(DownloadFormat.maximumVideo.preferenceLabel)
-                            .tag(DownloadFormat?.some(.maximumVideo))
-                        Text(DownloadFormat.video(height: 2160).preferenceLabel)
-                            .tag(DownloadFormat?.some(.video(height: 2160)))
-                        Text(DownloadFormat.video(height: 1440).preferenceLabel)
-                            .tag(DownloadFormat?.some(.video(height: 1440)))
-                        Text(DownloadFormat.video(height: 1080).preferenceLabel)
-                            .tag(DownloadFormat?.some(.video(height: 1080)))
-                        Text(DownloadFormat.video(height: 720).preferenceLabel)
-                            .tag(DownloadFormat?.some(.video(height: 720)))
-                        Text(DownloadFormat.video(height: 480).preferenceLabel)
-                            .tag(DownloadFormat?.some(.video(height: 480)))
-                        Text(DownloadFormat.video(height: 360).preferenceLabel)
-                            .tag(DownloadFormat?.some(.video(height: 360)))
-                        Divider()
-                        Text(DownloadFormat.audioMP3.preferenceLabel)
-                            .tag(DownloadFormat?.some(.audioMP3))
+                    CommandRule()
+
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            Text(model.destination.lastPathComponent)
+                                .lineLimit(1)
+                                .foregroundStyle(Theme.muted)
+                            Button("Change…") { pickDownloadFolder() }
+                                .buttonStyle(CommandButtonStyle(.secondary))
+                        }
                     } label: {
-                        Label("Default quality", systemImage: "slider.horizontal.3")
+                        Label("Download folder", systemImage: "folder")
                     }
+                    .commandRow()
 
-                    Text(defaultQualityDetail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Default quality details")
-                        .accessibilityValue(defaultQualityDetail)
-                }
+                    CommandRule()
 
-                Toggle(isOn: $model.oneClickDownload) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Download immediately")
-                        Text("Skip the quality panel for videos — uses the default quality.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(model.defaultQuality == nil)
-
-                FileNameSettings(model: model)
-            }
-
-            Section("Privacy") {
-                Picker(selection: $model.cookiesBrowser) {
-                    Text("None").tag(String?.none)
-                    Text("Chrome").tag(String?("chrome"))
-                    Text("Safari").tag(String?("safari"))
-                    Text("Firefox").tag(String?("firefox"))
-                    Text("Edge").tag(String?("edge"))
-                    Text("Brave").tag(String?("brave"))
-                } label: {
-                    Label("Browser cookies", systemImage: "lock.shield")
-                }
-                Text("Only needed for age-restricted or members-only videos. Downbender lets yt-dlp read cookies from the selected browser; macOS may ask for permission once.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section("Browser extension") {
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Downbender browser extension")
-                        Text("Send videos from Chrome, Brave, Edge, or Chromium")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "puzzlepiece.extension.fill").foregroundStyle(Theme.accent)
-                }
-
-                if let message = chromeIntegration?.errorMessage {
-                    Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    if let browser = installingBrowser ?? ChromeIntegrationInstaller.installedBrowsers().first {
-                        Button("Try again") { beginBrowserInstallation(in: browser) }
-                            .buttonStyle(WaveButtonStyle())
-                    }
-                } else if chromeIntegration?.isAvailable == true {
-                    let browsers = ChromeIntegrationInstaller.installedBrowsers()
-                    if browsers.isEmpty {
-                        Label("Install a supported Chromium browser first", systemImage: "info.circle")
-                            .foregroundStyle(.secondary)
-                    } else if let browser = browsers.first, browsers.count == 1 {
-                        Button("Install for \(browser.displayName)") {
-                            beginBrowserInstallation(in: browser)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Picker(selection: $model.defaultQuality) {
+                            Text("Ask every time").tag(DownloadFormat?.none)
+                            Divider()
+                            Text(DownloadFormat.maximumVideo.preferenceLabel)
+                                .tag(DownloadFormat?.some(.maximumVideo))
+                            Text(DownloadFormat.video(height: 2160).preferenceLabel)
+                                .tag(DownloadFormat?.some(.video(height: 2160)))
+                            Text(DownloadFormat.video(height: 1440).preferenceLabel)
+                                .tag(DownloadFormat?.some(.video(height: 1440)))
+                            Text(DownloadFormat.video(height: 1080).preferenceLabel)
+                                .tag(DownloadFormat?.some(.video(height: 1080)))
+                            Text(DownloadFormat.video(height: 720).preferenceLabel)
+                                .tag(DownloadFormat?.some(.video(height: 720)))
+                            Text(DownloadFormat.video(height: 480).preferenceLabel)
+                                .tag(DownloadFormat?.some(.video(height: 480)))
+                            Text(DownloadFormat.video(height: 360).preferenceLabel)
+                                .tag(DownloadFormat?.some(.video(height: 360)))
+                            Divider()
+                            Text(DownloadFormat.audioMP3.preferenceLabel)
+                                .tag(DownloadFormat?.some(.audioMP3))
+                        } label: {
+                            Label("Default quality", systemImage: "slider.horizontal.3")
                         }
-                        .buttonStyle(WaveButtonStyle())
+
+                        Text(defaultQualityDetail)
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                            .accessibilityLabel("Default quality details")
+                            .accessibilityValue(defaultQualityDetail)
+                    }
+                    .commandRow()
+
+                    CommandRule()
+
+                    Toggle(isOn: $model.oneClickDownload) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Download immediately")
+                            Text("Skip the quality panel for videos — uses the default quality.")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    }
+                    .disabled(model.defaultQuality == nil)
+                    .commandRow()
+
+                    CommandRule()
+
+                    FileNameSettings(model: model)
+                        .commandRow()
+                }
+                .commandPanel()
+            } header: {
+                CommandSectionHeader(index: "01", title: "General")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 0) {
+                    Picker(selection: $model.cookiesBrowser) {
+                        Text("None").tag(String?.none)
+                        Text("Chrome").tag(String?("chrome"))
+                        Text("Safari").tag(String?("safari"))
+                        Text("Firefox").tag(String?("firefox"))
+                        Text("Edge").tag(String?("edge"))
+                        Text("Brave").tag(String?("brave"))
+                    } label: {
+                        Label("Browser cookies", systemImage: "lock.shield")
+                    }
+                    .commandRow()
+
+                    CommandRule()
+
+                    Text("Only needed for age-restricted or members-only videos. Downbender lets yt-dlp read cookies from the selected browser; macOS may ask for permission once.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .commandRow()
+                }
+                .commandPanel()
+            } header: {
+                CommandSectionHeader(index: "02", title: "Privacy")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Downbender browser extension")
+                            Text("Send videos from Chrome, Brave, Edge, or Chromium")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    } icon: {
+                        Image(systemName: "puzzlepiece.extension.fill")
+                            .foregroundStyle(Theme.accent)
+                    }
+
+                    CommandRule(inset: 0)
+
+                    if let message = chromeIntegration?.errorMessage {
+                        Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.warning)
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                            .textSelection(.enabled)
+                        if let browser = installingBrowser ?? ChromeIntegrationInstaller.installedBrowsers().first {
+                            Button("Try again") { beginBrowserInstallation(in: browser) }
+                                .buttonStyle(CommandButtonStyle(.primary))
+                        }
                     } else {
-                        Menu("Install Browser Extension") {
-                            ForEach(browsers, id: \.self) { browser in
-                                Button(browser.displayName) {
+                        if chromeIntegration?.isAvailable == true {
+                            let browsers = ChromeIntegrationInstaller.installedBrowsers()
+                            if browsers.isEmpty {
+                                Label("Install a supported Chromium browser first", systemImage: "info.circle")
+                                    .foregroundStyle(Theme.muted)
+                            } else if let browser = browsers.first, browsers.count == 1 {
+                                Button("Install for \(browser.displayName)") {
                                     beginBrowserInstallation(in: browser)
                                 }
+                                .buttonStyle(CommandButtonStyle(.primary))
+                            } else {
+                                Menu("Install Browser Extension") {
+                                    ForEach(browsers, id: \.self) { browser in
+                                        Button(browser.displayName) {
+                                            beginBrowserInstallation(in: browser)
+                                        }
+                                    }
+                                }
+                                .menuStyle(.button)
+                                .buttonStyle(CommandButtonStyle(.primary))
+                            }
+
+                            if let integration = chromeIntegration, integration.isInstalling,
+                               let shortcut = integration.temporaryShortcut {
+                                Text(
+                                    "In \(installingBrowser?.displayName ?? "your browser"), " +
+                                        "choose Load unpacked and select “Downbender Extension Installer”."
+                                )
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+
+                                HStack {
+                                    Button("Show installer") {
+                                        NSWorkspace.shared.activateFileViewerSelecting([shortcut])
+                                    }
+                                    .buttonStyle(CommandButtonStyle(.secondary))
+                                    Button("Cancel") {
+                                        chromeIntegration = ChromeIntegrationInstaller.cancelInstallation()
+                                        installingBrowser = nil
+                                    }
+                                    .buttonStyle(CommandButtonStyle(.danger))
+                                }
+                            }
+                        } else {
+                            LabeledContent("Checking extension") {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(Theme.accent)
                             }
                         }
                     }
-
-                    if let integration = chromeIntegration, integration.isInstalling,
-                       let shortcut = integration.temporaryShortcut {
-                        Text(
-                            "In \(installingBrowser?.displayName ?? "your browser"), " +
-                                "choose Load unpacked and select “Downbender Extension Installer”."
-                        )
-                        .font(.caption).foregroundStyle(.secondary)
-
-                        HStack {
-                            Button("Show installer") {
-                                NSWorkspace.shared.activateFileViewerSelecting([shortcut])
-                            }
-                            Button("Cancel") {
-                                chromeIntegration = ChromeIntegrationInstaller.cancelInstallation()
-                                installingBrowser = nil
-                            }
-                        }
-                    }
-                } else {
-                    LabeledContent("Checking extension") { ProgressView().controlSize(.small) }
                 }
+                .commandPanel(padding: 14)
+            } header: {
+                CommandSectionHeader(index: "03", title: "Browser extension")
             }
 
             if let updater {
@@ -169,7 +246,10 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(WashBackground())
+        .foregroundStyle(Theme.textPrimary)
+        .tint(Theme.accent)
+        .background(Theme.canvas)
+        .preferredColorScheme(.dark)
         .frame(width: 500, height: 580)
         .task {
             if chromeIntegration == nil {
@@ -252,11 +332,10 @@ private struct FileNameSettings: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
+                    Text("FILE OUTPUT")
+                        .commandMetadata()
                     Text("Name format")
                         .fontWeight(.medium)
-                    Text("Choose the result you prefer.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Picker("Name format", selection: styleBinding) {
@@ -320,28 +399,31 @@ private struct FileNameSettings: View {
     }
 
     private var preview: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Example video")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(previewText)
-                    .fontWeight(.semibold)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                Text("OUTPUT / EXAMPLE")
+                    .commandMetadata()
+                Spacer(minLength: 8)
+                Label(
+                    statusText.uppercased(),
+                    systemImage: isSaved ? "checkmark.circle.fill" : "circle.dashed"
+                )
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .tracking(0.6)
+                .foregroundStyle(isSaved ? Theme.success : Theme.warning)
             }
-            Spacer(minLength: 8)
-            Label(
-                statusText,
-                systemImage: isSaved ? "checkmark.circle.fill" : "circle.dashed"
-            )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isSaved ? .green : .orange)
+
+            Text(previewText)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
         }
-        .padding(10)
+        .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface, in: .rect(cornerRadius: 10))
+        .background(Theme.raised)
+        .overlay(Rectangle().strokeBorder(Theme.border))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("File name preview")
         .accessibilityValue("\(previewText). \(statusText).")
@@ -349,11 +431,17 @@ private struct FileNameSettings: View {
 
     private var customEditor: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Template")
-                .font(.subheadline.weight(.semibold))
+            Text("TEMPLATE / ADVANCED")
+                .commandMetadata()
             TextField("%(title)s.%(ext)s", text: $customDraft)
                 .font(.system(.body, design: .monospaced))
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Theme.canvas)
+                .overlay(Rectangle().strokeBorder(
+                    customValidationMessage == nil ? Theme.borderStrong : Theme.danger
+                ))
                 .accessibilityLabel("Custom file name format")
                 .accessibilityHint(
                     customValidationMessage.map { "Invalid format: \($0)" }
@@ -363,21 +451,27 @@ private struct FileNameSettings: View {
 
             if let error = customValidationMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.danger)
                     .accessibilityLabel("Invalid custom format: \(error)")
             } else {
                 Text("Advanced: fields such as %(title)s and %(channel)s are replaced when the file is named.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.muted)
             }
 
             HStack {
-                Button("Use Title Preset") { select(.preset(.title)) }
+                Button("Use Title Preset") {
+                    select(.preset(.title))
+                }
+                .buttonStyle(CommandButtonStyle(.secondary))
                 Spacer()
-                Button("Save Custom Format") { saveCustomFormat() }
-                    .disabled(!canSaveCustomFormat)
+                Button("Save Custom Format") {
+                    saveCustomFormat()
+                }
+                .buttonStyle(CommandButtonStyle(.primary))
+                .disabled(!canSaveCustomFormat)
             }
         }
-        .font(.caption)
+        .font(.system(size: 11))
         .padding(.top, 2)
     }
 
@@ -444,72 +538,108 @@ private struct UpdatesSection: View {
 
     var body: some View {
         Section {
-            switch updater.phase {
-            case .idle:
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Downbender & download engine")
-                        Text("One check covers the app and its engine.")
-                            .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                switch updater.phase {
+                case .idle:
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Downbender & download engine")
+                            Text("One check covers the app and its engine.")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    } icon: {
+                        Image(systemName: "shippingbox")
+                            .foregroundStyle(Theme.accent)
                     }
-                } icon: {
-                    Image(systemName: "shippingbox")
-                }
-                Button("Check for updates") { Task { await updater.check() } }
-
-            case .checking:
-                LabeledContent {
-                    ProgressView().controlSize(.small)
-                } label: {
-                    Label("Checking…", systemImage: "arrow.triangle.2.circlepath")
-                }
-
-            case .upToDate(let app, let engine):
-                Label("You're up to date (v\(app) · engine \(engine))", systemImage: "checkmark.seal.fill")
-                    .foregroundStyle(.green)
-                Button("Check again") { Task { await updater.check() } }
-
-            case .available(let appVersion, let engineInstalled, let engineLatest):
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Update available")
-                        Text(detail(appVersion: appVersion, engineInstalled: engineInstalled, engineLatest: engineLatest))
-                            .font(.caption).foregroundStyle(.secondary)
+                    Button("Check for updates") {
+                        Task { await updater.check() }
                     }
-                } icon: {
-                    Image(systemName: "arrow.down.circle").foregroundStyle(.tint)
+                    .buttonStyle(CommandButtonStyle(.secondary))
+
+                case .checking:
+                    LabeledContent {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(Theme.accent)
+                    } label: {
+                        Label("Checking…", systemImage: "arrow.triangle.2.circlepath")
+                    }
+
+                case .upToDate(let app, let engine):
+                    Label("You're up to date (v\(app) · engine \(engine))", systemImage: "checkmark.seal.fill")
+                        .foregroundStyle(Theme.success)
+                    Button("Check again") {
+                        Task { await updater.check() }
+                    }
+                    .buttonStyle(CommandButtonStyle(.secondary))
+
+                case .available(let appVersion, let engineInstalled, let engineLatest):
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Update available")
+                            Text(detail(
+                                appVersion: appVersion,
+                                engineInstalled: engineInstalled,
+                                engineLatest: engineLatest
+                            ))
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                        }
+                    } icon: {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundStyle(Theme.accent)
+                    }
+                    Button("Update now") {
+                        Task { await updater.update() }
+                    }
+                    .buttonStyle(CommandButtonStyle(.primary))
+
+                case .workingOnEngine(let fraction):
+                    UpdateProgressView(title: "Updating download engine", fraction: fraction)
+
+                case .workingOnApp(let fraction):
+                    UpdateProgressView(title: "Downloading Downbender", fraction: fraction)
+
+                case .readyToRestart:
+                    Label("Update installed", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.success)
+                    Button("Restart Downbender") {
+                        if activeDownloads > 0 { confirmingRestart = true } else { relaunchApp() }
+                    }
+                    .buttonStyle(CommandButtonStyle(.primary))
+                    .confirmationDialog(
+                        "Restart to finish updating?",
+                        isPresented: $confirmingRestart,
+                        titleVisibility: .visible
+                    ) {
+                        Button(
+                            "Restart (cancels \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))",
+                            role: .destructive
+                        ) {
+                            relaunchApp()
+                        }
+                        Button("Not now", role: .cancel) {}
+                    } message: {
+                        Text("\(activeDownloads) download\(activeDownloads == 1 ? " is" : "s are") still in progress and will be cancelled when Downbender restarts.")
+                    }
+
+                case .failed(let message):
+                    Label("Update failed", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.warning)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .textSelection(.enabled)
+                    Button("Retry") {
+                        Task { await updater.check() }
+                    }
+                    .buttonStyle(CommandButtonStyle(.secondary))
                 }
-                Button("Update now") { Task { await updater.update() } }
-                    .buttonStyle(WaveButtonStyle())
-
-            case .workingOnEngine(let fraction):
-                UpdateProgressView(title: "Updating download engine", fraction: fraction)
-
-            case .workingOnApp(let fraction):
-                UpdateProgressView(title: "Downloading Downbender", fraction: fraction)
-
-            case .readyToRestart:
-                Label("Update installed", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Button("Restart Downbender") {
-                    if activeDownloads > 0 { confirmingRestart = true } else { relaunchApp() }
-                }
-                .buttonStyle(WaveButtonStyle())
-                .confirmationDialog("Restart to finish updating?", isPresented: $confirmingRestart, titleVisibility: .visible) {
-                    Button("Restart (cancels \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))", role: .destructive) { relaunchApp() }
-                    Button("Not now", role: .cancel) {}
-                } message: {
-                    Text("\(activeDownloads) download\(activeDownloads == 1 ? " is" : "s are") still in progress and will be cancelled when Downbender restarts.")
-                }
-
-            case .failed(let message):
-                Label("Update failed", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text(message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                Button("Retry") { Task { await updater.check() } }
             }
+            .commandPanel(padding: 14)
         } header: {
-            Text("Updates")
+            CommandSectionHeader(index: "04", title: "Updates")
         }
     }
 
@@ -537,13 +667,145 @@ private struct UpdateProgressView: View {
                     Text("Preparing…")
                 }
             }
-            .font(.callout)
-            .foregroundStyle(.secondary)
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(Theme.muted)
 
-            WaveProgress(fraction: fraction, updatesFrequently: true, height: 11)
+            CommandProgressBar(fraction: fraction)
         }
         .padding(.vertical, 6)
         .animation(.easeOut(duration: 0.3), value: fraction)
+    }
+}
+
+private struct CommandSectionHeader: View {
+    let index: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Text(index)
+                .foregroundStyle(Theme.accent)
+            Text(title.uppercased())
+                .foregroundStyle(Theme.muted)
+            Rectangle()
+                .fill(Theme.border)
+                .frame(height: 1)
+        }
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .tracking(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct CommandRule: View {
+    var inset: CGFloat = 14
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.border)
+            .frame(height: 1)
+            .padding(.horizontal, inset)
+            .accessibilityHidden(true)
+    }
+}
+
+private enum CommandButtonEmphasis {
+    case primary
+    case secondary
+    case danger
+}
+
+private struct CommandButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    let emphasis: CommandButtonEmphasis
+
+    init(_ emphasis: CommandButtonEmphasis) {
+        self.emphasis = emphasis
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .textCase(.uppercase)
+            .tracking(0.5)
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(Rectangle().fill(background))
+            .overlay(Rectangle().strokeBorder(stroke))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.38)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+
+    private var foreground: Color {
+        switch emphasis {
+        case .primary: Theme.canvas
+        case .secondary: Theme.textPrimary
+        case .danger: Theme.danger
+        }
+    }
+
+    private var background: Color {
+        switch emphasis {
+        case .primary: Theme.accent
+        case .secondary, .danger: Theme.raised
+        }
+    }
+
+    private var stroke: Color {
+        switch emphasis {
+        case .primary: Theme.accent
+        case .secondary: Theme.borderStrong
+        case .danger: Theme.danger
+        }
+    }
+}
+
+private struct CommandProgressBar: View {
+    let fraction: Double?
+
+    var body: some View {
+        if let fraction {
+            GeometryReader { geometry in
+                let progress = min(max(fraction, 0), 1)
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Theme.raised)
+                    Rectangle()
+                        .fill(Theme.accent)
+                        .frame(width: geometry.size.width * progress)
+                }
+                .overlay(Rectangle().strokeBorder(Theme.border))
+            }
+            .frame(height: 7)
+        } else {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .tint(Theme.accent)
+        }
+    }
+}
+
+private extension View {
+    func commandMetadata() -> some View {
+        font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .tracking(0.9)
+            .foregroundStyle(Theme.muted)
+    }
+
+    func commandRow() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+    }
+
+    func commandPanel(padding: CGFloat = 0) -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(padding)
+            .background(Theme.surface)
+            .overlay(Rectangle().strokeBorder(Theme.border))
+            .listRowBackground(Color.clear)
     }
 }
 

@@ -233,6 +233,8 @@ struct DownbenderApp: App {
             // Dark mode only, by design decision.
             .preferredColorScheme(.dark)
         }
+        // 1,087 × 737 including the macOS title bar—the preferred visible frame.
+        .defaultSize(width: 1_087, height: 680)
         .commands {
             CommandGroup(after: .pasteboard) {
                 Button("Paste and Download") {

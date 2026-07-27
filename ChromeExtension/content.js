@@ -120,6 +120,20 @@
     const shadow = overlayHost.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
+      :host {
+        --db-canvas: #080808;
+        --db-surface: #111111;
+        --db-raised: #171717;
+        --db-border: #292929;
+        --db-border-strong: #454545;
+        --db-text: #f4f4f4;
+        --db-muted: #898989;
+        --db-accent: #66d9ff;
+        --db-success: #67d391;
+        --db-warning: #f1ba62;
+        --db-danger: #ff6b6b;
+        color-scheme: dark;
+      }
       .control {
         display: inline-flex;
         position: relative;
@@ -130,46 +144,45 @@
         box-sizing: border-box;
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        height: 30px;
+        gap: 6px;
+        height: 32px;
         margin: 0;
-        padding: 3px 10px 3px 3px;
+        padding: 4px 10px 4px 4px;
         overflow: hidden;
         isolation: isolate;
         position: relative;
-        border: 1px solid rgba(137, 218, 255, .58);
-        border-radius: 999px;
-        background: rgba(5, 18, 34, .94);
-        -webkit-backdrop-filter: blur(10px);
-        backdrop-filter: blur(10px);
-        box-shadow:
-          0 5px 16px rgba(0, 0, 0, .42),
-          inset 0 1px rgba(255, 255, 255, .1);
-        color: white;
+        border: 1px solid var(--db-border-strong);
+        border-radius: 6px;
+        background: var(--db-surface);
+        color: var(--db-text);
         cursor: pointer;
-        font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        letter-spacing: .1px;
+        font: 600 11px/1 ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        letter-spacing: .04em;
         pointer-events: auto;
+        text-transform: uppercase;
         white-space: nowrap;
-        transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+        transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
       }
       .download:hover {
-        border-color: rgba(166, 230, 255, .9);
-        background: rgba(8, 29, 52, .97);
-        box-shadow:
-          0 6px 19px rgba(0, 0, 0, .48),
-          0 0 0 1px rgba(45, 176, 237, .16);
-        transform: translateY(-1px);
+        border-color: var(--db-accent);
+        background: var(--db-raised);
       }
-      .download:active { transform: translateY(0) scale(.98); }
+      .download:active {
+        background: var(--db-accent);
+        color: var(--db-canvas);
+      }
+      .download:focus-visible,
+      .dismiss:focus-visible {
+        outline: 2px solid var(--db-accent);
+        outline-offset: 2px;
+      }
       .mark {
         display: grid;
         flex: 0 0 auto;
         width: 22px;
         height: 22px;
         place-items: center;
-        border-radius: 50%;
-        filter: drop-shadow(0 1px 3px rgba(75, 194, 255, .3));
+        border-radius: 5px;
       }
       .mark img {
         display: block;
@@ -177,38 +190,66 @@
         height: 22px;
         object-fit: contain;
       }
-      .download[data-state="sending"] .mark img { animation: pulse 650ms ease-in-out infinite alternate; }
-      .download[data-state="sent"] { border-color: rgba(74, 222, 128, .9); }
-      .download[data-state="error"] { border-color: rgba(248, 113, 113, .95); }
+      .download[data-state="sending"] .mark img {
+        animation: db-status-pulse 650ms steps(2, end) infinite alternate;
+      }
+      .download[data-state="sending"] {
+        border-color: var(--db-warning);
+        color: var(--db-warning);
+      }
+      .download[data-state="sent"] {
+        border-color: var(--db-success);
+        color: var(--db-success);
+      }
+      .download[data-state="error"] {
+        border-color: var(--db-danger);
+        color: var(--db-danger);
+      }
+      .download[data-state="sending"]:active {
+        background: var(--db-warning);
+        color: var(--db-canvas);
+      }
+      .download[data-state="sent"]:active {
+        background: var(--db-success);
+        color: var(--db-canvas);
+      }
+      .download[data-state="error"]:active {
+        background: var(--db-danger);
+        color: var(--db-canvas);
+      }
       .dismiss {
         appearance: none;
         box-sizing: border-box;
         display: grid;
         position: absolute;
-        top: -6px;
-        right: -6px;
-        width: 17px;
-        height: 17px;
+        top: -9px;
+        right: -9px;
+        width: 22px;
+        height: 22px;
         margin: 0;
         padding: 0 0 1px;
         place-items: center;
-        border: 1px solid rgba(137, 218, 255, .62);
-        border-radius: 50%;
-        background: rgba(5, 18, 34, .98);
-        box-shadow: 0 2px 7px rgba(0, 0, 0, .48);
-        color: rgba(255, 255, 255, .9);
+        border: 1px solid var(--db-border-strong);
+        border-radius: 5px;
+        background: var(--db-canvas);
+        color: var(--db-muted);
         cursor: pointer;
-        font: 700 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font: 700 12px/1 ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
         pointer-events: auto;
-        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+        transition: background-color 100ms ease, border-color 100ms ease, color 100ms ease;
       }
       .dismiss:hover {
-        border-color: rgba(255, 255, 255, .9);
-        background: rgba(24, 53, 79, .99);
-        transform: scale(1.08);
+        border-color: var(--db-danger);
+        background: var(--db-raised);
+        color: var(--db-danger);
       }
-      .dismiss:active { transform: scale(.94); }
-      @keyframes pulse { to { transform: translateY(2px); filter: brightness(1.2); } }
+      .dismiss:active {
+        background: var(--db-danger);
+        color: var(--db-canvas);
+      }
+      @keyframes db-status-pulse {
+        to { opacity: .55; }
+      }
       @media (prefers-reduced-motion: reduce) {
         .download, .dismiss { transition: none; }
         .download[data-state="sending"] .mark img { animation: none; }
@@ -543,6 +584,7 @@
     overlayButton.dataset.state = "";
     overlayText.textContent = "Download";
     overlayButton.title = "Download this video with Downbender";
+    overlayButton.setAttribute("aria-label", "Download this video with Downbender");
     overlayHovered = false;
     activeVideo = null;
     overlayHost.style.display = "none";
@@ -555,6 +597,12 @@
     overlayButton.dataset.state = state;
     overlayText.textContent = text;
     overlayButton.title = title;
+    overlayButton.setAttribute("aria-label", title);
+    if (activeVideo) {
+      requestAnimationFrame(() => {
+        if (activeVideo) positionOverlay(activeVideo);
+      });
+    }
     if (state === "sending") {
       feedbackTimer = null;
       return;
@@ -563,6 +611,8 @@
       overlayButton.dataset.state = "";
       overlayText.textContent = "Download";
       overlayButton.title = "Download this video with Downbender";
+      overlayButton.setAttribute("aria-label", "Download this video with Downbender");
+      if (activeVideo) positionOverlay(activeVideo);
     }, state === "error" ? 2600 : 1400);
   }
 
