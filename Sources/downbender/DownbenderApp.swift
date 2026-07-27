@@ -1,5 +1,4 @@
 import AppKit
-import Observation
 import SwiftUI
 import DownbenderCore
 
@@ -7,6 +6,8 @@ import DownbenderCore
 private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
     let notifier = DownloadNotifier()
+    private weak var systemSurfaceQueue: SystemSurfaceQueueState?
+    private var lastDockBadge: String?
     var openMainWindowHandler: (() -> Void)? {
         didSet {
             guard shouldOpenMainWindowWhenReady, openMainWindowHandler != nil else { return }
@@ -16,9 +17,12 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     }
     private var shouldOpenMainWindowWhenReady = false
 
-    func bind(model: AppModel) {
+    func bind(model: AppModel, systemSurfaceQueue: SystemSurfaceQueueState) {
         self.model = model
-        observeQueue()
+        self.systemSurfaceQueue = systemSurfaceQueue
+        systemSurfaceQueue.bind(to: model.queue) { [weak self] snapshot in
+            self?.updateDockBadge(snapshot)
+        }
     }
 
     func applicationWillFinishLaunching(_: Notification) {
@@ -60,7 +64,7 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDockMenu(_: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         if let model {
-            let summary = QueueActivitySummary(items: model.queue.items)
+            let summary = systemSurfaceQueue?.snapshot ?? QueueActivitySnapshot(items: model.queue.items)
             let status = NSMenuItem(title: dockStatusText(summary), action: nil, keyEquivalent: "")
             status.isEnabled = false
             menu.addItem(status)
@@ -99,43 +103,35 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
         return menu
     }
 
-    private func observeQueue() {
-        guard let model else {
-            NSApp.dockTile.badgeLabel = nil
-            return
-        }
-        withObservationTracking {
-            updateDockBadge(QueueActivitySummary(items: model.queue.items))
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in self?.observeQueue() }
-        }
-    }
-
-    private func updateDockBadge(_ summary: QueueActivitySummary) {
+    private func updateDockBadge(_ summary: QueueActivitySnapshot) {
+        let badge: String?
         if summary.activeCount > 0 {
-            if let fraction = summary.progressFraction {
-                NSApp.dockTile.badgeLabel = "\(Int((fraction * 100).rounded()))%"
+            if let percent = summary.progressPercent {
+                badge = "\(percent)%"
             } else {
-                NSApp.dockTile.badgeLabel = "\(summary.activeCount)"
+                badge = "\(summary.activeCount)"
             }
         } else if summary.pausedCount > 0 {
-            NSApp.dockTile.badgeLabel = "Ⅱ \(summary.pausedCount)"
+            badge = "Ⅱ \(summary.pausedCount)"
         } else if summary.failedCount > 0 {
-            NSApp.dockTile.badgeLabel = "!"
+            badge = "!"
         } else if summary.analyzingCount > 0 {
-            NSApp.dockTile.badgeLabel = "…"
+            badge = "…"
         } else if summary.choosingCount > 0 {
-            NSApp.dockTile.badgeLabel = "?"
+            badge = "?"
         } else {
-            NSApp.dockTile.badgeLabel = nil
+            badge = nil
         }
+        guard badge != lastDockBadge else { return }
+        lastDockBadge = badge
+        NSApp.dockTile.badgeLabel = badge
     }
 
-    private func dockStatusText(_ summary: QueueActivitySummary) -> String {
+    private func dockStatusText(_ summary: QueueActivitySnapshot) -> String {
         if summary.activeCount > 0 {
             let noun = summary.activeCount == 1 ? "download" : "downloads"
-            if let fraction = summary.progressFraction {
-                return "\(summary.activeCount) \(noun) · \(Int((fraction * 100).rounded()))%"
+            if let percent = summary.progressPercent {
+                return "\(summary.activeCount) \(noun) · \(percent)%"
             }
             return "\(summary.activeCount) \(noun) active"
         }
@@ -203,6 +199,7 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
 struct DownbenderApp: App {
     @NSApplicationDelegateAdaptor(DownbenderAppDelegate.self) private var appDelegate
     @State private var model: AppModel?
+    @State private var systemSurfaceQueue = SystemSurfaceQueueState()
     @State private var pendingExternalRequests: [BrowserDeepLinkRequest] = []
 
     init() {
@@ -257,14 +254,18 @@ struct DownbenderApp: App {
         }
         MenuBarExtra {
             if let model {
-                MenuBarQueueView(model: model, notifier: appDelegate.notifier)
+                MenuBarQueueView(
+                    model: model,
+                    notifier: appDelegate.notifier,
+                    systemSurfaceQueue: systemSurfaceQueue
+                )
             } else {
                 Text("Downbender is starting…")
                     .padding()
             }
         } label: {
-            if let model {
-                MenuBarQueueLabel(model: model)
+            if model != nil {
+                MenuBarQueueLabel(systemSurfaceQueue: systemSurfaceQueue)
             } else {
                 Label("Downbender", systemImage: "arrow.down.circle")
             }
@@ -276,7 +277,7 @@ struct DownbenderApp: App {
         if model == nil {
             model = makeModel()
             if let model {
-                appDelegate.bind(model: model)
+                appDelegate.bind(model: model, systemSurfaceQueue: systemSurfaceQueue)
                 // Restore BEFORE sweeping, so rehydrated paused items protect their .part files.
                 model.restoreQueue()
                 model.sweepTemporary()

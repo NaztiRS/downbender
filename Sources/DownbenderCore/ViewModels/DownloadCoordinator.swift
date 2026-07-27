@@ -5,6 +5,8 @@ public final class DownloadCoordinator {
     let download: DownloadService
     let inspect: (@Sendable (URL) async -> (width: Int, height: Int)?)?
     let retryDelay: Duration
+    let progressInterval: Duration
+    let progressSleep: ProgressCoalescer.Sleep
 
     public init(
         download: DownloadService,
@@ -14,6 +16,22 @@ public final class DownloadCoordinator {
         self.download = download
         self.inspect = inspect
         self.retryDelay = retryDelay
+        self.progressInterval = ProgressCoalescer.defaultInterval
+        self.progressSleep = { duration in try? await Task.sleep(for: duration) }
+    }
+
+    init(
+        download: DownloadService,
+        inspect: (@Sendable (URL) async -> (width: Int, height: Int)?)? = nil,
+        retryDelay: Duration = .seconds(3),
+        progressInterval: Duration,
+        progressSleep: @escaping ProgressCoalescer.Sleep
+    ) {
+        self.download = download
+        self.inspect = inspect
+        self.retryDelay = retryDelay
+        self.progressInterval = progressInterval
+        self.progressSleep = progressSleep
     }
 
     public func run(
@@ -32,6 +50,17 @@ public final class DownloadCoordinator {
         // signed URLs from scratch, so the manual retry that used to work is automated here.
         let maxAttempts = 3
         for attempt in 1...maxAttempts {
+            let progressUpdates = ProgressCoalescer(
+                interval: progressInterval,
+                sleep: progressSleep
+            ) { progress in
+                guard item.state == .downloading
+                    || (item.state == .merging && progress.fraction >= 1)
+                else { return }
+                item.fraction = progress.fraction
+                item.speedText = progress.speedText
+                item.etaText = progress.etaText
+            }
             do {
                 let deliveredURL = try await download.download(
                     url: item.url,
@@ -45,16 +74,13 @@ public final class DownloadCoordinator {
                     includeSubtitles: item.includeSubtitles,
                     expectedTotalBytes: item.expectedTotalBytes,
                     onProgress: { progress in
-                        Task { @MainActor in
-                            if item.state == .downloading {
-                                item.fraction = progress.fraction
-                                item.speedText = progress.speedText
-                                item.etaText = progress.etaText
-                            }
-                        }
+                        progressUpdates.submit(progress)
                     },
                     onMerging: {
-                        Task { @MainActor in if item.state == .downloading { item.state = .merging } }
+                        Task { @MainActor in
+                            guard progressUpdates.isActive else { return }
+                            if item.state == .downloading { item.state = .merging }
+                        }
                     }
                 )
 
@@ -85,12 +111,15 @@ public final class DownloadCoordinator {
                 // The inspection is a suspension point: a cancel/pause while ffprobe runs (inspect
                 // returns nil without propagating the error) must not end up as .done.
                 if Task.isCancelled {
+                    progressUpdates.cancel()
                     finishInterrupted(item)
                 } else {
+                    progressUpdates.finish()
                     item.state = .done
                 }
                 return
             } catch {
+                progressUpdates.cancel()
                 if Task.isCancelled {
                     finishInterrupted(item)
                     return

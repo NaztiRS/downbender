@@ -54,6 +54,48 @@ import Foundation
 }
 
 @MainActor
+@Test func queueActivitySnapshotQuantizesProgressAndPreservesCounts() {
+    let items: [DownloadItem] = [
+        makeItem(.downloading, fraction: 0.504),
+        makeItem(.queued, fraction: 0.504),
+        makeItem(.paused),
+        makeItem(.failed("download")),
+    ]
+
+    let snapshot = QueueActivitySnapshot(items: items)
+
+    #expect(snapshot.runningCount == 1)
+    #expect(snapshot.queuedCount == 1)
+    #expect(snapshot.pausedCount == 1)
+    #expect(snapshot.failedCount == 1)
+    #expect(snapshot.activeCount == 2)
+    #expect(snapshot.progressPercent == 50)
+}
+
+@MainActor
+@Test func queueActivitySnapshotEqualityIgnoresRawProgressInsideOnePercentBucket() {
+    let item = makeItem(.downloading, fraction: 0.501)
+    let first = QueueActivitySnapshot(items: [item])
+
+    item.fraction = 0.504
+    let sameVisibleProgress = QueueActivitySnapshot(items: [item])
+    #expect(sameVisibleProgress == first)
+
+    item.fraction = 0.506
+    let nextVisibleProgress = QueueActivitySnapshot(items: [item])
+    #expect(nextVisibleProgress != first)
+    #expect(nextVisibleProgress.progressPercent == 51)
+}
+
+@MainActor
+@Test func queueActivitySnapshotKeepsIndeterminateProgressUnknown() {
+    let item = makeItem(.downloading, fraction: 0.75)
+    item.indeterminateProgress = true
+
+    #expect(QueueActivitySnapshot(items: [item]).progressPercent == nil)
+}
+
+@MainActor
 private func makeItem(_ state: DownloadItem.State, fraction: Double = 0) -> DownloadItem {
     let item = DownloadItem(
         url: "https://example.com/file",

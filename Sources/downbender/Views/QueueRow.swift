@@ -25,7 +25,9 @@ struct QueueRow: View {
                     lineWidth: isActive ? 1.5 : 1
                 )
         )
-        .shadow(color: isActive ? Theme.glow.opacity(0.18) : .black.opacity(0.25), radius: isActive ? 10 : 6, y: 3)
+        // The rim already separates settled rows. Reserve one small glow for active work
+        // instead of forcing an offscreen shadow pass for every item in the list.
+        .modifier(ActiveRowGlow(isActive: isActive))
         .contentShape(Rectangle())
         .sheet(isPresented: $choosing) {
             chooserSheet
@@ -426,6 +428,19 @@ struct QueueRow: View {
         }
     }
 
+}
+
+private struct ActiveRowGlow: ViewModifier {
+    let isActive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isActive {
+            content.shadow(color: Theme.glow.opacity(0.12), radius: 5, y: 1)
+        } else {
+            content
+        }
+    }
 }
 
 private struct DeliveredFileDragModifier: ViewModifier {

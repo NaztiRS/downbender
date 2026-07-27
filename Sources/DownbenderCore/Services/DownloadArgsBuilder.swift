@@ -36,6 +36,7 @@ public enum DownloadArgsBuilder {
             // "[download] Destination:" lines (unified-progress phases) nor "[Merger]".
             "--no-quiet",
             "--newline",
+            "--progress-delta", "0.25",
             "--progress-template", progressTemplate,
             "--progress",
             "--print", "after_move:DBPATH %(filepath)s",

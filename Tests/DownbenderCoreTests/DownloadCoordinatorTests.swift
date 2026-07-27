@@ -12,7 +12,7 @@ import Foundation
 
     await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
     #expect(item.state == .done)
-    #expect(abs(item.fraction - 0.5) < 0.0001)
+    #expect(item.fraction == 1)
 }
 
 @MainActor
@@ -89,6 +89,44 @@ import Foundation
     #expect(item.deliveredFileURL == URL(fileURLWithPath: "/tmp/out/video.mkv"))
 }
 
+@MainActor
+@Test func coordinatorForcesFinalFractionAfterEnteringMergingState() async {
+    let gate = ProgressTestGate()
+    let runner = FakeProcessRunner(
+        stdoutLines: [
+            "DBPROG 40.0% 40000000 100000000 1MiB/s 00:10",
+            "[Merger] Merging formats into \"/tmp/out/video.mp4\"",
+        ],
+        beforeReturn: { call in
+            if call == 0 { await gate.wait() }
+        }
+    )
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(download: download)
+    let item = DownloadItem(
+        url: "u",
+        title: "t",
+        format: .video(height: 1080),
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+    item.expectedTotalBytes = 100_000_000
+
+    let run = Task {
+        await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    }
+    #expect(await waitForProgressCondition { item.state == .merging })
+    #expect(item.fraction < 1)
+
+    await gate.open()
+    await run.value
+    #expect(item.state == .done)
+    #expect(item.fraction == 1)
+}
+
 // The ffprobe verification adds a suspension point after the download: a cancel while it
 // runs (inspect returns nil without propagating the error) must end in .cancelled, not .done.
 @MainActor
@@ -163,7 +201,59 @@ import Foundation
 
     await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
     #expect(item.state == .done)
-    #expect(abs(item.fraction - 0.5) < 0.0001)
+    #expect(item.fraction == 1)
+}
+
+@MainActor
+@Test func coordinatorRetryCancelsBufferedProgressFromFailedAttempt() async {
+    let gate = ProgressTestGate()
+    let sleeper = ManualProgressSleeper()
+    let runner = FakeProcessRunner(
+        replays: [
+            .init(stdoutLines: [
+                "DBPROG 10.0% 10000000 100000000 1MiB/s 00:20",
+                "DBPROG 90.0% 90000000 100000000 1MiB/s 00:02",
+            ], stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+            .init(exitCode: 0),
+        ],
+        beforeReturn: { call in
+            if call == 1 { await gate.wait() }
+        }
+    )
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(
+        download: download,
+        retryDelay: .zero,
+        progressInterval: .milliseconds(250),
+        progressSleep: { duration in await sleeper.sleep(for: duration) }
+    )
+    let item = DownloadItem(
+        url: "u",
+        title: "t",
+        format: .audioMP3,
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    let run = Task {
+        await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    }
+    #expect(await waitForProgressCondition {
+        runner.calls.count == 2 && item.state == .downloading
+    })
+    #expect(item.fraction == 0)
+
+    sleeper.advanceAll()
+    for _ in 0..<20 { await Task.yield() }
+    #expect(item.fraction == 0)
+
+    await gate.open()
+    await run.value
+    #expect(item.state == .done)
+    #expect(item.fraction == 1)
 }
 
 // Attempts 1-2 go without the TV client (cures transient 403s); the FINAL attempt

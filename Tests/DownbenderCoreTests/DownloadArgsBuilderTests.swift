@@ -122,6 +122,13 @@ private func value(after flag: String, in arguments: [String]) -> String? {
     #expect(a[i + 1] == DownloadArgsBuilder.progressTemplate)
 }
 
+@Test func limitsProgressOutputToFourUpdatesPerSecond() {
+    let a = args(.video(height: 1080))
+    #expect(value(after: "--progress-delta", in: a) == "0.25")
+    #expect(a.contains("--newline"))
+    #expect(a.contains("--progress"))
+}
+
 // yt-dlp's internal retries: first line of defense against transient errors, before the coordinator's full retry.
 @Test func includesInternalRetries() {
     let a = args(.video(height: 1080))

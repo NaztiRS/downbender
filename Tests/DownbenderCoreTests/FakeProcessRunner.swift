@@ -35,6 +35,9 @@ struct FakeProcessRunner: ProcessRunning {
     var exitCode: Int32 = 0
     /// Per-call results consumed in order (the last one repeats); nil = the flat fields apply to every call.
     var replays: [Replay]?
+    /// Optional suspension point after a replay emitted all lines but before it returns.
+    /// The call index lets retry tests hold a specific attempt open deterministically.
+    var beforeReturn: (@Sendable (Int) async -> Void)?
     var recordedArguments = ArgumentRecorder()
     var calls = CallCounter()
 
@@ -52,6 +55,7 @@ struct FakeProcessRunner: ProcessRunning {
             replay = Replay(stdoutLines: stdoutLines, stderr: stderr, exitCode: exitCode)
         }
         for line in replay.stdoutLines { onStdoutLine(line) }
+        await beforeReturn?(index)
         return ProcessResult(exitCode: replay.exitCode, stderr: replay.stderr)
     }
 }

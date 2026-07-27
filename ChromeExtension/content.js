@@ -7,6 +7,9 @@
   const MIN_WIDTH = 180;
   const MIN_HEIGHT = 100;
   const ACTIVE_GRACE_MS = 1400;
+  const EVALUATION_THROTTLE_MS = 180;
+  const YOUTUBE_POINTER_THROTTLE_MS = 180;
+  const IS_YOUTUBE_DOCUMENT = isYouTubeURL(location.href);
   const YOUTUBE_CARD_SELECTOR = [
     "ytd-rich-item-renderer",
     "ytd-video-renderer",
@@ -37,11 +40,19 @@
   let pointerX = -1;
   let pointerY = -1;
   let lastEvaluation = 0;
+  let evaluationTimer = null;
+  let graceExpiryTimer = null;
+  let youtubePointerTimer = null;
+  let lastYouTubePointerLookup = 0;
   let feedbackTimer = null;
   let lastPointedYouTubeVideo = null;
+  let resizeObservedVideo = null;
+  const activeVideoResizeObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver(() => requestEvaluation())
+    : null;
 
   function registerVideo(video) {
-    if (!(video instanceof HTMLVideoElement) || videos.has(video)) return;
+    if (!(video instanceof HTMLVideoElement) || videos.has(video)) return false;
     videos.add(video);
     playback.set(video, {
       lastTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
@@ -49,12 +60,30 @@
       lastPlayedAt: 0,
       lastInteractionAt: 0,
     });
+    return true;
   }
 
   function registerVideosBelow(node) {
-    if (!(node instanceof Element)) return;
-    if (node instanceof HTMLVideoElement) registerVideo(node);
-    node.querySelectorAll?.("video").forEach(registerVideo);
+    if (!(node instanceof Element)) return false;
+    let addedVideo = node instanceof HTMLVideoElement && registerVideo(node);
+    node.querySelectorAll?.("video").forEach((video) => {
+      if (registerVideo(video)) addedVideo = true;
+    });
+    return addedVideo;
+  }
+
+  function unregisterVideosBelow(node) {
+    if (!(node instanceof Element)) return false;
+    let removedActiveVideo = false;
+    if (node instanceof HTMLVideoElement) {
+      removedActiveVideo = node === activeVideo;
+      videos.delete(node);
+    }
+    node.querySelectorAll?.("video").forEach((video) => {
+      if (video === activeVideo) removedActiveVideo = true;
+      videos.delete(video);
+    });
+    return removedActiveVideo;
   }
 
   function stateFor(video) {
@@ -68,7 +97,7 @@
     const now = performance.now();
     if (event.type === "play" || event.type === "playing") state.lastPlayedAt = now;
     if (event.isTrusted) state.lastInteractionAt = now;
-    evaluate(true);
+    requestEvaluation(event.type !== "timeupdate");
   }
 
   function ensureOverlay() {
@@ -213,7 +242,10 @@
     document.documentElement.append(overlayHost);
 
     control.addEventListener("pointerenter", () => { overlayHovered = true; });
-    control.addEventListener("pointerleave", () => { overlayHovered = false; });
+    control.addEventListener("pointerleave", () => {
+      overlayHovered = false;
+      requestEvaluation(true);
+    });
     overlayButton.addEventListener("click", sendActiveVideo);
     dismissButton.addEventListener("click", dismissActiveVideo);
   }
@@ -280,22 +312,33 @@
     overlayHost.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
   }
 
+  function observeActiveVideoSize(video) {
+    if (resizeObservedVideo === video) return;
+    if (resizeObservedVideo) activeVideoResizeObserver?.unobserve(resizeObservedVideo);
+    resizeObservedVideo = video;
+    if (resizeObservedVideo) activeVideoResizeObserver?.observe(resizeObservedVideo);
+  }
+
   function setActiveVideo(video) {
     if (!video) {
       if (!overlayHovered && overlayHost) overlayHost.style.display = "none";
       activeVideo = overlayHovered ? activeVideo : null;
+      observeActiveVideoSize(activeVideo);
       return;
     }
     activeVideo = video;
+    observeActiveVideoSize(video);
     ensureOverlay();
     overlayHost.style.display = "block";
     positionOverlay(video);
   }
 
-  function evaluate(force = false) {
+  function evaluate() {
+    if (document.hidden) return;
     const now = performance.now();
-    if (!force && now - lastEvaluation < 180) return;
     lastEvaluation = now;
+    clearTimeout(graceExpiryTimer);
+    graceExpiryTimer = null;
 
     let winner = null;
     let winningScore = -Infinity;
@@ -313,6 +356,49 @@
       }
     }
     setActiveVideo(winner);
+
+    // A paused hover-preview is eligible only for ACTIVE_GRACE_MS. Schedule its one
+    // expiry evaluation explicitly so removing the old interval cannot leave the
+    // overlay visible indefinitely on an otherwise idle page.
+    if (winner && (winner.paused || winner.ended)) {
+      const winnerState = stateFor(winner);
+      const remainingGrace = ACTIVE_GRACE_MS - (now - winnerState.lastAdvancedAt);
+      if (remainingGrace > 0) {
+        graceExpiryTimer = setTimeout(() => {
+          graceExpiryTimer = null;
+          requestEvaluation(true);
+        }, remainingGrace + 1);
+      }
+    }
+  }
+
+  // Coalesce event bursts and guarantee one trailing evaluation. Event-driven detection
+  // avoids waking every matching frame forever when the page is idle.
+  function requestEvaluation(immediate = false) {
+    if (document.hidden) return;
+    const elapsed = performance.now() - lastEvaluation;
+    if (immediate || elapsed >= EVALUATION_THROTTLE_MS) {
+      clearTimeout(evaluationTimer);
+      evaluationTimer = null;
+      evaluate();
+      return;
+    }
+    if (evaluationTimer !== null) return;
+    evaluationTimer = setTimeout(() => {
+      evaluationTimer = null;
+      evaluate();
+    }, EVALUATION_THROTTLE_MS - elapsed);
+  }
+
+  function noteActiveVideoLayoutEvent(event) {
+    if (!activeVideo) return;
+    if (
+      event.target === activeVideo
+      || event.target.contains?.(activeVideo)
+      || activeVideo.contains(event.target)
+    ) {
+      requestEvaluation();
+    }
   }
 
   function youtubeURLFromCard(card) {
@@ -382,7 +468,7 @@
   }
 
   function youtubeCardURL(video) {
-    if (!isYouTubeURL(location.href)) return null;
+    if (!IS_YOUTUBE_DOCUMENT) return null;
     const pageTarget = singleVideoDownloadURL(location.href);
     if (pageTarget) return pageTarget;
 
@@ -409,7 +495,7 @@
     if (youtube) return youtube;
     // On a YouTube listing page, falling back to the page URL can enqueue a Mix or playlist.
     // The overlay must fail closed unless its exact video ID was found in the surrounding card.
-    if (isYouTubeURL(location.href)) return null;
+    if (IS_YOUTUBE_DOCUMENT) return null;
 
     const enclosingLink = video.closest("a[href]");
     if (enclosingLink?.href && /^https?:/i.test(enclosingLink.href)) {
@@ -460,7 +546,7 @@
     overlayHovered = false;
     activeVideo = null;
     overlayHost.style.display = "none";
-    evaluate(true);
+    requestEvaluation(true);
   }
 
   function setFeedback(state, text, title) {
@@ -508,12 +594,73 @@
     }
   }
 
+  function updatePointedYouTubeVideo() {
+    youtubePointerTimer = null;
+    if (!IS_YOUTUBE_DOCUMENT || document.hidden) return;
+    lastYouTubePointerLookup = performance.now();
+    const pointedURL = youtubeURLAtPoint(pointerX, pointerY);
+    if (pointedURL) {
+      lastPointedYouTubeVideo = {
+        url: pointedURL,
+        x: pointerX,
+        y: pointerY,
+        at: lastYouTubePointerLookup,
+      };
+    }
+    requestEvaluation();
+  }
+
+  function requestYouTubePointerLookup() {
+    if (!IS_YOUTUBE_DOCUMENT || document.hidden) return;
+    const elapsed = performance.now() - lastYouTubePointerLookup;
+    if (elapsed >= YOUTUBE_POINTER_THROTTLE_MS) {
+      clearTimeout(youtubePointerTimer);
+      updatePointedYouTubeVideo();
+      return;
+    }
+    if (youtubePointerTimer !== null) return;
+    youtubePointerTimer = setTimeout(
+      updatePointedYouTubeVideo,
+      YOUTUBE_POINTER_THROTTLE_MS - elapsed,
+    );
+  }
+
   document.querySelectorAll("video").forEach(registerVideo);
   new MutationObserver((records) => {
+    let addedVideo = false;
+    let removedActiveVideo = false;
+    let activeLayoutChanged = false;
     for (const record of records) {
-      record.addedNodes.forEach(registerVideosBelow);
+      if (record.type === "childList") {
+        record.addedNodes.forEach((node) => {
+          if (registerVideosBelow(node)) addedVideo = true;
+        });
+        record.removedNodes.forEach((node) => {
+          if (unregisterVideosBelow(node)) removedActiveVideo = true;
+        });
+      }
+      if (activeVideo && (
+        record.target === activeVideo
+        || record.target.contains?.(activeVideo)
+        || activeVideo.contains(record.target)
+      )) {
+        activeLayoutChanged = true;
+      }
     }
-  }).observe(document.documentElement, { childList: true, subtree: true });
+    if (
+      addedVideo
+      || removedActiveVideo
+      || activeLayoutChanged
+      || (activeVideo && !activeVideo.isConnected)
+    ) {
+      requestEvaluation();
+    }
+  }).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class", "style", "hidden"],
+    childList: true,
+    subtree: true,
+  });
 
   for (const name of ["play", "playing", "pause", "ended", "loadeddata", "timeupdate"]) {
     document.addEventListener(name, noteVideoEvent, true);
@@ -521,24 +668,34 @@
   document.addEventListener("pointermove", (event) => {
     pointerX = event.clientX;
     pointerY = event.clientY;
-    if (isYouTubeURL(location.href)) {
-      const pointedURL = youtubeURLAtPoint(pointerX, pointerY);
-      if (pointedURL) {
-        lastPointedYouTubeVideo = {
-          url: pointedURL,
-          x: pointerX,
-          y: pointerY,
-          at: performance.now(),
-        };
-      }
-    }
-    evaluate();
+    requestYouTubePointerLookup();
+    requestEvaluation();
   }, { capture: true, passive: true });
   document.addEventListener("pointerdown", (event) => {
     if (event.target instanceof HTMLVideoElement) stateFor(event.target).lastInteractionAt = performance.now();
   }, true);
-  addEventListener("scroll", () => evaluate(true), { capture: true, passive: true });
-  addEventListener("resize", () => evaluate(true), { passive: true });
-  document.addEventListener("fullscreenchange", () => evaluate(true));
-  setInterval(() => evaluate(true), 350);
+  addEventListener("scroll", () => requestEvaluation(), { capture: true, passive: true });
+  addEventListener("resize", () => requestEvaluation(), { passive: true });
+  addEventListener("popstate", () => requestEvaluation(true));
+  addEventListener("hashchange", () => requestEvaluation(true));
+  document.addEventListener("yt-navigate-finish", () => requestEvaluation(true));
+  document.addEventListener("transitionend", noteActiveVideoLayoutEvent, true);
+  document.addEventListener("animationend", noteActiveVideoLayoutEvent, true);
+  document.addEventListener("fullscreenchange", () => requestEvaluation(true));
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearTimeout(evaluationTimer);
+      clearTimeout(graceExpiryTimer);
+      clearTimeout(youtubePointerTimer);
+      evaluationTimer = null;
+      graceExpiryTimer = null;
+      youtubePointerTimer = null;
+      overlayHovered = false;
+      activeVideo = null;
+      if (overlayHost) overlayHost.style.display = "none";
+    } else {
+      requestEvaluation(true);
+    }
+  });
+  requestEvaluation(true);
 })();

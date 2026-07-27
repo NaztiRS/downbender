@@ -79,6 +79,70 @@ public struct QueueActivitySummary: Equatable, Sendable {
     }
 }
 
+/// A stable, low-cardinality projection for UI surfaces outside the main window.
+///
+/// Download progress can arrive hundreds of times per second. The Dock and menu bar only
+/// display an integer percentage, so publishing the raw `Double` would invalidate those
+/// system surfaces even while their visible content remains unchanged.
+public struct QueueActivitySnapshot: Equatable, Sendable {
+    public let analyzingCount: Int
+    public let choosingCount: Int
+    public let runningCount: Int
+    public let queuedCount: Int
+    public let pausedCount: Int
+    public let completedCount: Int
+    public let failedCount: Int
+    public let cancelledCount: Int
+    public let progressPercent: Int?
+
+    public var activeCount: Int { runningCount + queuedCount }
+    public var pendingCount: Int { analyzingCount + choosingCount + activeCount + pausedCount }
+    public var totalCount: Int {
+        pendingCount + completedCount + failedCount + cancelledCount
+    }
+
+    public init(
+        analyzingCount: Int = 0,
+        choosingCount: Int = 0,
+        runningCount: Int = 0,
+        queuedCount: Int = 0,
+        pausedCount: Int = 0,
+        completedCount: Int = 0,
+        failedCount: Int = 0,
+        cancelledCount: Int = 0,
+        progressPercent: Int? = nil
+    ) {
+        self.analyzingCount = analyzingCount
+        self.choosingCount = choosingCount
+        self.runningCount = runningCount
+        self.queuedCount = queuedCount
+        self.pausedCount = pausedCount
+        self.completedCount = completedCount
+        self.failedCount = failedCount
+        self.cancelledCount = cancelledCount
+        self.progressPercent = progressPercent
+    }
+
+    public init(summary: QueueActivitySummary) {
+        self.init(
+            analyzingCount: summary.analyzingCount,
+            choosingCount: summary.choosingCount,
+            runningCount: summary.runningCount,
+            queuedCount: summary.queuedCount,
+            pausedCount: summary.pausedCount,
+            completedCount: summary.completedCount,
+            failedCount: summary.failedCount,
+            cancelledCount: summary.cancelledCount,
+            progressPercent: summary.progressFraction.map { Int(($0 * 100).rounded()) }
+        )
+    }
+
+    @MainActor
+    public init(items: [DownloadItem]) {
+        self.init(summary: QueueActivitySummary(items: items))
+    }
+}
+
 private func clamp(_ value: Double) -> Double {
     min(1, max(0, value))
 }

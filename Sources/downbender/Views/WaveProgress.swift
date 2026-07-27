@@ -10,43 +10,50 @@ struct WaveProgress: View {
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.continuousVisualEffectsAllowed) private var continuousVisualEffectsAllowed
     @State private var sweep = false
     @State private var pulse = false
 
-    private var baseGlow: Double { scheme == .dark ? 0.85 : 0.40 }
-    private var glowRadius: CGFloat { scheme == .dark ? 7 : 3 }
+    private var baseGlow: Double { scheme == .dark ? 0.52 : 0.26 }
+    private var glowRadius: CGFloat { scheme == .dark ? 4 : 2 }
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width
+            let width = geo.size.width
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.track)
 
                 if let fraction {
                     let clamped = max(0, min(1, fraction))
-                    let fillW = clamped <= 0 ? 0 : max(height, w * clamped)
-                    Capsule()
+                    let fillWidth = determinateWidth(in: width, fraction: clamped)
+                    ProgressCapsule(progress: clamped)
                         .fill(Theme.wave)
-                        .frame(width: fillW)
                         .opacity(dimmed ? 0.5 : 1)
                         .shadow(color: Theme.glow.opacity(currentGlow), radius: currentRadius)
-                        // Wider, softer bloom under the fill: water glowing from below.
-                        .shadow(color: Theme.glow.opacity(currentGlow * 0.45), radius: currentRadius * 2.6, y: 1)
-                        .overlay(alignment: .trailing) {
-                            Circle()
-                                .fill(Theme.glow)
-                                .frame(width: height + 3, height: height + 3)
-                                .shadow(color: Theme.glow.opacity(baseGlow), radius: glowRadius)
-                                .opacity(showHead(clamped) ? 1 : 0)
-                        }
-                        .animation(.easeOut(duration: 0.35), value: clamped)
+                        .animation(progressAnimation, value: clamped)
+                        .animation(pulseAnimation, value: pulse)
+
+                    if showHead(clamped) {
+                        let headSize = height + 3
+                        let headOffset = max(0, min(width - headSize, fillWidth - headSize))
+                        Circle()
+                            .fill(Theme.glow)
+                            .frame(width: headSize, height: headSize)
+                            .offset(x: headOffset)
+                            .animation(progressAnimation, value: clamped)
+                    }
                 } else {
-                    let segW = w * 0.32
+                    let segmentWidth = max(height, width * 0.28)
                     Capsule()
                         .fill(Theme.wave)
-                        .frame(width: segW)
-                        .shadow(color: Theme.glow.opacity(baseGlow), radius: glowRadius)
-                        .offset(x: sweep ? max(0, w - segW) : 0)
+                        .frame(width: segmentWidth)
+                        .opacity(dimmed ? 0.5 : 1)
+                        .shadow(
+                            color: Theme.glow.opacity(motionEnabled ? baseGlow : 0),
+                            radius: glowRadius
+                        )
+                        .offset(x: sweep ? max(0, width - segmentWidth) : 0)
+                        .animation(sweepAnimation, value: sweep)
                 }
             }
         }
@@ -55,8 +62,54 @@ struct WaveProgress: View {
         .accessibilityLabel("Download progress")
         .accessibilityValue(accessibilityValue)
         .accessibilityAddTraits(accessibilityTraits)
-        .onAppear(perform: startMotion)
-        .onChange(of: pulsing) { _, _ in startMotion() }
+        .task(id: motionConfiguration) {
+            resetMotion()
+            guard motionConfiguration.hasMotion else { return }
+
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            sweep = motionConfiguration.sweeps
+            pulse = motionConfiguration.pulses
+        }
+    }
+
+    private var motionEnabled: Bool {
+        continuousVisualEffectsAllowed && !reduceMotion && !dimmed
+    }
+
+    private var motionConfiguration: MotionConfiguration {
+        MotionConfiguration(
+            sweeps: motionEnabled && fraction == nil,
+            pulses: motionEnabled && pulsing
+        )
+    }
+
+    private var progressAnimation: Animation? {
+        motionEnabled ? .easeOut(duration: 0.24) : nil
+    }
+
+    private var sweepAnimation: Animation? {
+        guard motionConfiguration.sweeps else { return nil }
+        return .easeInOut(duration: 1.15).repeatForever(autoreverses: true)
+    }
+
+    private var pulseAnimation: Animation? {
+        guard motionConfiguration.pulses else { return nil }
+        return .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
+    }
+
+    private func resetMotion() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            sweep = false
+            pulse = false
+        }
+    }
+
+    private func determinateWidth(in containerWidth: CGFloat, fraction: Double) -> CGFloat {
+        guard fraction > 0 else { return 0 }
+        return min(containerWidth, max(height, containerWidth * fraction))
     }
 
     private var accessibilityValue: String {
@@ -86,27 +139,45 @@ struct WaveProgress: View {
     }
 
     private var currentGlow: Double {
-        guard pulsing else { return dimmed ? baseGlow * 0.4 : baseGlow }
-        return pulse ? 0.95 : 0.25
+        guard motionEnabled else { return 0 }
+        guard pulsing else { return baseGlow }
+        return pulse ? 0.68 : 0.18
     }
 
     private var currentRadius: CGFloat {
-        pulsing && pulse ? glowRadius + 5 : glowRadius
+        pulsing && pulse ? glowRadius + 2 : glowRadius
     }
 
     private func showHead(_ clamped: Double) -> Bool {
         !dimmed && clamped > 0.02 && clamped < 0.999
     }
+}
 
-    private func startMotion() {
-        guard !reduceMotion else { return }
-        if fraction == nil, !sweep {
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { sweep = true }
-        }
-        if pulsing {
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) { pulse = true }
-        } else {
-            pulse = false
-        }
+private struct MotionConfiguration: Hashable {
+    let sweeps: Bool
+    let pulses: Bool
+
+    var hasMotion: Bool {
+        sweeps || pulses
+    }
+}
+
+/// Draws the changing fill inside fixed layout bounds. Animating the shape updates
+/// only its path instead of relaying out the row for every progress sample.
+private struct ProgressCapsule: Shape {
+    var progress: Double
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let clamped = max(0, min(1, progress))
+        guard clamped > 0, rect.width > 0, rect.height > 0 else { return Path() }
+
+        let width = min(rect.width, max(rect.height, rect.width * clamped))
+        let fillRect = CGRect(origin: rect.origin, size: CGSize(width: width, height: rect.height))
+        return RoundedRectangle(cornerRadius: rect.height / 2, style: .continuous).path(in: fillRect)
     }
 }

@@ -3,16 +3,13 @@ import SwiftUI
 import DownbenderCore
 
 struct MenuBarQueueLabel: View {
-    @Bindable var model: AppModel
-
-    private var summary: QueueActivitySummary {
-        QueueActivitySummary(items: model.queue.items)
-    }
+    @Bindable var systemSurfaceQueue: SystemSurfaceQueueState
 
     var body: some View {
+        let summary = systemSurfaceQueue.snapshot
         Group {
             if summary.activeCount > 0 {
-                Label(activeLabel, systemImage: "arrow.down.circle.fill")
+                Label(activeLabel(summary), systemImage: "arrow.down.circle.fill")
             } else if summary.pausedCount > 0 {
                 Label("\(summary.pausedCount)", systemImage: "pause.circle")
             } else if summary.failedCount > 0 {
@@ -22,22 +19,22 @@ struct MenuBarQueueLabel: View {
             }
         }
         .accessibilityLabel("Downbender")
-        .accessibilityValue(accessibilityStatus)
+        .accessibilityValue(accessibilityStatus(summary))
     }
 
-    private var activeLabel: String {
-        guard let fraction = summary.progressFraction else {
+    private func activeLabel(_ summary: QueueActivitySnapshot) -> String {
+        guard let percent = summary.progressPercent else {
             return "\(summary.activeCount)"
         }
-        return "\(Int((fraction * 100).rounded()))%"
+        return "\(percent)%"
     }
 
-    private var accessibilityStatus: String {
+    private func accessibilityStatus(_ summary: QueueActivitySnapshot) -> String {
         if summary.activeCount > 0 {
-            guard let fraction = summary.progressFraction else {
+            guard let percent = summary.progressPercent else {
                 return "\(summary.activeCount) active, progress unavailable"
             }
-            return "\(summary.activeCount) active, \(Int((fraction * 100).rounded())) percent"
+            return "\(summary.activeCount) active, \(percent) percent"
         }
         if summary.pausedCount > 0 { return "\(summary.pausedCount) paused" }
         if summary.failedCount > 0 { return "\(summary.failedCount) failed" }
@@ -48,11 +45,10 @@ struct MenuBarQueueLabel: View {
 struct MenuBarQueueView: View {
     @Bindable var model: AppModel
     @Bindable var notifier: DownloadNotifier
+    @Bindable var systemSurfaceQueue: SystemSurfaceQueueState
     @Environment(\.openWindow) private var openWindow
 
-    private var summary: QueueActivitySummary {
-        QueueActivitySummary(items: model.queue.items)
-    }
+    private var summary: QueueActivitySnapshot { systemSurfaceQueue.snapshot }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -91,8 +87,8 @@ struct MenuBarQueueView: View {
                 Text(summaryText).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if let fraction = summary.progressFraction {
-                Text("\(Int((fraction * 100).rounded()))%")
+            if let percent = summary.progressPercent {
+                Text("\(percent)%")
                     .font(.callout.monospacedDigit().weight(.semibold))
                     .foregroundStyle(Theme.accent)
             }

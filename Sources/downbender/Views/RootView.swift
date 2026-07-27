@@ -6,7 +6,11 @@ struct RootView: View {
     @State var model: AppModel
     @State private var urlText = ""
     @State private var isDropTargeted = false
+    @State private var windowIsRenderable = false
+    @State private var lowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -88,7 +92,14 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.clipboard.check(pasteboardString: NSPasteboard.general.string(forType: .string))
         }
+        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
+            lowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+        }
         .background(AtmosphereBackground())
+        .background {
+            WindowRenderStateReader(isRenderable: $windowIsRenderable)
+                .frame(width: 0, height: 0)
+        }
         .frame(minWidth: 560, minHeight: 420)
         .dropDestination(for: DroppedWebContent.self) { items, _ in
             enqueueDropped(items.map(\.text))
@@ -123,6 +134,14 @@ struct RootView: View {
         // Title bar in the app's own deep blue instead of the system gray.
         .toolbarBackground(Color.adaptive(light: 0xEDF5FD, dark: 0x0B1E38), for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
+        .environment(\.continuousVisualEffectsAllowed, continuousVisualEffectsAllowed)
+    }
+
+    private var continuousVisualEffectsAllowed: Bool {
+        scenePhase == .active
+            && windowIsRenderable
+            && !lowPowerModeEnabled
+            && !reduceMotion
     }
 
     /// Never blocks: cards appear instantly and probes run in the background. Pasting a
