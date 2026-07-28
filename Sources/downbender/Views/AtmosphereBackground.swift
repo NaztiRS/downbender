@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Static Command Mono canvas. It performs no continuous background work.
+/// Static graphite canvas. It performs no continuous background work.
 struct WashBackground: View {
     var body: some View {
         Rectangle()

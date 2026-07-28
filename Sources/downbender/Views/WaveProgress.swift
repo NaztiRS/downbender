@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Flat Command Mono progress. Indeterminate and finalizing motion remains visibility-aware.
+/// Flat progress treatment. Indeterminate and finalizing motion remains visibility-aware.
 struct WaveProgress: View {
     var fraction: Double?
     var pulsing: Bool = false

@@ -75,12 +75,14 @@ if [ -f "$ICON_SRC" ]; then
   # Raw copy of the PNG (circle with transparent corners) to show it in the UI
   # (empty state) without the "tile" macOS adds to applicationIconImage.
   cp "$ICON_SRC" "$APP/Contents/Resources/AppIcon.png"
-  ICONSET="$(mktemp -d)/AppIcon.iconset"; mkdir -p "$ICONSET"
-  for s in 16 32 64 128 256 512; do
+  ICON_TMP="$(mktemp -d)"
+  ICONSET="$ICON_TMP/AppIcon.iconset"; mkdir -p "$ICONSET"
+  for s in 16 32 128 256 512; do
     sips -z $s $s "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
     sips -z $((s*2)) $((s*2)) "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
   done
   iconutil --convert icns "$ICONSET" --output "$APP/Contents/Resources/AppIcon.icns"
+  rm -rf "$ICON_TMP"
 fi
 
 for b in yt-dlp_macos ffmpeg ffprobe deno; do

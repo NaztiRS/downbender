@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Command Mono: a compact, flat interface inspired by developer tools.
+/// A compact, flat interface inspired by developer tools.
 enum Theme {
     static let canvas = Color(hex: 0x080808)
     static let surface = Color(hex: 0x111111)

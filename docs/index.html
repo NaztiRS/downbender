@@ -1,560 +1,1333 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#050d1f">
-<title>Downbender — the last download master</title>
-<meta name="description" content="Free, open-source, native macOS app to download videos or extract MP3 — YouTube first and foremost, plus many other sites. Powered by yt-dlp.">
-<meta property="og:title" content="Downbender — the last download master">
-<meta property="og:description" content="Download videos or extract MP3, natively on your Mac. Free & open source.">
-<meta property="og:image" content="https://naztirs.github.io/downbender/assets/hero.png">
-<meta property="og:type" content="website">
-<link rel="icon" type="image/png" href="assets/AppIcon.png">
-<style>
-  :root {
-    --deep-0: #050d1f;
-    --deep-1: #081426;
-    --deep-2: #0b1e38;
-    --accent: #3aa0f7;
-    --glow: #6fd6ff;
-    --ink: #eaf4fe;
-    --muted: #8fa9c4;
-    --surface: rgba(255,255,255,.05);
-    --hairline: rgba(255,255,255,.10);
-    --rim: rgba(255,255,255,.22);
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
-    color: var(--ink);
-    background: var(--deep-0);
-    overflow-x: hidden;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: var(--glow); text-decoration: none; }
-  img { max-width: 100%; display: block; }
-
-  /* ---------- nav ---------- */
-  nav {
-    position: fixed; inset: 0 0 auto 0; z-index: 50;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 28px;
-    background: rgba(5,13,31,.55);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid rgba(255,255,255,.06);
-  }
-  .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; color: var(--ink); }
-  .brand img { width: 30px; height: 30px; }
-  .brand .down { font-weight: 200; color: var(--muted); }
-  .brand .bender { font-weight: 750; color: var(--accent); }
-  nav .links { display: flex; gap: 22px; font-size: 14.5px; }
-  nav .links a { color: var(--muted); transition: color .2s; }
-  nav .links a:hover { color: var(--glow); }
-
-  /* ---------- hero ---------- */
-  .hero {
-    position: relative;
-    min-height: 100svh;
-    display: flex; align-items: center;
-    isolation: isolate;
-  }
-  .hero-art {
-    position: absolute; inset: 0; z-index: -2;
-    background:
-      linear-gradient(to top, var(--deep-0) 0, transparent 26%),
-      linear-gradient(100deg, var(--deep-0) 22%, rgba(5,13,31,.45) 48%, transparent 70%),
-      url("assets/hero-wide.png") right center / cover no-repeat,
-      var(--deep-1);
-  }
-  .hero-inner {
-    width: min(1180px, 92vw);
-    margin: 0 auto;
-    padding: 120px 0 90px;
-  }
-  .eyebrow {
-    font-size: 13px; font-weight: 650; letter-spacing: 2.6px;
-    color: var(--glow); text-transform: uppercase;
-    margin-bottom: 18px;
-  }
-  h1.wordmark {
-    font-size: clamp(56px, 9vw, 112px);
-    line-height: 1.02;
-    letter-spacing: -2px;
-  }
-  h1 .down { font-weight: 150; color: var(--muted); }
-  h1 .bender {
-    font-weight: 800; color: var(--accent);
-    text-shadow: 0 0 44px rgba(111,214,255,.35);
-  }
-  .tagline {
-    margin-top: 22px;
-    max-width: 520px;
-    font-size: clamp(18px, 2.2vw, 21px);
-    color: var(--muted);
-  }
-  .tagline strong { color: var(--ink); font-weight: 600; }
-  .cta-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 40px; }
-  .cta {
-    position: relative;
-    display: inline-flex; align-items: center; gap: 12px;
-    padding: 17px 34px;
-    border-radius: 999px;
-    font-size: 18.5px; font-weight: 650; color: #fff;
-    background: linear-gradient(100deg, var(--accent), var(--glow));
-    background-size: 200% 100%;
-    box-shadow: 0 6px 34px rgba(111,214,255,.38), inset 0 1px 0 rgba(255,255,255,.45);
-    animation: flow 6s ease-in-out infinite;
-    transition: transform .18s ease, box-shadow .18s ease;
-  }
-  .cta:hover { transform: translateY(-2px); box-shadow: 0 12px 44px rgba(111,214,255,.55), inset 0 1px 0 rgba(255,255,255,.5); }
-  .cta svg { width: 21px; height: 21px; }
-  @keyframes flow { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
-  .ghost {
-    padding: 15px 26px; border-radius: 999px;
-    font-size: 16px; font-weight: 550; color: var(--ink);
-    border: 1px solid var(--hairline);
-    background: var(--surface);
-    backdrop-filter: blur(8px);
-    transition: border-color .2s, background .2s;
-  }
-  .ghost:hover { border-color: var(--glow); background: rgba(111,214,255,.08); }
-  .req { margin-top: 22px; font-size: 14px; color: var(--muted); letter-spacing: .2px; }
-  .req b { color: var(--ink); font-weight: 600; }
-
-  /* streaks — .streaks lives inside the hero; .sky is a fixed layer under the whole page */
-  .streaks { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-  .sky { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-  header, section, footer { position: relative; z-index: 1; }
-  .streak {
-    position: absolute; height: 1.5px; border-radius: 2px;
-    background: linear-gradient(90deg, transparent, var(--glow));
-    opacity: .35;
-    animation: drift linear infinite;
-  }
-  .streak::after {
-    content: ""; position: absolute; right: -3px; top: -2.2px;
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--glow);
-    box-shadow: 0 0 10px 2px rgba(111,214,255,.8);
-  }
-  @keyframes drift {
-    from { transform: translateX(-220px); }
-    to   { transform: translateX(calc(100vw + 220px)); }
-  }
-
-  /* ---------- sections ---------- */
-  section { position: relative; }
-  .wrap { width: min(1180px, 92vw); margin: 0 auto; }
-  .kicker {
-    text-align: center; font-size: 13px; font-weight: 650;
-    letter-spacing: 2.6px; text-transform: uppercase; color: var(--glow);
-  }
-  h2 {
-    text-align: center;
-    font-size: clamp(30px, 4.4vw, 46px);
-    font-weight: 750; letter-spacing: -1px;
-    margin-top: 10px;
-  }
-  .sub { text-align: center; color: var(--muted); max-width: 560px; margin: 14px auto 0; }
-
-  /* screenshot */
-  .shot-section { padding: 110px 0 40px; }
-  .shot-frame {
-    margin: 54px auto 0;
-    max-width: 980px;
-    /* Outer radius = video radius + padding, so both curves nest evenly. */
-    border-radius: calc(clamp(10px, 2.7vw, 28px) + 10px);
-    border: 1px solid var(--rim);
-    background: linear-gradient(to bottom, rgba(255,255,255,.10), rgba(255,255,255,.02));
-    padding: 10px;
-    box-shadow: 0 40px 120px rgba(0,0,0,.6), 0 0 90px rgba(58,160,247,.16);
-  }
-  /* The window in the demo video has macOS' own rounded corners; the video's
-     radius follows that curve so no desktop slivers peek out at the corners. */
-  .shot-frame img, .shot-frame video {
-    display: block; width: 100%;
-    border-radius: clamp(10px, 2.7vw, 28px);
-  }
-  /* Opaque bezel drawn on top: it overlaps the video edge a couple of pixels,
-     hiding the recording's uneven window rim on every side equally. */
-  .shot-frame { position: relative; }
-  .shot-frame::after {
-    content: "";
-    position: absolute;
-    inset: 8px;
-    border: 4px solid #46586f;
-    border-radius: clamp(12px, calc(2.7vw + 2px), 30px);
-    pointer-events: none;
-  }
-
-  /* features */
-  .features { padding: 110px 0; }
-  .grid {
-    margin-top: 56px;
-    display: grid; gap: 22px;
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .card {
-    padding: 34px 30px;
-    border-radius: 18px;
-    background: linear-gradient(to bottom, rgba(255,255,255,.075), rgba(255,255,255,.025));
-    border: 1px solid var(--hairline);
-    border-top-color: var(--rim);
-    box-shadow: 0 14px 40px rgba(0,0,0,.35);
-    transition: transform .25s ease, box-shadow .25s ease;
-  }
-  .card:hover { transform: translateY(-5px); box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 50px rgba(58,160,247,.12); }
-  .card .ico {
-    width: 52px; height: 52px; border-radius: 14px;
-    display: grid; place-items: center;
-    background: radial-gradient(circle at 35% 30%, rgba(111,214,255,.35), rgba(58,160,247,.12));
-    border: 1px solid rgba(111,214,255,.35);
-    box-shadow: 0 0 26px rgba(111,214,255,.25);
-    margin-bottom: 22px;
-  }
-  .card .ico svg { width: 26px; height: 26px; stroke: var(--glow); }
-  .card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
-  .card p { font-size: 15.5px; color: var(--muted); }
-  .card p b { color: var(--ink); font-weight: 600; }
-
-  /* bending band / install */
-  .band {
-    position: relative; isolation: isolate;
-    padding: 130px 0;
-    /* Zoomed and left-anchored: pushes the (image-centered) bending monk to the
-       right of the glass panel, since plain cover leaves no slack to shift him. */
-    background:
-      linear-gradient(to bottom, var(--deep-0) 0, transparent 18%, transparent 82%, var(--deep-0) 100%),
-      linear-gradient(rgba(5,13,31,.35), rgba(5,13,31,.35)),
-      url("assets/bending.png") 0% 45% / auto 180% no-repeat,
-      var(--deep-1);
-  }
-  .panel {
-    max-width: 680px;
-    padding: 40px 42px;
-    border-radius: 20px;
-    background: rgba(6,15,32,.72);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    border: 1px solid var(--hairline);
-    border-top-color: var(--rim);
-    box-shadow: 0 30px 90px rgba(0,0,0,.55);
-  }
-  .panel h2 { text-align: left; font-size: 30px; }
-  .panel .kicker { text-align: left; }
-  .step { display: flex; gap: 16px; margin-top: 26px; }
-  .step .n {
-    flex: 0 0 34px; height: 34px; border-radius: 50%;
-    display: grid; place-items: center;
-    font-weight: 700; font-size: 15px; color: var(--deep-0);
-    background: linear-gradient(135deg, var(--accent), var(--glow));
-    box-shadow: 0 0 18px rgba(111,214,255,.45);
-  }
-  .step p { font-size: 15.5px; color: var(--muted); }
-  .step p b { color: var(--ink); font-weight: 600; }
-  .term-label { margin-top: 26px; font-size: 12.5px; color: var(--muted); letter-spacing: .4px; }
-  .term {
-    margin-top: 8px;
-    display: flex; align-items: center; gap: 14px;
-    background: rgba(0,0,0,.4);
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    padding: 12px 12px 12px 16px;
-  }
-  .term { overflow-x: auto; }
-  .term code {
-    flex: 1;
-    font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
-    color: var(--glow);
-    white-space: nowrap;
-  }
-  .copy {
-    flex: 0 0 auto;
-    font: 600 12.5px/1 -apple-system, sans-serif;
-    color: var(--ink);
-    background: rgba(111,214,255,.12);
-    border: 1px solid rgba(111,214,255,.4);
-    border-radius: 8px;
-    padding: 9px 14px;
-    cursor: pointer;
-    transition: background .2s, transform .15s;
-  }
-  .copy:hover { background: rgba(111,214,255,.22); }
-  .copy:active { transform: scale(.96); }
-  .copy.ok { color: var(--glow); border-color: var(--glow); background: rgba(111,214,255,.22); }
-
-  /* footer */
-  footer { padding: 90px 0 60px; text-align: center; }
-  footer .monk {
-    width: 190px;
-    margin: 34px auto -10px;   /* nudged down toward the wordmark */
-    filter: blur(.35px);
-    -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent 100%);
-    mask-image: linear-gradient(to bottom, black 72%, transparent 100%);
-  }
-  footer .fbrand { font-size: 24px; }
-  footer .fbrand .down { font-weight: 200; color: var(--muted); }
-  footer .fbrand .bender { font-weight: 750; color: var(--accent); }
-  footer p { color: var(--muted); font-size: 14px; max-width: 520px; margin: 14px auto 0; }
-  footer .links { display: flex; justify-content: center; gap: 26px; margin-top: 26px; font-size: 14.5px; }
-
-  /* reveal on scroll */
-  .reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s ease, transform .8s ease; }
-  .reveal.in { opacity: 1; transform: none; }
-
-  @media (max-width: 880px) {
-    .grid { grid-template-columns: 1fr; }
-    .hero-art {
-      background:
-        linear-gradient(to top, var(--deep-0) 0, transparent 30%),
-        linear-gradient(rgba(5,13,31,.62), rgba(5,13,31,.62)),
-        url("assets/hero-wide.png") 72% center / cover no-repeat,
-        var(--deep-1);
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080808">
+  <title>Downbender — the last download master</title>
+  <meta name="description" content="Free, open-source native macOS download manager for video, audio and direct files. Maximum source quality, playlists, subtitles and one controllable queue.">
+  <meta property="og:title" content="Downbender — the last download master">
+  <meta property="og:description" content="Save video at maximum source quality, extract MP3, download direct files and manage everything in one native Mac queue.">
+  <meta property="og:image" content="https://naztirs.github.io/downbender/assets/app-dark-clean.png">
+  <meta property="og:type" content="website">
+  <link rel="icon" type="image/png" href="assets/AppIcon-command.png?v=dark-graphite">
+  <link rel="preload" as="image" href="assets/app-dark-clean.png?v=dark-graphite" type="image/png" fetchpriority="high">
+  <script defer src="site.js"></script>
+  <script defer src="fog-controller.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #080808;
+      --surface: #111111;
+      --raised: #171717;
+      --border: #292929;
+      --border-strong: #454545;
+      --text: #f4f4f4;
+      --muted: #898989;
+      --accent: #66d9ff;
+      --success: #67d391;
+      --warning: #f1ba62;
+      --danger: #ff6b6b;
+      --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+      --wrap: min(1200px, calc(100vw - 80px));
+      --hero-art-scale: 1.08;
+      --hero-art-x: 5px;
+      --hero-art-y: -85px;
+      --console-width: 62%;
+      --install-art-scale: 3.3;
+      --install-art-x: 4%;
+      --install-art-y: 1%;
     }
-    .panel { padding: 32px 26px; }
-    nav .links a.hide-m { display: none; }
-    /* The panel covers the section on narrow screens, so the bending monk
-       anchors to the bottom padding where nothing sits on top of him. */
-    .band {
-      padding: 90px 0 360px;
-      background:
-        linear-gradient(to bottom, var(--deep-0) 0, transparent 12%),
-        linear-gradient(to top, var(--deep-0) 0, transparent 6%),
-        url("assets/bending.png") center calc(100% + 30px) / auto 560px no-repeat,
-        var(--deep-1);
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--canvas);
+      font: 16px/1.6 var(--sans);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
-    .term code { white-space: normal; word-break: normal; }
-  }
+    a { color: inherit; text-decoration: none; }
+    button { color: inherit; }
+    img { display: block; max-width: 100%; height: auto; }
+    svg { display: block; }
+    ::selection { color: #050505; background: var(--accent); }
 
-  @media (max-width: 620px) {
-    .term code { font-size: 12px; }
-  }
-  /* dev-only tuner (localhost): live knobs for the bending image framing */
-  #tuner {
-    position: fixed; left: 18px; bottom: 18px; z-index: 90;
-    display: flex; flex-direction: column; gap: 10px;
-    padding: 16px 18px;
-    background: rgba(6,15,32,.88);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--rim);
-    border-radius: 14px;
-    font-size: 14px;
-  }
-  #tuner .row { display: flex; align-items: center; gap: 10px; }
-  #tuner .row label { width: 64px; color: var(--muted); }
-  #tuner button {
-    width: 40px; height: 34px; border-radius: 9px;
-    font-size: 18px; font-weight: 700; color: var(--ink);
-    background: rgba(111,214,255,.14);
-    border: 1px solid rgba(111,214,255,.4);
-    cursor: pointer;
-  }
-  #tuner button:active { transform: scale(.94); }
-  #tuner .val { min-width: 52px; text-align: center; font-weight: 650; color: var(--glow); }
-  #tuner .out {
-    font: 11.5px/1.5 ui-monospace, Menlo, monospace;
-    color: var(--muted); max-width: 240px; user-select: all;
-  }
-  #tuner .copyvals { width: auto; font-size: 13px; padding: 0 14px; }
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
 
-  @media (prefers-reduced-motion: reduce) {
-    .streak, .cta { animation: none; }
-    .reveal { opacity: 1; transform: none; transition: none; }
-    html { scroll-behavior: auto; }
-  }
-</style>
+    .wrap {
+      position: relative;
+      z-index: 3;
+      width: var(--wrap);
+      margin-inline: auto;
+    }
+
+    .site-fog {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      contain: strict;
+      overflow: hidden;
+      pointer-events: none;
+      opacity: .7;
+      mix-blend-mode: screen;
+      background:
+        radial-gradient(ellipse at 78% 18%, rgba(150, 150, 150, .18), transparent 42%),
+        radial-gradient(ellipse at 18% 66%, rgba(88, 88, 88, .15), transparent 48%),
+        radial-gradient(ellipse at 72% 88%, rgba(118, 118, 118, .14), transparent 46%);
+    }
+
+    .site-fog .vanta-canvas {
+      display: block;
+      pointer-events: none;
+    }
+
+    .mono-label {
+      color: var(--muted);
+      font: 600 11px/1.2 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #aaa;
+      font: 600 11px/1 var(--mono);
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: var(--accent);
+    }
+
+    /* Navigation */
+    .site-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      height: 64px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 32px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(8, 8, 8, .96);
+    }
+
+    .nav-brand {
+      display: inline-flex;
+      align-items: center;
+      justify-self: start;
+      gap: 9px;
+      font-size: 16px;
+      font-weight: 650;
+      letter-spacing: -.02em;
+    }
+
+    .nav-brand img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+
+    .nav-brand em {
+      color: var(--accent);
+      font-style: normal;
+    }
+
+    .nav-center {
+      color: #737373;
+      font: 500 10px/1 var(--mono);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .nav-links {
+      justify-self: end;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      color: #a5a5a5;
+      font: 500 11px/1 var(--mono);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .nav-links a:not(.nav-download):hover { color: var(--text); }
+
+    .nav-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--accent);
+      border-radius: 5px;
+      color: #050505;
+      background: var(--accent);
+      font-weight: 750;
+    }
+
+    /* Hero */
+    .hero {
+      position: relative;
+      min-height: calc(100svh - 64px);
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+      background: var(--canvas);
+    }
+
+    .hero-art-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .hero-art-layer img {
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      object-fit: cover;
+      object-position: right center;
+      filter: brightness(.72) contrast(1.75);
+      transform: translate3d(var(--hero-art-x), var(--hero-art-y), 0) scale(var(--hero-art-scale));
+      transform-origin: center;
+      will-change: transform;
+    }
+
+    .hero-art-layer::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(8, 8, 8, .96) 0%, rgba(8, 8, 8, .76) 39%, rgba(8, 8, 8, .18) 70%, rgba(8, 8, 8, .22) 100%);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      opacity: .4;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px);
+      background-size: 64px 64px;
+      -webkit-mask-image: linear-gradient(to bottom, #000, transparent 88%);
+      mask-image: linear-gradient(to bottom, #000, transparent 88%);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      left: 0;
+      right: 0;
+      top: 76%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(102, 217, 255, .18), transparent);
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 3;
+      min-height: calc(100svh - 128px);
+      display: flex;
+      align-items: center;
+      padding: 54px 0 78px;
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 3;
+      width: min(100%, 580px);
+    }
+
+    .hero h1 {
+      margin: 25px 0 0;
+      max-width: 580px;
+      font-size: clamp(62px, 6.3vw, 88px);
+      line-height: .92;
+      letter-spacing: -.07em;
+      font-weight: 690;
+    }
+
+    .hero h1 .accent { color: var(--accent); }
+
+    .hero-lead {
+      max-width: 500px;
+      margin: 28px 0 0;
+      color: #a5a5a5;
+      font-size: 18px;
+      line-height: 1.55;
+      letter-spacing: -.01em;
+    }
+
+    .hero-lead strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .button {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 20px;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      font: 750 12px/1 var(--mono);
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      transition: border-color .18s ease, background .18s ease, color .18s ease;
+    }
+
+    .button.primary {
+      color: #050505;
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    .button.primary:hover {
+      background: var(--accent);
+      box-shadow: 0 0 0 3px rgba(102, 217, 255, .16);
+    }
+    .button.secondary { color: var(--text); background: var(--surface); }
+    .button.secondary:hover { border-color: #686868; background: var(--raised); }
+
+    .hero-specs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+      margin-top: 21px;
+      color: #747474;
+      font: 500 10px/1.5 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .hero-specs strong {
+      color: #bcbcbc;
+      font-weight: 550;
+    }
+
+    .product-stage {
+      position: relative;
+      min-width: 0;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: #090909;
+      box-shadow: 0 34px 90px rgba(0, 0, 0, .55);
+    }
+
+    .console-header {
+      min-height: 43px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      color: #777;
+      background: rgba(17, 17, 17, .92);
+      font: 500 9px/1 var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .console-header .ready {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--success);
+    }
+
+    .console-header .ready::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .product-viewport {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      background: #080808;
+    }
+
+    .product-viewport picture {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .product-viewport img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+    }
+
+    .product-readout {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .readout-cell {
+      min-width: 0;
+      padding: 13px 14px;
+      border-right: 1px solid var(--border);
+      color: #737373;
+      font: 500 9px/1.4 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .readout-cell:last-child { border-right: 0; }
+
+    .readout-cell strong {
+      display: block;
+      margin-top: 4px;
+      overflow: hidden;
+      color: #c6c6c6;
+      font-weight: 550;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .console-section {
+      background:
+        linear-gradient(180deg, #0a0a0a 0%, #080808 100%);
+    }
+
+    .console-layout {
+      display: grid;
+      grid-template-columns: minmax(0, var(--console-width)) minmax(0, 1fr);
+      gap: clamp(28px, 4vw, 56px);
+      align-items: center;
+    }
+
+    .console-stage {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+    }
+
+    .console-copy {
+      min-width: 0;
+    }
+
+    .console-copy h2 {
+      margin: 18px 0 0;
+      font-size: clamp(40px, 5vw, 64px);
+      line-height: 1;
+      letter-spacing: -.055em;
+      font-weight: 670;
+    }
+
+    .console-copy > p {
+      margin: 26px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .console-stage .product-viewport {
+      aspect-ratio: 1523 / 1033;
+    }
+
+    .console-stage .product-viewport img {
+      object-fit: contain;
+    }
+
+    .readout-cell strong.live { color: var(--accent); }
+
+    .hero-rail {
+      position: absolute;
+      z-index: 3;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--border);
+      border-bottom: 0;
+      background: rgba(8, 8, 8, .9);
+    }
+
+    .rail-cell {
+      min-width: 0;
+      padding: 14px 16px;
+      border-right: 1px solid var(--border);
+      color: #666;
+      font: 500 9px/1.35 var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .rail-cell:last-child { border-right: 0; }
+
+    .rail-cell strong {
+      display: block;
+      margin-top: 3px;
+      color: #c7c7c7;
+      font-weight: 550;
+    }
+
+    /* Shared sections */
+    main section { scroll-margin-top: 82px; }
+
+    .section {
+      padding: 118px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-heading {
+      display: grid;
+      grid-template-columns: 1fr minmax(260px, 440px);
+      gap: 56px;
+      align-items: end;
+    }
+
+    .section-heading h2 {
+      margin: 18px 0 0;
+      max-width: 720px;
+      font-size: clamp(40px, 5vw, 64px);
+      line-height: 1;
+      letter-spacing: -.055em;
+      font-weight: 670;
+    }
+
+    .section-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    /* Features */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 58px;
+      border-top: 1px solid var(--border);
+      border-left: 1px solid var(--border);
+    }
+
+    .feature-card {
+      position: relative;
+      min-height: 290px;
+      padding: 28px;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      transition: background .18s ease, border-color .18s ease;
+    }
+
+    .feature-card:hover { background: var(--raised); }
+
+    .feature-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .feature-index {
+      color: #6d6d6d;
+      font: 500 11px/1 var(--mono);
+      letter-spacing: .1em;
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+      color: var(--accent);
+      background: #0d0d0d;
+    }
+
+    .feature-icon svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .feature-card h3 {
+      margin: 70px 0 0;
+      font-size: 20px;
+      line-height: 1.25;
+      letter-spacing: -.025em;
+    }
+
+    .feature-card p {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 14.5px;
+      line-height: 1.65;
+    }
+
+    .feature-card p strong {
+      color: #c9c9c9;
+      font-weight: 600;
+    }
+
+    .feature-card p a {
+      text-decoration: underline;
+      text-decoration-color: #555;
+      text-underline-offset: 3px;
+    }
+
+    .feature-card p a:hover {
+      color: var(--accent);
+      text-decoration-color: currentColor;
+    }
+
+    /* Workflow */
+    .workflow-section {
+      padding: 0;
+      background: #0b0b0b;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-left: 1px solid var(--border);
+    }
+
+    .workflow-step {
+      min-height: 176px;
+      display: grid;
+      grid-template-columns: 52px 1fr;
+      gap: 20px;
+      padding: 34px 30px;
+      border-right: 1px solid var(--border);
+    }
+
+    .workflow-step .number {
+      color: var(--accent);
+      font: 500 29px/1 var(--mono);
+      letter-spacing: -.05em;
+    }
+
+    .workflow-step h3 {
+      margin: 2px 0 0;
+      font-size: 16px;
+      letter-spacing: -.015em;
+    }
+
+    .workflow-step p {
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.55;
+    }
+
+    /* Install */
+    .install-section {
+      position: relative;
+      overflow: visible;
+      background:
+        linear-gradient(90deg, #080808 0%, #080808 52%, rgba(8, 8, 8, .86) 74%, #080808 100%),
+        #080808;
+    }
+
+    .install-section::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: .24;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px);
+      background-size: 64px 64px;
+      -webkit-mask-image: linear-gradient(90deg, transparent 30%, #000);
+      mask-image: linear-gradient(90deg, transparent 30%, #000);
+    }
+
+    .install-grid {
+      position: relative;
+      z-index: auto;
+      display: grid;
+      grid-template-columns: minmax(420px, .92fr) minmax(500px, 1.08fr);
+      gap: 64px;
+      align-items: center;
+    }
+
+    .install-left {
+      position: relative;
+      z-index: 3;
+      min-width: 0;
+    }
+
+    .install-copy h2 {
+      margin: 20px 0 0;
+      font-size: clamp(40px, 4.4vw, 58px);
+      line-height: 1;
+      letter-spacing: -.055em;
+      font-weight: 670;
+    }
+
+    .install-copy > p {
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .install-step {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 14px;
+      margin-top: 26px;
+    }
+
+    .install-step .number {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      color: var(--accent);
+      background: var(--surface);
+      font: 650 11px/1 var(--mono);
+    }
+
+    .install-step p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .install-step strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .terminal-stack {
+      min-width: 0;
+      margin-top: 38px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      background: #0b0b0b;
+    }
+
+    .install-left .command-row code {
+      overflow: visible;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .terminal-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--border);
+      color: #777;
+      background: var(--surface);
+      font: 500 9px/1 var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .terminal-block {
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .terminal-block:last-child { border-bottom: 0; }
+
+    .terminal-label {
+      color: #757575;
+      font: 500 9px/1 var(--mono);
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .command-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin-top: 11px;
+    }
+
+    .command-row code {
+      min-width: 0;
+      overflow-x: auto;
+      color: var(--accent);
+      font: 500 11.5px/1.6 var(--mono);
+      white-space: nowrap;
+      scrollbar-width: thin;
+    }
+
+    .copy-button {
+      min-width: 74px;
+      min-height: 44px;
+      padding: 0 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      color: #c9c9c9;
+      background: var(--raised);
+      cursor: pointer;
+      font: 650 10px/1 var(--mono);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .copy-button:hover { color: var(--text); border-color: #686868; }
+    .copy-button.is-copied { color: var(--success); border-color: var(--success); }
+
+    .install-art {
+      position: relative;
+      min-width: 0;
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      align-self: center;
+      overflow: visible;
+    }
+
+    .install-art-visual {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      display: grid;
+      place-items: center;
+      overflow: visible;
+      pointer-events: none;
+      mix-blend-mode: screen;
+    }
+
+    .install-art img {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      opacity: 1;
+      filter: brightness(.72) contrast(1.8);
+      transform: translate(var(--install-art-x), var(--install-art-y)) scale(var(--install-art-scale));
+      transform-origin: center;
+      will-change: transform;
+    }
+
+    /* Footer */
+    footer {
+      padding: 36px 0;
+      border-top: 1px solid var(--border);
+      background: #060606;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .footer-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      justify-self: start;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .footer-brand img { width: 27px; height: 27px; }
+    .footer-brand em { color: var(--accent); font-style: normal; }
+
+    .footer-note {
+      max-width: 500px;
+      color: #6f6f6f;
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .footer-note a { color: #a7a7a7; }
+
+    .footer-links {
+      justify-self: end;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 20px;
+      color: #858585;
+      font: 500 10px/1 var(--mono);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .footer-links a:hover { color: var(--text); }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 1080px) {
+      :root { --wrap: min(100% - 48px, 1000px); }
+
+      .install-grid {
+        grid-template-columns: minmax(380px, 1fr) minmax(360px, .9fr);
+        gap: 38px;
+      }
+    }
+
+    @media (max-width: 860px) {
+      :root { --wrap: min(100% - 36px, 760px); }
+
+      .site-nav {
+        grid-template-columns: 1fr auto;
+        padding: 0 18px;
+      }
+
+      .nav-center { display: none; }
+      .nav-links { gap: 16px; }
+      .nav-links .section-link { display: none; }
+
+      .hero {
+        min-height: auto;
+      }
+
+      .hero-art-layer img {
+        object-position: 70% bottom;
+      }
+
+      .hero-art-layer::after {
+        background: linear-gradient(90deg, rgba(8, 8, 8, .97) 0%, rgba(8, 8, 8, .88) 58%, rgba(8, 8, 8, .58) 100%);
+      }
+
+      .hero-inner {
+        min-height: 0;
+        padding: 74px 0 136px;
+      }
+
+      .hero-copy { max-width: 650px; }
+      .hero h1 { max-width: 680px; }
+
+      .hero-rail {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .rail-cell:nth-child(2) { border-right: 0; }
+      .rail-cell:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+
+      .section { padding: 92px 0; }
+
+      .section-heading {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      .section-heading p { max-width: 570px; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .feature-card { min-height: 240px; }
+      .feature-card h3 { margin-top: 48px; }
+
+      .workflow { grid-template-columns: 1fr; }
+      .workflow-step {
+        min-height: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .workflow-step:last-child { border-bottom: 0; }
+
+      .install-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .install-art {
+        width: min(640px, calc(100% - 30px));
+        justify-self: center;
+        margin: 8px auto -36px;
+      }
+
+      .footer-grid {
+        grid-template-columns: 1fr;
+        justify-items: center;
+      }
+
+      .footer-brand,
+      .footer-links { justify-self: center; }
+
+      .footer-links { justify-content: center; }
+    }
+
+    @media (max-width: 640px) {
+      .console-layout {
+        grid-template-columns: 1fr;
+        gap: 30px;
+      }
+
+      .console-copy {
+        grid-row: 1;
+      }
+
+      .console-stage {
+        grid-row: 2;
+      }
+    }
+
+    @media (max-width: 560px) {
+      :root { --wrap: calc(100% - 32px); }
+
+      .site-nav { height: 58px; }
+      .nav-brand span { font-size: 14px; }
+      .nav-brand img { width: 25px; height: 25px; }
+      .nav-links { gap: 12px; }
+      .nav-links > a:not(.nav-download) { display: none; }
+      .nav-download { min-height: 36px; padding: 0 11px; font-size: 10px; }
+
+      .hero-inner { padding: 64px 0 142px; }
+      .hero h1 { font-size: clamp(52px, 17vw, 68px); }
+      .hero-lead { font-size: 16px; }
+
+      .actions {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .button { width: 100%; }
+
+      .console-header {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 12px;
+      }
+
+      .product-readout { grid-template-columns: 1fr; }
+      .readout-cell {
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .readout-cell:last-child { border-bottom: 0; }
+
+      .section { padding: 76px 0; }
+      .section-heading h2,
+      .install-copy h2 { font-size: 42px; }
+
+      .feature-card { padding: 24px; }
+      .workflow-step { grid-template-columns: 42px 1fr; padding: 28px 22px; }
+
+      .command-row { grid-template-columns: 1fr; }
+      .copy-button { width: 100%; }
+
+      .hero-rail { width: calc(100% - 32px); }
+      .rail-cell { padding: 12px; }
+
+      footer { padding: 32px 0; }
+      .footer-note { font-size: 11.5px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .site-fog { opacity: .7; }
+    }
+  </style>
 </head>
 <body>
+  <div id="site-fog" class="site-fog" aria-hidden="true" data-fog="static"></div>
 
-<div class="sky" aria-hidden="true">
-  <span class="streak" style="top:12%; width:90px;  animation-duration:13s; animation-delay:-5s;  opacity:.24;"></span>
-  <span class="streak" style="top:26%; width:130px; animation-duration:10s; animation-delay:-2s;  opacity:.3;"></span>
-  <span class="streak" style="top:41%; width:60px;  animation-duration:17s; animation-delay:-11s; opacity:.18;"></span>
-  <span class="streak" style="top:57%; width:110px; animation-duration:12s; animation-delay:-7s;  opacity:.26;"></span>
-  <span class="streak" style="top:72%; width:75px;  animation-duration:15s; animation-delay:-4s;  opacity:.2;"></span>
-  <span class="streak" style="top:88%; width:140px; animation-duration:9s;  animation-delay:-1s;  opacity:.3;"></span>
-</div>
+  <nav class="site-nav" aria-label="Primary navigation">
+    <a class="nav-brand" href="#top">
+      <img src="assets/AppIcon-command.png?v=dark-graphite" alt="" width="28" height="28">
+      <span>Down<em>bender</em></span>
+    </a>
+    <div class="nav-center">Media + files / one queue</div>
+    <div class="nav-links">
+      <a class="section-link" href="#features">Features</a>
+      <a class="section-link" href="#install">Install</a>
+      <a href="https://github.com/NaztiRS/downbender">GitHub</a>
+      <a class="nav-download" href="https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg">Download ↘</a>
+    </div>
+  </nav>
 
-<nav>
-  <a class="brand" href="#">
-    <img src="assets/AppIcon.png" alt="">
-    <span><span class="down">Down</span><span class="bender">bender</span></span>
-  </a>
-  <div class="links">
-    <a href="#features" class="hide-m">Features</a>
-    <a href="#install" class="hide-m">Install</a>
-    <a href="https://github.com/NaztiRS/downbender">GitHub</a>
-  </div>
-</nav>
+  <header class="hero" id="top">
+    <div class="hero-art-layer" aria-hidden="true">
+      <img src="assets/hero-wide-command.png?v=dark-graphite" alt="" width="1916" height="821">
+    </div>
 
-<header class="hero">
-  <div class="hero-art"></div>
-  <div class="streaks" aria-hidden="true">
-    <span class="streak" style="top:16%; width:120px; animation-duration:11s; animation-delay:-3s;"></span>
-    <span class="streak" style="top:30%; width:70px;  animation-duration:14s; animation-delay:-9s; opacity:.22;"></span>
-    <span class="streak" style="top:47%; width:150px; animation-duration:9s;  animation-delay:-1s;"></span>
-    <span class="streak" style="top:63%; width:60px;  animation-duration:16s; animation-delay:-12s; opacity:.2;"></span>
-    <span class="streak" style="top:78%; width:100px; animation-duration:12s; animation-delay:-6s; opacity:.28;"></span>
-  </div>
-  <div class="hero-inner">
-    <div class="eyebrow">Free &amp; open source · for macOS</div>
-    <h1 class="wordmark"><span class="down">Down</span><span class="bender">bender</span></h1>
-    <p class="tagline"><strong>The last download master.</strong> Bend videos down to your Mac — up to 1080p, or extract the audio as MP3. YouTube first and foremost, plus many other sites.</p>
-    <div class="cta-row">
-      <a class="cta" href="https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="m6 11 6 6 6-6"/><path d="M5 21h14"/></svg>
-        Download for Mac
+    <div class="hero-inner wrap">
+      <div class="hero-copy">
+        <div class="eyebrow">Native macOS download manager</div>
+        <h1>Paste.<br>Execute.<br><span class="accent">Done.</span></h1>
+        <p class="hero-lead">Bring links from across the web into one native queue: <strong>save video at the maximum quality available, extract MP3 or download direct files.</strong></p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.dmg">Get Downbender ↘</a>
+          <a class="button secondary" href="https://github.com/NaztiRS/downbender">View source</a>
+        </div>
+        <div class="hero-specs" aria-label="Requirements">
+          <span><strong>macOS 26+</strong></span>
+          <span>Apple Silicon</span>
+          <span>GPLv3</span>
+          <span>No Downbender account</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-rail wrap" aria-hidden="true">
+      <div class="rail-cell">Media<strong>MP4 / MKV / MP3</strong></div>
+      <div class="rail-cell">Quality<strong>Maximum available</strong></div>
+      <div class="rail-cell">Files<strong>Direct HTTPS</strong></div>
+      <div class="rail-cell">Queue<strong>1–4 parallel</strong></div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section console-section" aria-labelledby="console-title">
+      <div class="wrap">
+        <div class="console-layout">
+          <div class="product-stage console-stage" aria-label="Downbender live download queue interface">
+            <div class="console-header">
+              <span>DB / Live product / macOS</span>
+              <span class="ready">Engine ready</span>
+            </div>
+            <div class="product-viewport">
+              <picture>
+                <img src="assets/app-dark-clean.png?v=dark-graphite"
+                     alt="Downbender showing a demo media transfer at 72 percent with live speed and destination"
+                     width="1523"
+                     height="1033"
+                     fetchpriority="high"
+                     decoding="async">
+              </picture>
+            </div>
+            <div class="product-readout" aria-hidden="true">
+              <div class="readout-cell">Queue<strong>01 job</strong></div>
+              <div class="readout-cell">State<strong class="live">Active / 72%</strong></div>
+              <div class="readout-cell">Output<strong>~/Downloads</strong></div>
+            </div>
+          </div>
+
+          <div class="console-copy">
+            <div class="eyebrow">Live product</div>
+            <h2 id="console-title">Every transfer, visible at a glance.</h2>
+            <p>Video, audio, playlists and direct files share the same queue. Speed, progress, destination and the next action stay readable in one native window.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="wrap">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">Everything in one queue</div>
+            <h2>Built for more than video.</h2>
+          </div>
+          <p>Send Downbender a supported media page or a direct file link. It identifies the job, gives you the right choices and keeps every transfer under your control.</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <div class="feature-top">
+              <span class="feature-index">01 / QUALITY</span>
+              <span class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m10 9 5 3-5 3z"/></svg>
+              </span>
+            </div>
+            <h3>Maximum means maximum</h3>
+            <p>Choose from the resolutions a source exposes—including <strong>4K and 8K</strong> when available. Compatibility profiles prioritize MP4 through 1080p; high-resolution and Maximum modes use MKV.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-top">
+              <span class="feature-index">02 / SOURCES</span>
+              <span class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c3 3 3 16 0 19-3-3-3-16 0-19z"/></svg>
+              </span>
+            </div>
+            <h3>Sites and direct files</h3>
+            <p>Save media from <strong><a href="https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md">many yt-dlp-supported sites</a></strong>, or download direct links such as ZIP, PDF, DMG, images and documents as-is.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-top">
+              <span class="feature-index">03 / QUEUE</span>
+              <span class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg>
+              </span>
+            </div>
+            <h3>A queue you control</h3>
+            <p>Run up to <strong>four downloads in parallel</strong>. Reorder waiting work; pause, resume, cancel or retry jobs; and clear finished items from one place.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-top">
+              <span class="feature-index">04 / PLAYLISTS</span>
+              <span class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M4 6h11M4 11h11M4 16h7"/><path d="m16 15 5 3-5 3z"/></svg>
+              </span>
+            </div>
+            <h3>Playlists and subtitles</h3>
+            <p>Apply one quality rule to a <strong>whole playlist</strong>, with the closest tier chosen per video, and embed creator-provided subtitles when available.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-top">
+              <span class="feature-index">05 / INTAKE</span>
+              <span class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8.5 12.5 12 9a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0"/><path d="m15.5 11.5-3.5 3.5a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0"/></svg>
+              </span>
+            </div>
+            <h3>Paste, copy, drag or click</h3>
+            <p>Add one link or a batch, use clipboard detection, drag links into the window, or send the active video from <strong>Chrome, Brave, Edge or Chromium</strong>.</p>
+          </article>
+
+          <article class="feature-card">
+            <div class="feature-top">
+              <span class="feature-index">06 / RUNTIME</span>
+              <span class="feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg>
+              </span>
+            </div>
+            <h3>Ready out of the box</h3>
+            <p><strong>yt-dlp, FFmpeg and Deno</strong> ship inside the app. Check and install updates for Downbender and its download engine without separate runtime setup.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="workflow-section" aria-label="How Downbender works">
+      <div class="workflow wrap">
+        <article class="workflow-step">
+          <span class="number">01</span>
+          <div>
+            <h3>Paste, drop or send</h3>
+            <p>Add one link or a batch from the clipboard, drag and drop, or the browser extension.</p>
+          </div>
+        </article>
+        <article class="workflow-step">
+          <span class="number">02</span>
+          <div>
+            <h3>Choose what to keep</h3>
+            <p>Choose maximum available, a resolution limit or MP3; apply one rule to playlists, add creator subtitles, or save a file as-is.</p>
+          </div>
+        </article>
+        <article class="workflow-step">
+          <span class="number">03</span>
+          <div>
+            <h3>Run the queue</h3>
+            <p>Set the destination and let parallel jobs run; reorder, pause, resume or cancel anytime.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section install-section" id="install">
+      <div class="install-grid wrap">
+        <div class="install-left">
+          <div class="install-copy">
+            <div class="eyebrow">Two moves</div>
+            <h2>Install it like a native tool.</h2>
+            <p>Download the disk image, move the app and get every required runtime already included in the bundle.</p>
+
+            <div class="install-step">
+              <span class="number">01</span>
+              <p><strong>Download the DMG</strong> and drag Downbender into <strong>Applications</strong>.</p>
+            </div>
+            <div class="install-step">
+              <span class="number">02</span>
+              <p>On first launch, use <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>.</p>
+            </div>
+          </div>
+
+          <div class="terminal-stack">
+            <div class="terminal-head">
+              <span>Install operations</span>
+              <span style="color:var(--success)">Ready</span>
+            </div>
+            <div class="terminal-block">
+              <div class="terminal-label">Homebrew</div>
+              <div class="command-row">
+                <code>brew install --cask naztirs/tap/downbender</code>
+                <button class="copy-button" type="button" data-copy="brew install --cask naztirs/tap/downbender">Copy</button>
+              </div>
+            </div>
+            <div class="terminal-block">
+              <div class="terminal-label">Terminal alternative to “Open Anyway”</div>
+              <div class="command-row">
+                <code>xattr -dr com.apple.quarantine /Applications/Downbender.app</code>
+                <button class="copy-button" type="button" data-copy="xattr -dr com.apple.quarantine /Applications/Downbender.app">Copy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="install-art">
+          <div class="install-art-visual">
+            <img src="assets/bending-command.png?v=dark-graphite" alt="" width="1672" height="941" loading="lazy" decoding="async">
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-grid wrap">
+      <a class="footer-brand" href="#top">
+        <img src="assets/AppIcon-command.png?v=dark-graphite" alt="" width="27" height="27">
+        <span>Down<em>bender</em></span>
       </a>
-      <a class="ghost" href="https://github.com/NaztiRS/downbender">View source</a>
-    </div>
-    <p class="req"><b>macOS 26+</b> · Apple Silicon · GPLv3 · no account, no ads, no tricks</p>
-  </div>
-</header>
-
-<section class="shot-section">
-  <div class="wrap reveal">
-    <div class="kicker">One window, zero friction</div>
-    <h2>Paste a link. Pick a quality. Done.</h2>
-    <p class="sub">A download queue with real progress, pause &amp; resume, clipboard detection and a glance-friendly deep-water look.</p>
-    <div class="shot-frame">
-      <video autoplay muted loop playsinline preload="metadata" poster="assets/demo-poster.jpg"
-             aria-label="Downbender downloading a YouTube link, then the video playing">
-        <source src="assets/demo.mp4" type="video/mp4">
-        <img src="assets/demo-poster.jpg" alt="Downbender main window ready to download a video" loading="lazy">
-      </video>
-    </div>
-  </div>
-</section>
-
-<section class="features" id="features">
-  <div class="wrap">
-    <div class="kicker reveal">What it bends</div>
-    <h2 class="reveal">Everything a downloader should master</h2>
-    <div class="grid">
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg></div>
-        <h3>1080p video or clean MP3</h3>
-        <p>Crisp <b>MP4 (H.264)</b> up to 1080p that plays everywhere, or one-tap <b>MP3 extraction</b> at top quality.</p>
-      </div>
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c3 3 3 16 0 19-3-3-3-16 0-19z"/></svg></div>
-        <h3>YouTube &amp; beyond</h3>
-        <p>Battle-tested on <b>YouTube</b>, and speaks yt-dlp's language for <b>many other sites</b> — X, Vimeo, TikTok and friends (still maturing).</p>
-      </div>
-      <div class="card reveal">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.3"/><path d="M21 3v6h-6"/></svg></div>
-        <h3>Updates itself</h3>
-        <p>One click updates <b>both the app and its engine</b>. yt-dlp, FFmpeg and Deno ship inside — nothing else to install, ever.</p>
+      <p class="footer-note">Free software under <a href="https://github.com/NaztiRS/downbender/blob/main/LICENSE">GPLv3</a>. Powered by yt-dlp, FFmpeg and Deno. Download responsibly.</p>
+      <div class="footer-links">
+        <a href="https://github.com/NaztiRS/downbender">GitHub</a>
+        <a href="https://github.com/NaztiRS/downbender/releases">Releases</a>
+        <a href="https://github.com/NaztiRS/downbender/blob/main/NOTICE">Notice</a>
       </div>
     </div>
-  </div>
-</section>
+  </footer>
 
-<section class="band" id="install">
-  <div class="wrap">
-    <div class="panel reveal">
-      <div class="kicker">Two moves</div>
-      <h2>Install it like a master</h2>
-      <div class="step">
-        <div class="n">1</div>
-        <p><b>Download the DMG</b> and drag Downbender into <b>Applications</b>.</p>
-      </div>
-      <div class="step">
-        <div class="n">2</div>
-        <p>First launch only: macOS blocks apps not notarized by Apple. Open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
-      </div>
-      <div class="term-label">Or install with Homebrew:</div>
-      <div class="term">
-        <code>brew install --cask naztirs/tap/downbender</code>
-        <button class="copy" type="button">Copy</button>
-      </div>
-      <div class="term-label">Terminal alternative to "Open Anyway":</div>
-      <div class="term">
-        <code>xattr -dr com.apple.quarantine /Applications/Downbender.app</code>
-        <button class="copy" type="button">Copy</button>
-      </div>
-    </div>
-  </div>
-</section>
-
-<footer>
-  <img class="monk" src="assets/monk-portrait.png" alt="" loading="lazy">
-  <div class="fbrand"><span class="down">Down</span><span class="bender">bender</span></div>
-  <p>Free software under <a href="https://github.com/NaztiRS/downbender/blob/main/LICENSE">GPLv3</a>. Powered by <a href="https://github.com/yt-dlp/yt-dlp">yt-dlp</a>, FFmpeg and Deno.
-     Download responsibly: some platforms' terms restrict downloading.</p>
-  <div class="links">
-    <a href="https://github.com/NaztiRS/downbender">GitHub</a>
-    <a href="https://github.com/NaztiRS/downbender/releases">Releases</a>
-    <a href="https://github.com/NaztiRS/downbender/blob/main/NOTICE">Notice</a>
-  </div>
-</footer>
-
-<div id="tuner">
-  <div class="row"><label>Zoom</label>
-    <button data-k="zoom" data-d="-5">−</button>
-    <span class="val" id="vZoom">120%</span>
-    <button data-k="zoom" data-d="5">+</button>
-  </div>
-  <div class="row"><label>Altura</label>
-    <button data-k="y" data-d="-5">−</button>
-    <span class="val" id="vY">50%</span>
-    <button data-k="y" data-d="5">+</button>
-  </div>
-  <div class="row">
-    <button class="copyvals" id="copyVals">Copiar valores</button>
-  </div>
-  <div class="out" id="tunerOut"></div>
-</div>
-
-<script>
-  const io = new IntersectionObserver(
-    entries => entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }),
-    { threshold: 0.15 }
-  );
-  document.querySelectorAll(".reveal").forEach(el => io.observe(el));
-
-  document.querySelectorAll(".copy").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const code = btn.parentElement.querySelector("code");
-      try { await navigator.clipboard.writeText(code.textContent.trim()); } catch {}
-      btn.textContent = "Copied ✓";
-      btn.classList.add("ok");
-      setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("ok"); }, 1800);
-    });
-  });
-
-  // Dev-only framing tuner: never ships to visitors.
-  const tuner = document.getElementById("tuner");
-  if (location.hostname !== "localhost" && location.hostname !== "127.0.0.1") {
-    tuner.remove();
-  } else {
-    const band = document.querySelector(".band");
-    const state = { zoom: 180, y: 45 };
-    const cssLine = () => `url("assets/bending.png") 0% ${state.y}% / auto ${state.zoom}% no-repeat,`;
-    const apply = () => {
-      band.style.backgroundPosition = `center, center, 0% ${state.y}%, center`;
-      band.style.backgroundSize = `auto, auto, auto ${state.zoom}%, auto`;
-      document.getElementById("vZoom").textContent = state.zoom + "%";
-      document.getElementById("vY").textContent = state.y + "%";
-      document.getElementById("tunerOut").textContent = cssLine();
-    };
-    tuner.querySelectorAll("button[data-k]").forEach(b =>
-      b.addEventListener("click", () => {
-        state[b.dataset.k] = Math.max(5, state[b.dataset.k] + Number(b.dataset.d));
-        apply();
-      })
-    );
-    document.getElementById("copyVals").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(cssLine()); } catch {}
-      const btn = document.getElementById("copyVals");
-      btn.textContent = "Copiado ✓";
-      setTimeout(() => { btn.textContent = "Copiar valores"; }, 1500);
-    });
-    apply();
-  }
-</script>
+  <div class="sr-only" id="copy-status" role="status" aria-live="polite"></div>
 </body>
 </html>
