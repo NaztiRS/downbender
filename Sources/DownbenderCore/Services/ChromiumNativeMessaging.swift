@@ -7,22 +7,21 @@ public enum ChromiumBrowser: String, CaseIterable, Hashable, Sendable {
     case edge
     case chromium
 
-    public var displayName: String {
+    public var browserKind: BrowserKind {
         switch self {
-        case .chrome: "Google Chrome"
-        case .brave: "Brave"
-        case .edge: "Microsoft Edge"
-        case .chromium: "Chromium"
+        case .chrome: .chrome
+        case .brave: .brave
+        case .edge: .edge
+        case .chromium: .chromium
         }
     }
 
+    public var displayName: String {
+        browserKind.displayName
+    }
+
     public var applicationBundleIdentifier: String {
-        switch self {
-        case .chrome: "com.google.Chrome"
-        case .brave: "com.brave.Browser"
-        case .edge: "com.microsoft.edgemac"
-        case .chromium: "org.chromium.Chromium"
-        }
+        browserKind.applicationBundleIdentifier
     }
 
     public var extensionsPage: String {

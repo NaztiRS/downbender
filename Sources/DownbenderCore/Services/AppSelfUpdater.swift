@@ -32,6 +32,8 @@ public enum SelfUpdateError: Error, Equatable, LocalizedError {
 /// flag, so the relaunch does not re-trigger Gatekeeper.
 public struct AppSelfUpdater: Sendable {
     public static let appZipURL = URL(string: "https://github.com/NaztiRS/downbender/releases/latest/download/Downbender.zip")!
+    static let deferredCleanupMarkerFilename = ".app-update-engine-cleanup"
+    private static let deferredCleanupMarkerContents = Data("remove-yt-dlp-override-v1\n".utf8)
 
     let runner: ProcessRunning
     let installURL: URL
@@ -63,7 +65,7 @@ public struct AppSelfUpdater: Sendable {
         self.replaceInstalledApp = replaceInstalledApp
     }
 
-    /// Full pipeline: download → extract → validate → swap → engine cleanup.
+    /// Full pipeline: download → extract → validate → swap → deferred engine cleanup marker.
     public func update(
         session: URLSession = .shared,
         from url: URL = appZipURL,
@@ -130,9 +132,9 @@ public struct AppSelfUpdater: Sendable {
         return app
     }
 
-    /// Validates and swaps the new bundle with Foundation's safe-save operation, then drops the
-    /// Application Support engine copy: a stale override would shadow the fresh bundled engine
-    /// (BinaryLocator prefers it).
+    /// Validates and swaps the new bundle with Foundation's safe-save operation. The running
+    /// process may still need its Application Support engine, so cleanup is deferred until the
+    /// next launch rather than deleting that executable out from under the old process.
     public func install(appAt newApp: URL) async throws {
         let plist = newApp.appendingPathComponent("Contents/Info.plist")
         let found = (NSDictionary(contentsOf: plist)?["CFBundleIdentifier"]) as? String
@@ -152,7 +154,39 @@ public struct AppSelfUpdater: Sendable {
         // A single safe-save replacement removes the crash window created by moving the
         // installed app away first. If replacement fails, the original remains at installURL.
         try replaceInstalledApp(installURL, newApp)
-        try? FileManager.default.removeItem(at: appSupportDirectory.appendingPathComponent("yt-dlp_macos"))
+        // The swap is already committed. A marker write failure must not report the irreversible
+        // install as failed; in that rare case the existing engine override is simply preserved.
+        try? markDeferredCleanup()
+    }
+
+    /// Completes cleanup requested by a successful app swap. Call this once during the next
+    /// launch, before `BundledBinaries.locate`, so the updated bundle's engine wins. Removing the
+    /// marker last makes an interrupted cleanup retryable on a later launch.
+    public static func finishDeferredCleanup(
+        appSupportDirectory: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        let marker = deferredCleanupMarkerURL(appSupportDirectory: appSupportDirectory)
+        guard fileManager.fileExists(atPath: marker.path) else { return }
+        guard try Data(contentsOf: marker) == deferredCleanupMarkerContents else { return }
+
+        let engineOverride = appSupportDirectory.appendingPathComponent("yt-dlp_macos")
+        if fileManager.fileExists(atPath: engineOverride.path) {
+            try fileManager.removeItem(at: engineOverride)
+        }
+        try fileManager.removeItem(at: marker)
+    }
+
+    static func deferredCleanupMarkerURL(appSupportDirectory: URL) -> URL {
+        appSupportDirectory.appendingPathComponent(deferredCleanupMarkerFilename)
+    }
+
+    private func markDeferredCleanup(fileManager: FileManager = .default) throws {
+        try fileManager.createDirectory(at: appSupportDirectory, withIntermediateDirectories: true)
+        try Self.deferredCleanupMarkerContents.write(
+            to: Self.deferredCleanupMarkerURL(appSupportDirectory: appSupportDirectory),
+            options: .atomic
+        )
     }
 
     private static func replaceSafely(installed: URL, replacement: URL) throws {

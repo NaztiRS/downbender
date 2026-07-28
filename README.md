@@ -25,11 +25,13 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
 - Reorderable download queue with accessible progress and individual or batch pause, resume, and cancel controls.
 - Clipboard detection: copy a video link anywhere, confirm, download.
 - Drag links into the window to enqueue them, or drag a completed file from the queue into Finder.
-- Optional extension for sending videos from Chrome, Brave, Edge, or Chromium to Downbender.
+- Optional extension for sending videos from Google Chrome, Brave, Microsoft Edge, or Chromium
+  to Downbender.
 - Configurable file names for media downloads, with safe yt-dlp fields such as title, uploader, and upload date.
 - Live queue status in the menu bar and Dock, plus actionable completion notices; system banners are used when macOS permits them.
 - Self-contained: yt-dlp, FFmpeg and Deno ship inside the app. Nothing to install.
-- One-click updater for the download engine (yt-dlp) in Settings.
+- Optional automatic app updates that wait for you to restart, plus manual download-engine
+  updates in Settings.
 
 ## Requirements
 
@@ -69,21 +71,23 @@ row to reveal the file in Finder.
   to every video; **Maximum available** uses MKV so it can preserve whichever
   codec and resolution each entry offers.
 - **Age-restricted / members-only videos:** set **Settings → Privacy →
-  Browser cookies** to the browser where you're signed in. macOS may ask
+  Browser cookies** to an installed Google Chrome, Brave, Microsoft Edge,
+  Chromium, Safari, or Firefox profile where you're signed in. macOS may ask
   for permission once.
 - **File names:** use **Settings → General → File names** and choose a
   ready-made format with an instant example. Select **Custom…** for advanced
   yt-dlp fields and keep `%(ext)s` at the end. The setting applies to future
   media downloads, while direct files retain the name supplied by their server.
 - **Downloads suddenly failing?** YouTube changes constantly. Use
-  **Settings → Downloader (yt-dlp) → Check for updates** to update the
+  **Settings → Updates → Check for updates** to update the
   engine without reinstalling the app.
 
 ### Browser extension (manual install)
 
-No browser-store account is required. Open **Settings → Browser extension** and choose Google
-Chrome, Brave, Microsoft Edge, or Chromium from the install control. Downbender creates a temporary
-shortcut in Downloads and opens that browser's extension screen. Then:
+No browser-store account is required. Open **Settings → Browser extension**, choose Google
+Chrome, Brave, Microsoft Edge, or Chromium from the **Browser** menu, and click
+**Install extension**. Downbender creates a temporary shortcut in Downloads and opens that
+browser's extension screen. Then:
 
 1. Enable **Developer mode**.
 2. Click **Load unpacked**, choose **Downloads** in the sidebar and select

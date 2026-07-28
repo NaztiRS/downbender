@@ -136,9 +136,11 @@ private struct ForcedReplacementError: Error {}
         atPath: installed.deletingLastPathComponent().path
     )
     #expect(installedSiblings == ["Downbender.app"])
+    let cleanupMarker = AppSelfUpdater.deferredCleanupMarkerURL(appSupportDirectory: support)
+    #expect(!FileManager.default.fileExists(atPath: cleanupMarker.path))
 }
 
-@Test func installRemovesStaleEngineOverride() async throws {
+@Test func installDefersStaleEngineOverrideCleanupUntilNextLaunch() async throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     let installed = root.appendingPathComponent("Installed/Downbender.app")
@@ -158,8 +160,46 @@ private struct ForcedReplacementError: Error {}
     )
     try await updater.install(appAt: fresh)
 
-    // The new app ships a fresh engine; the Application Support override must not shadow it (BinaryLocator prefers it).
+    let cleanupMarker = AppSelfUpdater.deferredCleanupMarkerURL(appSupportDirectory: support)
+    // The old process may still launch yt-dlp before restart, so neither it nor the marker
+    // may disappear during the swap.
+    #expect(FileManager.default.fileExists(atPath: engine.path))
+    #expect(FileManager.default.fileExists(atPath: cleanupMarker.path))
+
+    try AppSelfUpdater.finishDeferredCleanup(appSupportDirectory: support)
+
+    // The new app performs this before BinaryLocator, so its bundled engine is selected.
     #expect(!FileManager.default.fileExists(atPath: engine.path))
+    #expect(!FileManager.default.fileExists(atPath: cleanupMarker.path))
+}
+
+@Test func deferredCleanupWithoutMarkerPreservesEngineOverride() throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let support = root.appendingPathComponent("Support")
+    let engine = support.appendingPathComponent("yt-dlp_macos")
+    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: engine)
+
+    try AppSelfUpdater.finishDeferredCleanup(appSupportDirectory: support)
+
+    #expect(FileManager.default.fileExists(atPath: engine.path))
+}
+
+@Test func deferredCleanupIgnoresUnrecognizedMarker() throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let support = root.appendingPathComponent("Support")
+    let engine = support.appendingPathComponent("yt-dlp_macos")
+    let marker = AppSelfUpdater.deferredCleanupMarkerURL(appSupportDirectory: support)
+    try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+    try Data("not-created-by-downbender".utf8).write(to: marker)
+    try Data("keep".utf8).write(to: engine)
+
+    try AppSelfUpdater.finishDeferredCleanup(appSupportDirectory: support)
+
+    #expect(FileManager.default.fileExists(atPath: engine.path))
+    #expect(FileManager.default.fileExists(atPath: marker.path))
 }
 
 @Test func extractBuildsDittoInvocation() async {

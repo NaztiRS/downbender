@@ -15,6 +15,14 @@ import Foundation
         cookiesBrowser: nil,
         runner: FakeProcessRunner(),
         defaults: defaults,
+        updater: UnifiedUpdater(
+            installedAppVersion: "1.0.0",
+            fetchLatestAppTag: { "v1.0.0" },
+            fetchEngineInstalled: { "2026.07.04" },
+            fetchEngineLatest: { "2026.07.04" },
+            updateEngine: { _ in },
+            updateApp: { _ in }
+        ),
         directSessionFactory: { FailingURLProtocol.session() }
     )
 }
@@ -37,6 +45,24 @@ import Foundation
     defer { defaults.removePersistentDomain(forName: suite) }
     defaults.set(9, forKey: AppModel.maxConcurrentKey)
     #expect(makeModel(defaults: defaults).maxConcurrent == 2)
+}
+
+@MainActor
+@Test func automaticAppUpdatesDefaultToOffAndPersistBothChoices() {
+    let suite = "sp-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let first = makeModel(defaults: defaults)
+    #expect(!first.automaticAppUpdatesEnabled)
+
+    first.automaticAppUpdatesEnabled = true
+    #expect(defaults.bool(forKey: AppModel.automaticAppUpdatesKey))
+    #expect(makeModel(defaults: defaults).automaticAppUpdatesEnabled)
+
+    first.automaticAppUpdatesEnabled = false
+    #expect(!defaults.bool(forKey: AppModel.automaticAppUpdatesKey))
+    #expect(!makeModel(defaults: defaults).automaticAppUpdatesEnabled)
 }
 
 @MainActor

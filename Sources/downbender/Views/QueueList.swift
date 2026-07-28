@@ -285,23 +285,13 @@ struct QueueList: View {
 }
 
 private struct BendingMark: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.continuousVisualEffectsAllowed) private var continuousVisualEffectsAllowed
-
     var body: some View {
-        if continuousVisualEffectsAllowed && !reduceMotion {
-            // This subtree is the original animation, unchanged. Removing it from the
-            // hierarchy tears down every repeatForever when the window cannot render.
-            AnimatedBendingMark()
-        } else {
-            StaticBendingMark()
-        }
+        AnimatedBendingMark()
     }
 }
 
 /// The original empty-state animation and all of its original visual constants.
 private struct AnimatedBendingMark: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animate = false
 
     var body: some View {
@@ -321,8 +311,7 @@ private struct AnimatedBendingMark: View {
                     .scaleEffect(animate ? 2.1 : 0.8)
                     .opacity(animate ? 0 : 0.5)
                     .animation(
-                        reduceMotion ? nil :
-                            .easeOut(duration: 4.4).repeatForever(autoreverses: false).delay(Double(i) * 1.1),
+                        .easeOut(duration: 4.4).repeatForever(autoreverses: false).delay(Double(i) * 1.1),
                         value: animate
                     )
             }
@@ -331,7 +320,7 @@ private struct AnimatedBendingMark: View {
                 .shadow(color: Theme.avatarGlow.opacity(0.4), radius: 24)
                 .offset(y: animate ? -5 : 5)
                 .animation(
-                    reduceMotion ? nil : .easeInOut(duration: 3.2).repeatForever(autoreverses: true),
+                    .easeInOut(duration: 3.2).repeatForever(autoreverses: true),
                     value: animate
                 )
         }
@@ -340,41 +329,6 @@ private struct AnimatedBendingMark: View {
     }
 
     /// Falls back to a drawn orb when the bundled PNG is missing (e.g. plain `swift run`).
-    @ViewBuilder private var iconOrb: some View {
-        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
-           let img = NSImage(contentsOf: url) {
-            Image(nsImage: img).resizable()
-        } else {
-            ZStack {
-                Circle().fill(RadialGradient(
-                    colors: [Color(hex: 0x18446F), Color(hex: 0x060E1A)],
-                    center: .init(x: 0.4, y: 0.35), startRadius: 4, endRadius: 70))
-                Image(systemName: "arrow.down")
-                    .font(.system(size: 40, weight: .bold))
-                    .foregroundStyle(Theme.avatarWave)
-            }
-        }
-    }
-}
-
-/// Matches the original reduced-motion resting state without installing any animation.
-private struct StaticBendingMark: View {
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Theme.avatarGlow.opacity(0.16))
-                .frame(width: 190, height: 190)
-                .blur(radius: 40)
-
-            iconOrb
-                .frame(width: 146, height: 146)
-                .shadow(color: Theme.avatarGlow.opacity(0.4), radius: 24)
-                .offset(y: -5)
-        }
-        .frame(height: 210)
-    }
-
-    /// Same fallback as the animated mark.
     @ViewBuilder private var iconOrb: some View {
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
            let img = NSImage(contentsOf: url) {

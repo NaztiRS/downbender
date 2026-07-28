@@ -3,11 +3,13 @@ import SwiftUI
 import DownbenderCore
 
 @MainActor
-private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
+final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     var model: AppModel?
     let notifier = DownloadNotifier()
     private weak var systemSurfaceQueue: SystemSurfaceQueueState?
     private var lastDockBadge: String?
+    private var relaunchRequested = false
+    private var relaunchBundlePath: String?
     var openMainWindowHandler: (() -> Void)? {
         didSet {
             guard shouldOpenMainWindowWhenReady, openMainWindowHandler != nil else { return }
@@ -34,6 +36,19 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
         let active = TerminationPolicy.interruptedCount(model.queue.items)
+
+        if relaunchRequested {
+            guard active > 0 else {
+                model.saveQueueNow()
+                return .terminateNow
+            }
+            Task { @MainActor in
+                await model.prepareForTermination()
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
+
         guard active > 0 else {
             model.saveQueueNow()
             return .terminateNow
@@ -54,6 +69,26 @@ private final class DownbenderAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_: Notification) {
         ChromeIntegrationInstaller.cleanUpTemporaryInstaller()
+        guard relaunchRequested, let path = relaunchBundlePath else { return }
+
+        // This callback runs only after termination has been approved and the queue has
+        // been saved. Passing the path as $1 avoids interpolating it into shell source.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c",
+            "sleep 0.7; exec /usr/bin/open \"$1\"",
+            "downbender-relaunch",
+            path,
+        ]
+        try? process.run()
+    }
+
+    func requestRelaunch() {
+        guard !relaunchRequested else { return }
+        relaunchRequested = true
+        relaunchBundlePath = Bundle.main.bundlePath
+        NSApp.terminate(nil)
     }
 
     func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
@@ -325,14 +360,22 @@ struct DownbenderApp: App {
         let fm = FileManager.default
         let support = Self.appSupportDirectory(fileManager: fm)
         ChromeIntegrationInstaller.prepareIntegration()
+        try? AppSelfUpdater.finishDeferredCleanup(appSupportDirectory: support, fileManager: fm)
         guard let binaries = BundledBinaries.locate(appSupportDirectory: support) else { return nil }
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let tmp = fm.temporaryDirectory.appendingPathComponent("Downbender")
         try? fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let defaults = UserDefaults.standard
+        let browserInventory = BrowserApplicationDetector.inventory()
+        let storedCookiesBrowser = defaults.string(forKey: AppModel.cookiesBrowserKey)
+        let cookiesBrowser = browserInventory.installedCookieBrowser(rawValue: storedCookiesBrowser)
+        if storedCookiesBrowser != nil, cookiesBrowser == nil {
+            defaults.removeObject(forKey: AppModel.cookiesBrowserKey)
+        }
         return AppModel(
             binaries: binaries, destination: downloads, tmpDirectory: tmp,
             appSupportDirectory: support,
-            cookiesBrowser: UserDefaults.standard.string(forKey: AppModel.cookiesBrowserKey),
+            cookiesBrowser: cookiesBrowser,
             notifier: appDelegate.notifier
         )
     }

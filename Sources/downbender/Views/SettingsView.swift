@@ -3,9 +3,10 @@ import DownbenderCore
 
 struct SettingsView: View {
     @Bindable var model: AppModel
-    @State private var updater: UnifiedUpdater?
     @State private var chromeIntegration: ChromeIntegrationState?
-    @State private var installingBrowser: ChromiumBrowser?
+    @State private var browserInventory = BrowserInventory(installed: [])
+    @State private var selectedBrowser: BrowserKind?
+    @State private var installingBrowser: BrowserKind?
 
     var body: some View {
         Form {
@@ -116,6 +117,7 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.muted)
                         }
                     }
+                    .toggleStyle(.switch)
                     .disabled(model.defaultQuality == nil)
                     .commandRow()
 
@@ -130,27 +132,35 @@ struct SettingsView: View {
             }
 
             Section {
-                VStack(alignment: .leading, spacing: 0) {
-                    Picker(selection: $model.cookiesBrowser) {
-                        Text("None").tag(String?.none)
-                        Text("Chrome").tag(String?("chrome"))
-                        Text("Safari").tag(String?("safari"))
-                        Text("Firefox").tag(String?("firefox"))
-                        Text("Edge").tag(String?("edge"))
-                        Text("Brave").tag(String?("brave"))
-                    } label: {
-                        Label("Browser cookies", systemImage: "lock.shield")
+                VStack(alignment: .leading, spacing: 12) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Browser cookies")
+                            Text("Use a signed-in browser for restricted videos.")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    } icon: {
+                        Image(systemName: "lock.shield")
+                            .foregroundStyle(Theme.accent)
                     }
-                    .commandRow()
 
-                    CommandRule()
+                    CommandRule(inset: 0)
 
-                    Text("Only needed for age-restricted or members-only videos. Downbender lets yt-dlp read cookies from the selected browser; macOS may ask for permission once.")
+                    Picker("Browser", selection: $model.cookiesBrowser) {
+                        Text("None").tag(BrowserKind?.none)
+                        ForEach(browserInventory.cookieBrowsers) { browser in
+                            Text(browser.displayName)
+                                .tag(BrowserKind?.some(browser))
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Text("Downbender lets yt-dlp read cookies from the selected browser; macOS may ask for permission once.")
                         .font(.caption)
                         .foregroundStyle(Theme.muted)
-                        .commandRow()
                 }
-                .commandPanel()
+                .commandPanel(padding: 14)
             } header: {
                 CommandSectionHeader(index: "02", title: "Privacy")
             }
@@ -160,7 +170,7 @@ struct SettingsView: View {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Downbender browser extension")
-                            Text("Send videos from Chrome, Brave, Edge, or Chromium")
+                            Text("Send videos from Google Chrome, Brave, Microsoft Edge, or Chromium")
                                 .font(.caption)
                                 .foregroundStyle(Theme.muted)
                         }
@@ -171,44 +181,36 @@ struct SettingsView: View {
 
                     CommandRule(inset: 0)
 
-                    if let message = chromeIntegration?.errorMessage {
-                        Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Theme.warning)
-                        Text(message)
-                            .font(.caption)
+                    let browsers = browserInventory.chromiumBrowsers.map(\.browserKind)
+                    if browsers.isEmpty {
+                        Label("Install a supported Chromium browser first", systemImage: "info.circle")
                             .foregroundStyle(Theme.muted)
-                            .textSelection(.enabled)
-                        if let browser = installingBrowser ?? ChromeIntegrationInstaller.installedBrowsers().first {
-                            Button("Try again") { beginBrowserInstallation(in: browser) }
-                                .buttonStyle(CommandButtonStyle(.primary))
-                        }
                     } else {
-                        if chromeIntegration?.isAvailable == true {
-                            let browsers = ChromeIntegrationInstaller.installedBrowsers()
-                            if browsers.isEmpty {
-                                Label("Install a supported Chromium browser first", systemImage: "info.circle")
-                                    .foregroundStyle(Theme.muted)
-                            } else if let browser = browsers.first, browsers.count == 1 {
-                                Button("Install for \(browser.displayName)") {
-                                    beginBrowserInstallation(in: browser)
-                                }
-                                .buttonStyle(CommandButtonStyle(.primary))
-                            } else {
-                                Menu("Install Browser Extension") {
-                                    ForEach(browsers, id: \.self) { browser in
-                                        Button(browser.displayName) {
-                                            beginBrowserInstallation(in: browser)
-                                        }
-                                    }
-                                }
-                                .menuStyle(.button)
-                                .buttonStyle(CommandButtonStyle(.primary))
+                        Picker("Browser", selection: browserSelection(for: browsers)) {
+                            ForEach(browsers, id: \.self) { browser in
+                                Text(browser.displayName)
+                                    .tag(browser)
                             }
+                        }
+                        .pickerStyle(.menu)
+                        .disabled(chromeIntegration?.isInstalling == true)
 
+                        if let message = chromeIntegration?.errorMessage {
+                            Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Theme.warning)
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                                .textSelection(.enabled)
+                            if let browser = resolvedBrowser(from: browsers) {
+                                Button("Try again") { beginBrowserInstallation(in: browser) }
+                                    .buttonStyle(CommandButtonStyle(.primary))
+                            }
+                        } else if chromeIntegration?.isAvailable == true {
                             if let integration = chromeIntegration, integration.isInstalling,
                                let shortcut = integration.temporaryShortcut {
                                 Text(
-                                    "In \(installingBrowser?.displayName ?? "your browser"), " +
+                                    "In \(installingBrowser?.displayName ?? resolvedBrowser(from: browsers)?.displayName ?? "your browser"), " +
                                         "choose Load unpacked and select “Downbender Extension Installer”."
                                 )
                                 .font(.caption)
@@ -225,6 +227,11 @@ struct SettingsView: View {
                                     }
                                     .buttonStyle(CommandButtonStyle(.danger))
                                 }
+                            } else if let browser = resolvedBrowser(from: browsers) {
+                                Button("Install extension") {
+                                    beginBrowserInstallation(in: browser)
+                                }
+                                .buttonStyle(CommandButtonStyle(.primary))
                             }
                         } else {
                             LabeledContent("Checking extension") {
@@ -240,11 +247,9 @@ struct SettingsView: View {
                 CommandSectionHeader(index: "03", title: "Browser extension")
             }
 
-            if let updater {
-                UpdatesSection(updater: updater, model: model)
-            }
+            UpdatesSection(updater: model.updater, model: model)
         }
-        .formStyle(.grouped)
+        .formStyle(CommandFormStyle())
         .scrollContentBackground(.hidden)
         .foregroundStyle(Theme.textPrimary)
         .tint(Theme.accent)
@@ -252,18 +257,10 @@ struct SettingsView: View {
         .preferredColorScheme(.dark)
         .frame(width: 500, height: 580)
         .task {
-            if chromeIntegration == nil {
-                chromeIntegration = ChromeIntegrationInstaller.status()
-            }
-            if updater == nil { updater = model.makeUnifiedUpdater() }
-            // Arrived from the "Update" banner: run the check automatically so the user doesn't re-click.
-            if model.checkUpdatesOnOpen {
-                model.checkUpdatesOnOpen = false
-                await updater?.check()
-            }
+            refreshBrowserState()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            chromeIntegration = ChromeIntegrationInstaller.status()
+            refreshBrowserState()
         }
     }
 
@@ -289,13 +286,15 @@ struct SettingsView: View {
         }
     }
 
-    private func beginBrowserInstallation(in browser: ChromiumBrowser) {
+    private func beginBrowserInstallation(in browser: BrowserKind) {
+        guard let chromiumBrowser = browser.chromiumBrowser else { return }
+        selectedBrowser = browser
         installingBrowser = browser
-        let state = ChromeIntegrationInstaller.beginInstallation(for: browser)
+        let state = ChromeIntegrationInstaller.beginInstallation(for: chromiumBrowser)
         chromeIntegration = state
         guard let shortcut = state.temporaryShortcut else { return }
         NSWorkspace.shared.activateFileViewerSelecting([shortcut])
-        openExtensionsPage(in: browser)
+        openExtensionsPage(in: chromiumBrowser)
     }
 
     private func openExtensionsPage(in browser: ChromiumBrowser) {
@@ -303,6 +302,34 @@ struct SettingsView: View {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-b", browser.applicationBundleIdentifier, browser.extensionsPage]
         try? process.run()
+    }
+
+    private func refreshBrowserState() {
+        let inventory = BrowserApplicationDetector.inventory()
+        browserInventory = inventory
+        chromeIntegration = ChromeIntegrationInstaller.status()
+
+        if let cookiesBrowser = model.cookiesBrowser, !inventory.installed.contains(cookiesBrowser) {
+            model.cookiesBrowser = nil
+        }
+
+        let extensionBrowsers = inventory.chromiumBrowsers.map(\.browserKind)
+        if let selectedBrowser, extensionBrowsers.contains(selectedBrowser) { return }
+        selectedBrowser = extensionBrowsers.first
+    }
+
+    private func resolvedBrowser(from browsers: [BrowserKind]) -> BrowserKind? {
+        if let selectedBrowser, browsers.contains(selectedBrowser) {
+            return selectedBrowser
+        }
+        return browsers.first
+    }
+
+    private func browserSelection(for browsers: [BrowserKind]) -> Binding<BrowserKind> {
+        Binding(
+            get: { resolvedBrowser(from: browsers) ?? .chrome },
+            set: { selectedBrowser = $0 }
+        )
     }
 }
 
@@ -523,22 +550,29 @@ private struct FileNameSettings: View {
 /// One check and one "Update now" cover both the app and the download engine (yt-dlp).
 private struct UpdatesSection: View {
     let updater: UnifiedUpdater
-    let model: AppModel
+    @Bindable var model: AppModel
     @State private var confirmingRestart = false
 
-    /// Downloads that would be lost when the app relaunches to finish updating.
+    /// Downloads that would be interrupted when the app relaunches to finish updating.
     private var activeDownloads: Int {
-        model.queue.items.filter { item in
-            switch item.state {
-            case .downloading, .queued, .merging, .paused: true
-            default: false
-            }
-        }.count
+        TerminationPolicy.interruptedCount(model.queue.items)
     }
 
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
+                Toggle(isOn: $model.automaticAppUpdatesEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Automatically update Downbender")
+                        Text("Installs new app versions automatically. You choose when to restart.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+                .toggleStyle(.switch)
+
+                CommandRule(inset: 0)
+
                 switch updater.phase {
                 case .idle:
                     Label {
@@ -553,7 +587,7 @@ private struct UpdatesSection: View {
                             .foregroundStyle(Theme.accent)
                     }
                     Button("Check for updates") {
-                        Task { await updater.check() }
+                        Task { await model.checkForUpdates() }
                     }
                     .buttonStyle(CommandButtonStyle(.secondary))
 
@@ -570,7 +604,7 @@ private struct UpdatesSection: View {
                     Label("You're up to date (v\(app) · engine \(engine))", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Theme.success)
                     Button("Check again") {
-                        Task { await updater.check() }
+                        Task { await model.checkForUpdates() }
                     }
                     .buttonStyle(CommandButtonStyle(.secondary))
 
@@ -602,8 +636,17 @@ private struct UpdatesSection: View {
                     UpdateProgressView(title: "Downloading Downbender", fraction: fraction)
 
                 case .readyToRestart:
-                    Label("Update installed", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Theme.success)
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Downbender was updated")
+                            Text("Restart whenever you're ready.")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
+                        }
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Theme.success)
+                    }
                     Button("Restart Downbender") {
                         if activeDownloads > 0 { confirmingRestart = true } else { relaunchApp() }
                     }
@@ -614,14 +657,14 @@ private struct UpdatesSection: View {
                         titleVisibility: .visible
                     ) {
                         Button(
-                            "Restart (cancels \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))",
+                            "Restart (pauses \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))",
                             role: .destructive
                         ) {
                             relaunchApp()
                         }
                         Button("Not now", role: .cancel) {}
                     } message: {
-                        Text("\(activeDownloads) download\(activeDownloads == 1 ? " is" : "s are") still in progress and will be cancelled when Downbender restarts.")
+                        Text("\(activeDownloads) download\(activeDownloads == 1 ? " is" : "s are") still in progress and will be paused before Downbender restarts.")
                     }
 
                 case .failed(let message):
@@ -632,7 +675,7 @@ private struct UpdatesSection: View {
                         .foregroundStyle(Theme.muted)
                         .textSelection(.enabled)
                     Button("Retry") {
-                        Task { await updater.check() }
+                        Task { await model.checkForUpdates() }
                     }
                     .buttonStyle(CommandButtonStyle(.secondary))
                 }
@@ -809,12 +852,23 @@ private extension View {
     }
 }
 
-/// Relaunches the (already swapped) bundle: a detached shell re-opens it right after this process exits.
-@MainActor private func relaunchApp() {
-    let path = Bundle.main.bundlePath
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/bin/sh")
-    process.arguments = ["-c", "sleep 0.7; /usr/bin/open \"\(path)\""]
-    try? process.run()
-    NSApp.terminate(nil)
+/// Removes the rounded grouped-form plates so the command panels are the only
+/// visible cards and keep their deliberately rectangular geometry.
+private struct CommandFormStyle: FormStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                configuration.content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+        }
+    }
+}
+
+/// Asks the app delegate to save/stop active work, terminate fully, and only then
+/// reopen the already-swapped bundle.
+@MainActor func relaunchApp() {
+    (NSApp.delegate as? DownbenderAppDelegate)?.requestRelaunch()
 }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Flat progress treatment. Indeterminate and finalizing motion remains visibility-aware.
+/// Flat progress treatment. Indeterminate and finalizing motion stays active unless paused.
 struct WaveProgress: View {
     var fraction: Double?
     var pulsing: Bool = false
@@ -8,8 +8,6 @@ struct WaveProgress: View {
     var updatesFrequently: Bool = false
     var height: CGFloat = 4
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.continuousVisualEffectsAllowed) private var continuousVisualEffectsAllowed
     @State private var sweep = false
     @State private var pulse = false
 
@@ -55,7 +53,7 @@ struct WaveProgress: View {
     }
 
     private var motionEnabled: Bool {
-        continuousVisualEffectsAllowed && !reduceMotion && !dimmed
+        !dimmed
     }
 
     private var motionConfiguration: MotionConfiguration {

@@ -11,6 +11,17 @@ struct ChromeIntegrationState {
     var isAvailable: Bool { extensionDirectory != nil && errorMessage == nil }
 }
 
+/// One detector feeds both browser pickers so labels, ordering, and installed-app
+/// filtering stay consistent.
+@MainActor
+enum BrowserApplicationDetector {
+    static func inventory(workspace: NSWorkspace = .shared) -> BrowserInventory {
+        BrowserInventory.detect {
+            workspace.urlForApplication(withBundleIdentifier: $0) != nil
+        }
+    }
+}
+
 @MainActor
 enum ChromeIntegrationInstaller {
     private static let extensionFolderName = "ChromeExtension"
@@ -104,9 +115,7 @@ enum ChromeIntegrationInstaller {
     }
 
     static func installedBrowsers() -> [ChromiumBrowser] {
-        ChromiumBrowser.allCases.filter {
-            NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0.applicationBundleIdentifier) != nil
-        }
+        BrowserApplicationDetector.inventory().chromiumBrowsers
     }
 
     private static func bundledExtensionDirectory() throws -> URL {

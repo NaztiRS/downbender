@@ -22,12 +22,22 @@ public final class UnifiedUpdater {
 
     public private(set) var phase: Phase = .idle
 
+    private enum ActiveOperation {
+        case checking
+        case manualUpdate
+        case automaticAppUpdate
+    }
+
     private let installedAppVersion: String
     private let fetchLatestAppTag: @Sendable () async throws -> String
     private let fetchEngineInstalled: @Sendable () async throws -> String
     private let fetchEngineLatest: @Sendable () async throws -> String
     private let updateEngine: @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
     private let updateApp: @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
+    @ObservationIgnored private var activeOperation: ActiveOperation?
+    /// If automatic updating is enabled while a manual check/update is suspended, the
+    /// operation already in flight finishes the request instead of racing a second one.
+    @ObservationIgnored private var automaticAppUpdateRequested = false
 
     public init(
         installedAppVersion: String,
@@ -48,6 +58,37 @@ public final class UnifiedUpdater {
     /// Queries both sides in parallel; one side failing (no release yet, endpoint down)
     /// doesn't kill the check — the working side still reports. Only a total failure becomes .failed.
     public func check() async {
+        guard activeOperation == nil, phase != .readyToRestart else { return }
+        activeOperation = .checking
+        defer { activeOperation = nil }
+
+        await performCheck()
+        if automaticAppUpdateRequested {
+            automaticAppUpdateRequested = false
+            activeOperation = .automaticAppUpdate
+            await installAvailableAppOnly()
+        }
+    }
+
+    /// Checks for updates and silently installs Downbender itself when a newer app exists.
+    /// Engine-only updates deliberately remain manual. Concurrent automatic calls coalesce,
+    /// while a request arriving during a manual check reuses that check's result.
+    public func checkAndInstallAppUpdate() async {
+        guard phase != .readyToRestart else { return }
+        switch activeOperation {
+        case nil:
+            activeOperation = .automaticAppUpdate
+            defer { activeOperation = nil }
+            await performCheck()
+            await installAvailableAppOnly()
+        case .checking, .manualUpdate:
+            automaticAppUpdateRequested = true
+        case .automaticAppUpdate:
+            return
+        }
+    }
+
+    private func performCheck() async {
         phase = .checking
         async let appTagResult = Result { try await fetchLatestAppTag() }
         async let engineInstalledResult = Result { try await fetchEngineInstalled() }
@@ -82,17 +123,25 @@ public final class UnifiedUpdater {
     }
 
     public func update() async {
+        guard activeOperation == nil, phase != .readyToRestart else { return }
+        activeOperation = .manualUpdate
+        defer { activeOperation = nil }
+
+        await performManualUpdate()
+        if automaticAppUpdateRequested {
+            automaticAppUpdateRequested = false
+            guard phase != .readyToRestart else { return }
+            activeOperation = .automaticAppUpdate
+            await performCheck()
+            await installAvailableAppOnly()
+        }
+    }
+
+    private func performManualUpdate() async {
         guard case let .available(appVersion, _, engineLatest) = phase else { return }
         do {
             if appVersion != nil {
-                phase = .workingOnApp(0)
-                try await updateApp { [weak self] fraction in
-                    Task { @MainActor in
-                        guard let self, case .workingOnApp(let current) = self.phase else { return }
-                        self.phase = .workingOnApp(Self.advancingProgress(current: current, reported: fraction))
-                    }
-                }
-                phase = .readyToRestart
+                try await installApp()
             } else if let engineLatest {
                 phase = .workingOnEngine(0)
                 try await updateEngine { [weak self] fraction in
@@ -106,6 +155,26 @@ public final class UnifiedUpdater {
         } catch {
             phase = .failed(error.localizedDescription)
         }
+    }
+
+    private func installAvailableAppOnly() async {
+        guard case .available(appVersion: .some, engineInstalled: _, engineLatest: _) = phase else { return }
+        do {
+            try await installApp()
+        } catch {
+            phase = .failed(error.localizedDescription)
+        }
+    }
+
+    private func installApp() async throws {
+        phase = .workingOnApp(0)
+        try await updateApp { [weak self] fraction in
+            Task { @MainActor in
+                guard let self, case .workingOnApp(let current) = self.phase else { return }
+                self.phase = .workingOnApp(Self.advancingProgress(current: current, reported: fraction))
+            }
+        }
+        phase = .readyToRestart
     }
 
     /// Progress callbacks can be noisy, late, or briefly unknown across redirects. Keep the

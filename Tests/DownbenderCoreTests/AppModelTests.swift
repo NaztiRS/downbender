@@ -166,7 +166,7 @@ private func probeFixtureJSON() throws -> String {
 @Test func probeUsesSelectedCookiesBrowser() async throws {
     let runner = FakeProcessRunner(stdoutLines: [try probeFixtureJSON()], exitCode: 0)
     let model = makeModel(runner: runner)
-    model.cookiesBrowser = "firefox"
+    model.cookiesBrowser = .firefox
 
     model.addURL("https://youtu.be/abc123")
     await waitWhileProbing(model.queue.items[0])
@@ -205,7 +205,7 @@ private func probeFixtureJSON() throws -> String {
         runner: FakeProcessRunner(),
         defaults: defaults
     )
-    model.cookiesBrowser = "brave"
+    model.cookiesBrowser = .brave
     #expect(defaults.string(forKey: AppModel.cookiesBrowserKey) == "brave")
     model.cookiesBrowser = nil
     #expect(defaults.string(forKey: AppModel.cookiesBrowserKey) == nil)

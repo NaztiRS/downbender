@@ -15,13 +15,23 @@ public final class AppModel {
     }
     /// Drives the first-run terms sheet; observable so the UI reacts (termsAccepted is defaults-backed).
     public var showTerms: Bool = false
-    /// Set by the "Update" banner so that opening Settings auto-runs the update check (saves a click).
-    public var checkUpdatesOnOpen: Bool = false
+
+    public static let automaticAppUpdatesKey = "automaticAppUpdatesEnabled"
+    /// When enabled, Downbender installs app updates but always leaves relaunching to the user.
+    public var automaticAppUpdatesEnabled: Bool = false {
+        didSet {
+            defaults.set(automaticAppUpdatesEnabled, forKey: Self.automaticAppUpdatesKey)
+            if automaticAppUpdatesEnabled, automaticAppUpdatesEnabled != oldValue {
+                requestAutomaticAppUpdate()
+            }
+        }
+    }
+
     public static let cookiesBrowserKey = "cookiesBrowser"
     /// Browser to borrow cookies from (nil = none); passed per invocation so a Settings change applies to the very next probe/download.
-    public var cookiesBrowser: String? {
+    public var cookiesBrowser: BrowserKind? {
         didSet {
-            if let cookiesBrowser { defaults.set(cookiesBrowser, forKey: Self.cookiesBrowserKey) }
+            if let cookiesBrowser { defaults.set(cookiesBrowser.rawValue, forKey: Self.cookiesBrowserKey) }
             else { defaults.removeObject(forKey: Self.cookiesBrowserKey) }
         }
     }
@@ -56,7 +66,9 @@ public final class AppModel {
         }
     }
     public let clipboard = ClipboardWatcher()
-    public let appUpdate = AppUpdateChecker()
+    /// Shared by the main window and Settings so update progress and restart readiness never disappear.
+    public let updater: UnifiedUpdater
+    public private(set) var dismissedAppUpdateVersion: String?
     public private(set) var queue: QueueViewModel!
 
     private let probe: ProbeService
@@ -65,22 +77,22 @@ public final class AppModel {
     private let directDownloader = DirectDownloadService()
     private let directSessionFactory: @Sendable () -> URLSession
     private let tmpDirectory: URL
-    private let appSupportDirectory: URL
-    private let ytdlpURL: URL
-    private let runner: ProcessRunning
     private let defaults: UserDefaults
     private let notifier: CompletionNotifying?
     private let queuePersistence: QueuePersistence
+    @ObservationIgnored private var automaticUpdateTask: Task<Void, Never>?
+    @ObservationIgnored private var didStartUpdateChecks = false
 
     public init(
         binaries: BundledBinaries,
         destination: URL,
         tmpDirectory: URL,
         appSupportDirectory: URL,
-        cookiesBrowser: String? = nil,
+        cookiesBrowser: BrowserKind? = nil,
         notifier: CompletionNotifying? = nil,
         runner: ProcessRunning = ProcessRunner(),
         defaults: UserDefaults = .standard,
+        updater: UnifiedUpdater? = nil,
         directSessionFactory: @escaping @Sendable () -> URLSession = { DirectDownloadService.makeSession() }
     ) {
         // Observers don't fire during init: restoring persisted values writes nothing back.
@@ -93,6 +105,7 @@ public final class AppModel {
         }
         let savedConcurrent = defaults.integer(forKey: Self.maxConcurrentKey)
         if (1...4).contains(savedConcurrent) { self.maxConcurrent = savedConcurrent }
+        self.automaticAppUpdatesEnabled = defaults.bool(forKey: Self.automaticAppUpdatesKey)
         self.defaultQuality = defaults.string(forKey: Self.defaultQualityKey).flatMap(DownloadFormat.init(id:))
         self.oneClickDownload = defaults.bool(forKey: Self.oneClickKey)
         self.fileNameTemplate = defaults.string(forKey: Self.fileNameTemplateKey)
@@ -106,13 +119,38 @@ public final class AppModel {
             defaults.removeObject(forKey: Self.lastCustomFileNameTemplateKey)
         }
         self.tmpDirectory = tmpDirectory
-        self.appSupportDirectory = appSupportDirectory
-        self.ytdlpURL = binaries.ytdlp
-        self.runner = runner
         self.defaults = defaults
         self.notifier = notifier
         self.cookiesBrowser = cookiesBrowser
         self.queuePersistence = QueuePersistence(fileURL: appSupportDirectory.appendingPathComponent("queue.json"))
+        if let updater {
+            self.updater = updater
+        } else {
+            let engine = UpdaterService(appSupportDirectory: appSupportDirectory)
+            let selfUpdater = AppSelfUpdater(
+                runner: runner,
+                installURL: Bundle.main.bundleURL,
+                expectedBundleID: Bundle.main.bundleIdentifier ?? "com.naztirs.downbender",
+                appSupportDirectory: appSupportDirectory
+            )
+            let ytdlpURL = binaries.ytdlp
+            self.updater = UnifiedUpdater(
+                installedAppVersion: Downbender.version,
+                fetchLatestAppTag: {
+                    try await UpdaterService.latestVersion(from: AppUpdateChecker.releaseAPIURL)
+                },
+                fetchEngineInstalled: {
+                    try await engine.installedVersion(runner: runner, ytdlpURL: ytdlpURL)
+                },
+                fetchEngineLatest: { try await UpdaterService.latestVersion() },
+                updateEngine: { onProgress in
+                    _ = try await engine.updateYtdlp(onProgress: onProgress)
+                },
+                updateApp: { onProgress in
+                    try await selfUpdater.update(onProgress: onProgress)
+                }
+            )
+        }
         self.probe = ProbeService(runner: runner, ytdlpURL: binaries.ytdlp, denoURL: binaries.deno)
         let download = DownloadService(
             runner: runner, ytdlpURL: binaries.ytdlp, ffmpegDirectory: binaries.ffmpegDirectory,
@@ -130,7 +168,7 @@ public final class AppModel {
                 await coordinator.run(
                     item,
                     tmpDirectory: tmpDirectory,
-                    cookiesBrowser: self?.cookiesBrowser
+                    cookiesBrowser: self?.cookiesBrowser?.rawValue
                 )
             case .directFile, .ambiguous:
                 await directCoordinator.run(item, tmpDirectory: tmpDirectory,
@@ -317,7 +355,11 @@ public final class AppModel {
             let maxAttempts = 3
             for attempt in 1...maxAttempts {
                 do {
-                    let outcome = try await self?.probe.probe(url: item.url, cookiesBrowser: self?.cookiesBrowser, expandPlaylist: item.expandsPlaylist)
+                    let outcome = try await self?.probe.probe(
+                        url: item.url,
+                        cookiesBrowser: self?.cookiesBrowser?.rawValue,
+                        expandPlaylist: item.expandsPlaylist
+                    )
                     guard let outcome, !Task.isCancelled else { return }
                     switch outcome {
                     case .video(let result):
@@ -415,7 +457,7 @@ public final class AppModel {
         let entries = analysis.playlist.entries.prefix(8)
         guard !entries.isEmpty else { return }
         let probe = self.probe
-        let cookies = cookiesBrowser
+        let cookies = cookiesBrowser?.rawValue
         await withTaskGroup(of: (String, ProbeResult?).self) { group in
             let window = 3
             var nextIndex = 0
@@ -529,23 +571,38 @@ public final class AppModel {
         remove(item)
     }
 
-    public func makeUnifiedUpdater() -> UnifiedUpdater {
-        let engine = UpdaterService(appSupportDirectory: appSupportDirectory)
-        let selfUpdater = AppSelfUpdater(
-            runner: runner,
-            installURL: Bundle.main.bundleURL,
-            expectedBundleID: Bundle.main.bundleIdentifier ?? "com.naztirs.downbender",
-            appSupportDirectory: appSupportDirectory
-        )
-        let runner = self.runner
-        let ytdlpURL = self.ytdlpURL
-        return UnifiedUpdater(
-            installedAppVersion: Downbender.version,
-            fetchLatestAppTag: { try await UpdaterService.latestVersion(from: AppUpdateChecker.releaseAPIURL) },
-            fetchEngineInstalled: { try await engine.installedVersion(runner: runner, ytdlpURL: ytdlpURL) },
-            fetchEngineLatest: { try await UpdaterService.latestVersion() },
-            updateEngine: { onProgress in _ = try await engine.updateYtdlp(onProgress: onProgress) },
-            updateApp: { onProgress in try await selfUpdater.update(onProgress: onProgress) }
-        )
+    /// Starts exactly one launch check. The automatic path owns its task, so closing a
+    /// SwiftUI window cannot cancel an app update already in progress.
+    public func startUpdateChecks() {
+        guard !didStartUpdateChecks else { return }
+        didStartUpdateChecks = true
+        if automaticAppUpdatesEnabled {
+            requestAutomaticAppUpdate()
+        } else {
+            Task { await updater.check() }
+        }
+    }
+
+    /// A user-initiated refresh respects the switch too: app updates install automatically,
+    /// while engine-only updates remain available for the existing manual action.
+    public func checkForUpdates() async {
+        if automaticAppUpdatesEnabled {
+            await updater.checkAndInstallAppUpdate()
+        } else {
+            await updater.check()
+        }
+    }
+
+    public func dismissAppUpdate(version: String) {
+        dismissedAppUpdateVersion = version
+    }
+
+    private func requestAutomaticAppUpdate() {
+        guard automaticUpdateTask == nil else { return }
+        automaticUpdateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await updater.checkAndInstallAppUpdate()
+            automaticUpdateTask = nil
+        }
     }
 }

@@ -4,8 +4,9 @@ This extension is distributed unpacked inside Downbender. The app creates a temp
 `Downbender Extension Installer` shortcut in Downloads and registers the native-messaging helper
 for the selected Chromium browser when the user starts installation.
 
-Click **Install Browser Extension** in Downbender and choose Google Chrome, Brave, Microsoft Edge,
-or Chromium. After the app opens that browser's extensions page:
+In **Settings → Browser extension**, choose Google Chrome, Brave, Microsoft Edge, or Chromium
+from the **Browser** menu, then click **Install extension**. After Downbender opens that browser's
+extensions page:
 
 1. Enable **Developer mode**.
 2. Click **Load unpacked**.

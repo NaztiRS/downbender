@@ -6,11 +6,8 @@ struct RootView: View {
     @State var model: AppModel
     @State private var urlText = ""
     @State private var isDropTargeted = false
-    @State private var windowIsRenderable = false
-    @State private var lowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
+    @State private var confirmingUpdateRestart = false
     @Environment(\.openSettings) private var openSettings
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,15 +24,45 @@ struct RootView: View {
                         )
                     }
                 }
-            if let version = model.appUpdate.availableVersion, !model.appUpdate.dismissed {
+            if model.updater.phase == .readyToRestart {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.success)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Downbender was updated")
+                        Text("Restart when you're ready.")
+                            .foregroundStyle(Theme.muted)
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                    Button {
+                        if activeDownloads > 0 {
+                            confirmingUpdateRestart = true
+                        } else {
+                            relaunchApp()
+                        }
+                    } label: {
+                        Text("RESTART")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Theme.surface)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                }
+            } else if !model.automaticAppUpdatesEnabled,
+                      case let .available(appVersion, _, _) = model.updater.phase,
+                      let version = appVersion,
+                      model.dismissedAppUpdateVersion != version {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down.square.fill")
                         .foregroundStyle(Theme.accent)
                     Text("Downbender v\(version) is available")
                         .font(.system(size: 11, design: .monospaced))
                     Button {
-                        // Auto-run the update check on arrival so the user doesn't have to press it in Settings.
-                        model.checkUpdatesOnOpen = true
                         openSettings()
                     } label: {
                         Text("UPDATE")
@@ -45,7 +72,7 @@ struct RootView: View {
                     .buttonStyle(.plain)
                     Spacer()
                     Button {
-                        model.appUpdate.dismissed = true
+                        model.dismissAppUpdate(version: version)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                     }
@@ -95,18 +122,29 @@ struct RootView: View {
                 )
             }
         }
-        .task { await model.appUpdate.check() }
+        .task { model.startUpdateChecks() }
+        .confirmationDialog(
+            "Restart to finish updating?",
+            isPresented: $confirmingUpdateRestart,
+            titleVisibility: .visible
+        ) {
+            Button(
+                "Restart (pauses \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))",
+                role: .destructive
+            ) {
+                relaunchApp()
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text(
+                "\(activeDownloads) download\(activeDownloads == 1 ? " is" : "s are") " +
+                    "still in progress and will be paused before Downbender restarts."
+            )
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             model.clipboard.check(pasteboardString: NSPasteboard.general.string(forType: .string))
         }
-        .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange)) { _ in
-            lowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
-        }
         .background(AtmosphereBackground())
-        .background {
-            WindowRenderStateReader(isRenderable: $windowIsRenderable)
-                .frame(width: 0, height: 0)
-        }
         .frame(minWidth: 560, minHeight: 420)
         .dropDestination(for: DroppedWebContent.self) { items, _ in
             enqueueDropped(items.map(\.text))
@@ -142,14 +180,11 @@ struct RootView: View {
         .toolbarBackground(Theme.canvas, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .tint(Theme.accent)
-        .environment(\.continuousVisualEffectsAllowed, continuousVisualEffectsAllowed)
     }
 
-    private var continuousVisualEffectsAllowed: Bool {
-        scenePhase == .active
-            && windowIsRenderable
-            && !lowPowerModeEnabled
-            && !reduceMotion
+    /// Downloads that would be interrupted if the user accepts the restart banner.
+    private var activeDownloads: Int {
+        TerminationPolicy.interruptedCount(model.queue.items)
     }
 
     /// Never blocks: cards appear instantly and probes run in the background. Pasting a

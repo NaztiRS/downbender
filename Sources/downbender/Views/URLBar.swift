@@ -8,7 +8,7 @@ struct URLBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("ADD_RESOURCE")
+                Text("ADD RESOURCE")
                 Spacer()
                 Text("PASTE URL · PRESS RETURN")
             }
