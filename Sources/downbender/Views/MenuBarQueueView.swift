@@ -2,24 +2,67 @@ import AppKit
 import SwiftUI
 import DownbenderCore
 
+@MainActor
+struct DownbenderMenuBarIcon: View {
+    var size: CGFloat = 10
+
+    private static let image: NSImage = {
+        if let vectorURL = Bundle.main.url(
+            forResource: "DownbenderMenuBar",
+            withExtension: "svg"
+        ), let vectorImage = NSImage(contentsOf: vectorURL) {
+            // MenuBarExtra measures the NSImage's intrinsic AppKit size before
+            // applying SwiftUI's frame. Keep the vector representation, but give
+            // it status-item dimensions so macOS does not lay it out off-screen.
+            vectorImage.size = NSSize(width: 16, height: 16)
+            vectorImage.isTemplate = true
+            return vectorImage
+        }
+
+        let resourceURLs = [
+            Bundle.main.url(
+                forResource: "icon-32",
+                withExtension: "png",
+                subdirectory: "ChromeExtension/icons"
+            ),
+            Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
+        ]
+
+        return resourceURLs
+            .compactMap { $0 }
+            .compactMap(NSImage.init(contentsOf:))
+            .first ?? NSApplication.shared.applicationIconImage
+    }()
+
+    var body: some View {
+        Image(nsImage: Self.image)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
 struct MenuBarQueueLabel: View {
     @Bindable var systemSurfaceQueue: SystemSurfaceQueueState
 
     var body: some View {
         let summary = systemSurfaceQueue.snapshot
-        Group {
-            if summary.activeCount > 0 {
-                Label(activeLabel(summary), systemImage: "arrow.down.circle.fill")
-            } else if summary.pausedCount > 0 {
-                Label("\(summary.pausedCount)", systemImage: "pause.circle")
-            } else if summary.failedCount > 0 {
-                Label("\(summary.failedCount)", systemImage: "exclamationmark.triangle")
-            } else {
-                Label("Downbender", systemImage: "arrow.down.circle")
-            }
+        Label {
+            Text(statusLabel(summary))
+        } icon: {
+            DownbenderMenuBarIcon()
         }
         .accessibilityLabel("Downbender")
         .accessibilityValue(accessibilityStatus(summary))
+    }
+
+    private func statusLabel(_ summary: QueueActivitySnapshot) -> String {
+        if summary.activeCount > 0 { return activeLabel(summary) }
+        if summary.pausedCount > 0 { return "\(summary.pausedCount)" }
+        if summary.failedCount > 0 { return "\(summary.failedCount)" }
+        return "Downbender"
     }
 
     private func activeLabel(_ summary: QueueActivitySnapshot) -> String {
@@ -79,9 +122,7 @@ struct MenuBarQueueView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: summary.activeCount > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
-                .font(.title2)
-                .foregroundStyle(Theme.accent)
+            DownbenderMenuBarIcon(size: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Downbender").font(.headline)
                 Text(summaryText).font(.caption).foregroundStyle(.secondary)

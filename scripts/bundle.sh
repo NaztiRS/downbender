@@ -85,6 +85,11 @@ if [ -f "$ICON_SRC" ]; then
   rm -rf "$ICON_TMP"
 fi
 
+MENU_BAR_ICON_SRC="docs/assets/AppIcon.svg"
+if [ -f "$MENU_BAR_ICON_SRC" ]; then
+  cp "$MENU_BAR_ICON_SRC" "$APP/Contents/Resources/DownbenderMenuBar.svg"
+fi
+
 for b in yt-dlp_macos ffmpeg ffprobe deno; do
   [ -f "$APP/Contents/Resources/$b" ] && codesign --force --sign - "$APP/Contents/Resources/$b"
 done

@@ -269,7 +269,11 @@ struct DownbenderApp: App {
             if model != nil {
                 MenuBarQueueLabel(systemSurfaceQueue: systemSurfaceQueue)
             } else {
-                Label("Downbender", systemImage: "arrow.down.circle")
+                Label {
+                    Text("Downbender")
+                } icon: {
+                    DownbenderMenuBarIcon()
+                }
             }
         }
         .menuBarExtraStyle(.window)
