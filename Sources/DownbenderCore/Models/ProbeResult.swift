@@ -35,10 +35,10 @@ extension ProbeResult: Identifiable {
 public extension ProbeResult {
     /// What downloading this video at `format` would roughly weigh: mirrors the selector's
     /// `height<=H` fallback by sizing the best listed quality at or below the request.
-    /// Never invents — nil when that quality carries no size (and always for MP3).
+    /// Never invents — nil when that quality carries no size (and always for extracted audio).
     func approxDownloadSize(for format: DownloadFormat) -> Int64? {
         switch format {
-        case .audioMP3:
+        case .audioMP3, .audioM4A, .audioOpus:
             return nil
         case .maximumVideo:
             let highest = availableFormats.compactMap { fmt -> Int? in
@@ -67,28 +67,33 @@ public extension ProbeResult {
     /// The listed format closest to `preferred`, mirroring the download selector's `height<=H`
     /// fallback: exact or tallest below the request. A ceiling is never exceeded; nil asks
     /// the caller to show the panel when every available video is taller than the preference.
-    /// MP3 is returned only when it is the sole kind of offer.
+    /// Audio is returned only when it is the sole kind of offer.
     func closestMatch(to preferred: DownloadFormat) -> DownloadFormat? {
         switch preferred {
-        case .audioMP3:
-            return .audioMP3
+        case .audioMP3, .audioM4A, .audioOpus:
+            return availableFormats.contains(preferred) ? preferred : nil
         case .maximumVideo:
             let highest = availableFormats.compactMap { fmt -> Int? in
                 guard case .video(let h) = fmt else { return nil }
                 return h
             }.max()
             if let highest { return .video(height: highest) }
-            return availableFormats.contains(.audioMP3) ? .audioMP3 : nil
+            return fallbackAudioFormat
         case .video(let requested):
             let heights = availableFormats.compactMap { fmt -> Int? in
                 guard case .video(let h) = fmt else { return nil }
                 return h
             }
             if heights.isEmpty {
-                return availableFormats.contains(.audioMP3) ? .audioMP3 : nil
+                return fallbackAudioFormat
             }
             let below = heights.filter { $0 <= requested }
             return below.max().map { .video(height: $0) }
         }
+    }
+
+    private var fallbackAudioFormat: DownloadFormat? {
+        if availableFormats.contains(.audioMP3) { return .audioMP3 }
+        return availableFormats.first(where: \.isAudio)
     }
 }

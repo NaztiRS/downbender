@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 
 require("./url-utils.js");
 
-const { canonicalDownloadURL, singleVideoDownloadURL } = globalThis.DownbenderURLs;
+const { canonicalDownloadURL, looksLikeDirectMedia, singleVideoDownloadURL } = globalThis.DownbenderURLs;
 
 assert.equal(
   canonicalDownloadURL("https://www.youtube.com/watch?v=video123&list=RDvideo123&index=4&start_radio=1"),
@@ -46,5 +46,8 @@ assert.equal(singleVideoDownloadURL("https://www.youtube.com/embed/videoseries?l
 assert.equal(singleVideoDownloadURL("https://www.youtube.com/playlist?list=PLhuge"), null);
 assert.equal(singleVideoDownloadURL("https://www.youtube.com/feed/subscriptions"), null);
 assert.equal(singleVideoDownloadURL("https://vimeo.com/123"), "https://vimeo.com/123");
+assert.equal(looksLikeDirectMedia("https://cdn.example.com/track.m4a?token=abc"), true);
+assert.equal(looksLikeDirectMedia("https://cdn.example.com/track.opus"), true);
+assert.equal(looksLikeDirectMedia("https://example.com/listen"), false);
 
 console.log("extension URL tests passed");

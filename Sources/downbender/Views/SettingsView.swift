@@ -93,8 +93,10 @@ struct SettingsView: View {
                             Text(DownloadFormat.video(height: 360).preferenceLabel)
                                 .tag(DownloadFormat?.some(.video(height: 360)))
                             Divider()
-                            Text(DownloadFormat.audioMP3.preferenceLabel)
-                                .tag(DownloadFormat?.some(.audioMP3))
+                            ForEach(DownloadFormat.audioFormats) { format in
+                                Text(format.preferenceLabel)
+                                    .tag(DownloadFormat?.some(format))
+                            }
                         } label: {
                             Label("Default quality", systemImage: "slider.horizontal.3")
                         }
@@ -284,7 +286,11 @@ struct SettingsView: View {
         case .video(let height):
             return "Uses the closest available resolution at or below \(height)p · MP4 through 1080p, MKV above."
         case .audioMP3:
-            return "Extracts the audio as an MP3 file."
+            return "Extracts audio as MP3 · works with nearly every player."
+        case .audioM4A:
+            return "Extracts audio as M4A · a good fit for Apple apps and devices."
+        case .audioOpus:
+            return "Extracts audio as Opus · efficient modern audio; some older apps may not support it."
         }
     }
 

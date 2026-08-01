@@ -178,17 +178,28 @@ private func value(after flag: String, in arguments: [String]) -> String? {
     }
 }
 
-@Test func audioExtractsMP3() {
-    let a = args(.audioMP3)
-    #expect(a.contains("-x"))
-    #expect(a.contains("mp3"))
-    #expect(a.contains("--audio-format"))
+@Test func audioFormatsUseExactExtractionArguments() {
+    let cases: [(DownloadFormat, name: String, selector: String, quality: String)] = [
+        (.audioMP3, "mp3", "ba/b", "0"),
+        (.audioM4A, "m4a", "ba[ext=m4a]/ba/b", "192K"),
+        (.audioOpus, "opus", "ba[acodec^=opus]/ba/b", "160K"),
+    ]
 
-    guard let sortFlagIndex = a.firstIndex(of: "-S") else {
-        Issue.record("missing -S")
-        return
+    for (format, expectedName, expectedSelector, expectedQuality) in cases {
+        let a = args(format)
+        #expect(value(after: "-f", in: a) == expectedSelector)
+        #expect(a.contains("-x"))
+        #expect(value(after: "--audio-format", in: a) == expectedName)
+        #expect(value(after: "--audio-quality", in: a) == expectedQuality)
+        #expect(!a.contains("--merge-output-format"))
+        #expect(!a.contains("--remux-video"))
+
+        guard let sortFlagIndex = a.firstIndex(of: "-S") else {
+            Issue.record("missing -S for \(expectedName)")
+            continue
+        }
+        #expect(a[sortFlagIndex + 1] == "res,fps,proto,lang,br")
     }
-    #expect(a[sortFlagIndex + 1] == "res,fps,proto,lang,br")
 }
 
 @Test func includesDenoRuntimeAndCookiesFlagsWhenProvided() {
@@ -220,19 +231,24 @@ private func value(after flag: String, in arguments: [String]) -> String? {
 }
 
 /// Sites without a separate audio-only format (e.g. archive.org): `ba/b` falls back to the best muxed file.
-@Test func mp3SelectorFallsBackToMuxedFormats() {
-    let args = DownloadArgsBuilder.arguments(
-        url: "https://archive.org/details/x",
-        format: .audioMP3,
-        destination: URL(fileURLWithPath: "/tmp/dest"),
-        tmpDirectory: URL(fileURLWithPath: "/tmp/work"),
-        ffmpegDirectory: URL(fileURLWithPath: "/ff")
-    )
-    guard let fIndex = args.firstIndex(of: "-f") else {
-        Issue.record("missing -f")
-        return
+@Test func audioSelectorsFallBackToMuxedFormats() {
+    let selectors: [(DownloadFormat, String)] = [
+        (.audioMP3, "ba/b"),
+        (.audioM4A, "ba[ext=m4a]/ba/b"),
+        (.audioOpus, "ba[acodec^=opus]/ba/b"),
+    ]
+    for (format, expectedSelector) in selectors {
+        let arguments = DownloadArgsBuilder.arguments(
+            url: "https://archive.org/details/x",
+            format: format,
+            destination: URL(fileURLWithPath: "/tmp/dest"),
+            tmpDirectory: URL(fileURLWithPath: "/tmp/work"),
+            ffmpegDirectory: URL(fileURLWithPath: "/ff")
+        )
+        let selector = value(after: "-f", in: arguments)
+        #expect(selector == expectedSelector)
+        #expect(selector?.hasSuffix("ba/b") == true)
     }
-    #expect(args[fIndex + 1] == "ba/b")
 }
 
 // MARK: - Subtitles
@@ -263,13 +279,15 @@ private func value(after flag: String, in arguments: [String]) -> String? {
     }
 }
 
-@Test func subtitleFlagsAbsentByDefaultAndForMP3() {
+@Test func subtitleFlagsAbsentByDefaultAndForAudio() {
     #expect(!args(.video(height: 1080)).contains("--embed-subs"))
     #expect(!args(.video(height: 1440)).contains("--embed-subs"))
     #expect(!args(.maximumVideo).contains("--embed-subs"))
-    let mp3 = args(.audioMP3, includeSubtitles: true)
-    #expect(!mp3.contains("--embed-subs"))
-    #expect(!mp3.contains("--sub-langs"))
+    for format in DownloadFormat.audioFormats {
+        let audio = args(format, includeSubtitles: true)
+        #expect(!audio.contains("--embed-subs"))
+        #expect(!audio.contains("--sub-langs"))
+    }
 }
 
 @Test func argumentsIncludeSocketTimeout() {

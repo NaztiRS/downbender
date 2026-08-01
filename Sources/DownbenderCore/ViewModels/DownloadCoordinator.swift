@@ -84,7 +84,7 @@ public final class DownloadCoordinator {
                     }
                 )
 
-                // Delivered path recorded for ALL formats (DBPATH is printed for MP3 too): enables "reveal in Finder".
+                // Delivered path is recorded for every format, including extracted audio.
                 if let deliveredURL { item.deliveredFileURL = deliveredURL }
 
                 // Honesty check: confirm exact requests and report the actual dimensions for Maximum.
@@ -103,7 +103,7 @@ public final class DownloadCoordinator {
                         if let dims = await inspect(deliveredURL) {
                             item.deliveredNote = "\(dims.width)×\(dims.height)"
                         }
-                    case .audioMP3:
+                    case .audioMP3, .audioM4A, .audioOpus:
                         break
                     }
                 }

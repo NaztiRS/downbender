@@ -49,7 +49,7 @@ public enum FormatParser {
 
         // Same nil-vs-"none" rule: unknown acodec on a muxed file usually means audio exists ("ba/b" extracts it).
         let hasAudio = raw.formats.contains { $0.acodec != "none" }
-        if hasAudio { formats.append(.audioMP3) }
+        if hasAudio { formats.append(contentsOf: DownloadFormat.audioFormats) }
 
         let approxSizeBytes = computeApproxSizeBytes(raw.formats, heights: heights)
 

@@ -71,7 +71,7 @@ public struct DownloadService: Sendable {
         // bv*+ba downloads 2 files, audio-only 1; the tracker fuses the phases into one monotonic bar.
         let tracker = UnifiedProgressTracker(
             expectedTotalBytes: expectedTotalBytes,
-            expectedPhases: format == .audioMP3 ? 1 : 2
+            expectedPhases: format.isAudio ? 1 : 2
         )
         let deliveredPath = Accumulator()
         let monitor = ActivityMonitor()

@@ -508,8 +508,10 @@ private func playlistFixtureJSON() throws -> String {
     // 3 videos × 30 MB over 3 × 212 s = 141509.43… B/s → × 450 s of playlist.
     let measured = Int64(Double(3 * 30_000_000) / (3 * 212.0) * 450.0)
     #expect(analysis.estimatedTotalBytes(for: .video(height: 720)) == measured)
-    // MP3 stays on the nominal rate (per-video sizes never cover MP3): 450 s × 30 KB/s.
+    // Extracted audio stays on nominal rates because per-video sizes never cover conversions.
     #expect(analysis.estimatedTotalBytes(for: .audioMP3) == 13_500_000)
+    #expect(analysis.estimatedTotalBytes(for: .audioM4A) == 10_800_000)
+    #expect(analysis.estimatedTotalBytes(for: .audioOpus) == 9_000_000)
 
     // Accepting attaches what the calibration already learned to each queued item.
     model.acceptPlaylist(analysis.playlist, format: .video(height: 720), includeSubtitles: false)
@@ -521,10 +523,13 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
-@Test func playlistNominalRatesCoverHighAndMaximumVideo() {
+@Test func playlistNominalRatesCoverVideoAndAudioOutputs() {
     #expect(PlaylistAnalysis.nominalRate(for: .video(height: 1440)) == 750_000)
     #expect(PlaylistAnalysis.nominalRate(for: .video(height: 2160)) == 1_500_000)
     #expect(PlaylistAnalysis.nominalRate(for: .maximumVideo) == 1_500_000)
+    #expect(PlaylistAnalysis.nominalRate(for: .audioMP3) == 30_000)
+    #expect(PlaylistAnalysis.nominalRate(for: .audioM4A) == 24_000)
+    #expect(PlaylistAnalysis.nominalRate(for: .audioOpus) == 20_000)
 
     let analysis = PlaylistAnalysis(
         playlist: PlaylistProbe(
@@ -684,6 +689,49 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 // MARK: - Subtitles
+
+@MainActor
+@Test func choosingAudioClearsUnsupportedSubtitleRequest() {
+    let model = makeModel(runner: FakeProcessRunner(exitCode: 0))
+    model.queue.setMaxConcurrent(0)
+
+    for format in DownloadFormat.audioFormats {
+        let item = DownloadItem(
+            url: "https://youtu.be/audio-\(format.id)",
+            title: format.label,
+            destination: URL(fileURLWithPath: "/tmp/dest"),
+            state: .readyToChoose
+        )
+        model.queue.add(item)
+
+        model.choose(format, includeSubtitles: true, for: item)
+
+        #expect(item.format == format)
+        #expect(item.includeSubtitles == false)
+    }
+}
+
+@MainActor
+@Test func acceptingAudioPlaylistClearsUnsupportedSubtitleRequest() {
+    let model = makeModel(runner: FakeProcessRunner(exitCode: 0))
+    model.queue.setMaxConcurrent(0)
+
+    for format in DownloadFormat.audioFormats {
+        let playlist = PlaylistProbe(
+            title: format.label,
+            entries: [
+                PlaylistEntry(
+                    url: "https://youtu.be/playlist-\(format.id)",
+                    title: format.label
+                ),
+            ]
+        )
+        model.acceptPlaylist(playlist, format: format, includeSubtitles: true)
+    }
+
+    #expect(model.queue.items.map(\.format) == DownloadFormat.audioFormats.map { Optional($0) })
+    #expect(model.queue.items.allSatisfy { $0.includeSubtitles == false })
+}
 
 @MainActor
 @Test func chooseWithSubtitlesDownloadsWithEmbedFlags() async throws {

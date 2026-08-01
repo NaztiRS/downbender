@@ -94,6 +94,20 @@ public enum DownloadArgsBuilder {
             // "ba/b": prefer audio-only; on muxed-only sites (e.g. archive.org) fall back
             // to the best muxed file and let -x extract its audio.
             args += ["-f", "ba/b", "-x", "--audio-format", "mp3", "--audio-quality", "0"]
+        case .audioM4A:
+            // Prefer native M4A so the common path is a lossless remux. The explicit bitrate
+            // only governs sites whose source audio must be converted.
+            args += [
+                "-f", "ba[ext=m4a]/ba/b",
+                "-x", "--audio-format", "m4a", "--audio-quality", "192K",
+            ]
+        case .audioOpus:
+            // libopus does not support FFmpeg's generic qscale. A bitrate is predictable for
+            // fallback conversion; native Opus sources are extracted without re-encoding.
+            args += [
+                "-f", "ba[acodec^=opus]/ba/b",
+                "-x", "--audio-format", "opus", "--audio-quality", "160K",
+            ]
         }
 
         args.append(url)

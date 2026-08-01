@@ -94,7 +94,7 @@
   function looksLikeDirectMedia(value) {
     const url = parsedWebURL(value);
     return url !== null &&
-      /\.(?:m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|ogv|opus|wav|webm)$/i.test(url.pathname);
+      /\.(?:m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|ogv|opus|wav|webm)$/i.test(url.pathname);
   }
 
   globalThis.DownbenderURLs = Object.freeze({

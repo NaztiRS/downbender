@@ -13,7 +13,12 @@ private func freshFile() -> URL {
     #expect(DownloadFormat(id: "vmax") == .maximumVideo)
     #expect(DownloadFormat(id: "v1080") == .video(height: 1080))
     #expect(DownloadFormat(id: "v2160") == .video(height: 2160))
+    #expect(DownloadFormat.audioMP3.id == "mp3")
+    #expect(DownloadFormat.audioM4A.id == "m4a")
+    #expect(DownloadFormat.audioOpus.id == "opus")
     #expect(DownloadFormat(id: "mp3") == .audioMP3)
+    #expect(DownloadFormat(id: "m4a") == .audioM4A)
+    #expect(DownloadFormat(id: "opus") == .audioOpus)
     #expect(DownloadFormat(id: "v0") == nil)
     #expect(DownloadFormat(id: "v-1") == nil)
     #expect(DownloadFormat(id: "junk") == nil)
@@ -29,6 +34,10 @@ private func freshFile() -> URL {
     #expect(DownloadFormat.video(height: 1440).containerLabel == "MKV")
     #expect(DownloadFormat.video(height: 1080).containerLabel == "MP4")
     #expect(DownloadFormat.audioMP3.containerLabel == "MP3")
+    #expect(DownloadFormat.audioM4A.containerLabel == "M4A")
+    #expect(DownloadFormat.audioOpus.containerLabel == "Opus")
+    #expect(DownloadFormat.audioFormats == [.audioMP3, .audioM4A, .audioOpus])
+    #expect(DownloadFormat.audioFormats.allSatisfy { $0.isAudio })
 }
 
 @MainActor
@@ -53,6 +62,32 @@ private func freshFile() -> URL {
     let restored = loaded[0].makeItem()
     #expect(restored.state == .paused)
     #expect(restored.format == .maximumVideo)
+}
+
+@MainActor
+@Test func audioFormatsRoundTripThroughVersionOneQueue() {
+    let file = freshFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let store = QueuePersistence(fileURL: file)
+    let formats: [DownloadFormat] = [.audioMP3, .audioM4A, .audioOpus]
+    let items = formats.enumerated().map { index, format in
+        DownloadItem(
+            url: "https://youtu.be/audio-\(index)",
+            title: "Audio \(index)",
+            format: format,
+            destination: URL(fileURLWithPath: "/tmp/dest"),
+            state: .queued
+        )
+    }
+
+    store.saveNow(items)
+    let loaded = store.load()
+
+    #expect(QueuePersistence.currentVersion == 1)
+    #expect(loaded.map(\.formatID) == ["mp3", "m4a", "opus"])
+    let restored = loaded.map { $0.makeItem() }
+    #expect(restored.map(\.format) == formats.map { Optional($0) })
+    #expect(restored.allSatisfy { $0.state == .paused })
 }
 
 @MainActor

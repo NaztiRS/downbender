@@ -80,6 +80,34 @@ import Foundation
     #expect(delivered?.path == "/tmp/out/video.mp4")
 }
 
+@Test func allAudioOutputsUseOneProgressPhaseAndReturnTheirFinalExtension() async throws {
+    for format in DownloadFormat.audioFormats {
+        let path = "/tmp/out/track.\(format.id)"
+        let runner = FakeProcessRunner(stdoutLines: [
+            "[download] Destination: /tmp/work/source.webm",
+            "DBPROG  50.0% NA NA 1.0MiB/s 00:01",
+            "DBPATH \(path)",
+        ], exitCode: 0)
+        let service = DownloadService(
+            runner: runner,
+            ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"),
+            ffmpegDirectory: URL(fileURLWithPath: "/app/ff")
+        )
+        let sink = FractionSink()
+
+        let delivered = try await service.download(
+            url: "https://youtu.be/abc123",
+            format: format,
+            destination: URL(fileURLWithPath: "/tmp/dest"),
+            tmpDirectory: URL(fileURLWithPath: "/tmp/work"),
+            onProgress: { sink.append($0.fraction) }
+        )
+
+        #expect(sink.values == [0.5])
+        #expect(delivered?.path == path)
+    }
+}
+
 @Test func downloadServiceThrowsOnFailure() async {
     let runner = FakeProcessRunner(stderr: "ERROR", exitCode: 1)
     let service = DownloadService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/x"), ffmpegDirectory: URL(fileURLWithPath: "/y"))

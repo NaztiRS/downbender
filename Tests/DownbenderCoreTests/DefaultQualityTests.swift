@@ -9,13 +9,23 @@ private func probeResult(formats: [DownloadFormat]) -> ProbeResult {
 @Test func closestMatchPrefersExactThenLowerThenLowest() {
     let probe = probeResult(formats: [
         .video(height: 2160), .video(height: 1440), .video(height: 1080),
-        .video(height: 720), .video(height: 360), .audioMP3,
+        .video(height: 720), .video(height: 360),
+        .audioMP3, .audioM4A, .audioOpus,
     ])
     #expect(probe.closestMatch(to: .maximumVideo) == .video(height: 2160))
     #expect(probe.closestMatch(to: .video(height: 720)) == .video(height: 720))
     #expect(probe.closestMatch(to: .video(height: 480)) == .video(height: 360)) // nearest below
     #expect(probe.closestMatch(to: .video(height: 240)) == nil) // never exceed a saved ceiling
     #expect(probe.closestMatch(to: .audioMP3) == .audioMP3)
+    #expect(probe.closestMatch(to: .audioM4A) == .audioM4A)
+    #expect(probe.closestMatch(to: .audioOpus) == .audioOpus)
+}
+
+@Test func closestAudioMatchRequiresThatOutputToBeAvailable() {
+    let mp3Only = probeResult(formats: [.audioMP3])
+    #expect(mp3Only.closestMatch(to: .audioMP3) == .audioMP3)
+    #expect(mp3Only.closestMatch(to: .audioM4A) == nil)
+    #expect(mp3Only.closestMatch(to: .audioOpus) == nil)
 }
 
 @Test func closestMatchNeverExceedsTheRequestedCeiling() {
@@ -26,6 +36,7 @@ private func probeResult(formats: [DownloadFormat]) -> ProbeResult {
 @Test func closestMatchWithoutVideoFallsBackToMP3OrNil() {
     #expect(probeResult(formats: [.audioMP3]).closestMatch(to: .video(height: 1080)) == .audioMP3)
     #expect(probeResult(formats: [.audioMP3]).closestMatch(to: .maximumVideo) == .audioMP3)
+    #expect(probeResult(formats: [.audioOpus]).closestMatch(to: .video(height: 1080)) == .audioOpus)
     #expect(probeResult(formats: []).closestMatch(to: .video(height: 1080)) == nil)
     #expect(probeResult(formats: []).closestMatch(to: .maximumVideo) == nil)
 }
@@ -81,6 +92,24 @@ private func probeFixtureJSON() throws -> String {
     let third = makeModel(runner: FakeProcessRunner(), defaults: defaults)
     #expect(third.defaultQuality == .maximumVideo)
     #expect(third.oneClickDownload == true)
+}
+
+@MainActor
+@Test func audioDefaultQualitiesPersistThroughTheirStableIDs() {
+    let suite = "dq-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let first = makeModel(runner: FakeProcessRunner(), defaults: defaults)
+
+    first.defaultQuality = .audioM4A
+    #expect(defaults.string(forKey: AppModel.defaultQualityKey) == "m4a")
+    let second = makeModel(runner: FakeProcessRunner(), defaults: defaults)
+    #expect(second.defaultQuality == .audioM4A)
+
+    second.defaultQuality = .audioOpus
+    #expect(defaults.string(forKey: AppModel.defaultQualityKey) == "opus")
+    let third = makeModel(runner: FakeProcessRunner(), defaults: defaults)
+    #expect(third.defaultQuality == .audioOpus)
 }
 
 @MainActor

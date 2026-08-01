@@ -4,12 +4,22 @@ public enum DownloadFormat: Hashable, Identifiable, Sendable {
     case maximumVideo
     case video(height: Int)
     case audioMP3
+    case audioM4A
+    case audioOpus
+
+    public static let audioFormats: [DownloadFormat] = [
+        .audioMP3,
+        .audioM4A,
+        .audioOpus,
+    ]
 
     public var id: String {
         switch self {
         case .maximumVideo: return "vmax"
         case .video(let h): return "v\(h)"
         case .audioMP3: return "mp3"
+        case .audioM4A: return "m4a"
+        case .audioOpus: return "opus"
         }
     }
 
@@ -23,6 +33,8 @@ public enum DownloadFormat: Hashable, Identifiable, Sendable {
             default: return "\(h)p"
             }
         case .audioMP3: return "Extract MP3"
+        case .audioM4A: return "Extract M4A"
+        case .audioOpus: return "Extract Opus"
         }
     }
 
@@ -32,6 +44,8 @@ public enum DownloadFormat: Hashable, Identifiable, Sendable {
         case .maximumVideo: return "MKV"
         case .video(let height): return height > 1080 ? "MKV" : "MP4"
         case .audioMP3: return "MP3"
+        case .audioM4A: return "M4A"
+        case .audioOpus: return "Opus"
         }
     }
 
@@ -42,19 +56,31 @@ public enum DownloadFormat: Hashable, Identifiable, Sendable {
             return label
         case .video:
             return "Up to \(label)"
-        case .audioMP3:
+        case .audioMP3, .audioM4A, .audioOpus:
             return label
         }
     }
+
+    public var isAudio: Bool {
+        switch self {
+        case .audioMP3, .audioM4A, .audioOpus: true
+        case .maximumVideo, .video: false
+        }
+    }
+
 }
 
 public extension DownloadFormat {
-    /// Inverse of `id` ("vmax" / "v1080" / "mp3"); used by queue persistence.
+    /// Inverse of `id` ("vmax" / "v1080" / "mp3" / "m4a" / "opus"); used by persistence.
     init?(id: String) {
         if id == "vmax" {
             self = .maximumVideo
         } else if id == "mp3" {
             self = .audioMP3
+        } else if id == "m4a" {
+            self = .audioM4A
+        } else if id == "opus" {
+            self = .audioOpus
         } else if id.hasPrefix("v"), let height = Int(id.dropFirst()), height > 0 {
             self = .video(height: height)
         } else {

@@ -14,7 +14,7 @@
 </p>
 
 *The last download master.* A native macOS app that downloads videos from
-YouTube and many other sites, or extracts their audio as MP3 — powered by
+YouTube and many other sites, or extracts their audio as MP3, M4A, or Opus — powered by
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) with an embedded FFmpeg.
 
 ## Features
@@ -62,7 +62,7 @@ Or manually:
 ![Downbender main window](docs/assets/screenshot.png)
 
 Paste a video URL (or copy one anywhere and confirm the prompt), pick a
-quality or **Extract MP3**, choose a folder, download. Click a finished
+quality or an audio format, choose a folder, download. Click a finished
 row to reveal the file in Finder.
 
 - **Video quality:** choose **Maximum available** for the highest resolution

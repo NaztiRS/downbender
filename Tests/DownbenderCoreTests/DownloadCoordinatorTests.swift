@@ -90,6 +90,39 @@ import Foundation
 }
 
 @MainActor
+@Test func coordinatorNeverInspectsDimensionsForAudioOutputs() async {
+    let inspections = CallCounter()
+
+    for format in DownloadFormat.audioFormats {
+        let path = "/tmp/out/track.\(format.id)"
+        let runner = FakeProcessRunner(stdoutLines: ["DBPATH \(path)"], exitCode: 0)
+        let download = DownloadService(
+            runner: runner,
+            ytdlpURL: URL(fileURLWithPath: "/x"),
+            ffmpegDirectory: URL(fileURLWithPath: "/y")
+        )
+        let coordinator = DownloadCoordinator(download: download, inspect: { _ in
+            _ = inspections.next()
+            return (width: 1, height: 1)
+        })
+        let item = DownloadItem(
+            url: "u",
+            title: format.label,
+            format: format,
+            destination: URL(fileURLWithPath: "/tmp")
+        )
+
+        await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+
+        #expect(item.state == .done)
+        #expect(item.deliveredFileURL?.path == path)
+        #expect(item.deliveredNote.isEmpty)
+    }
+
+    #expect(inspections.count < 1)
+}
+
+@MainActor
 @Test func coordinatorForcesFinalFractionAfterEnteringMergingState() async {
     let gate = ProgressTestGate()
     let runner = FakeProcessRunner(

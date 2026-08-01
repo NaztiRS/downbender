@@ -16,7 +16,7 @@ struct FormatPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("CHOOSE QUALITY")
+                    Text("CHOOSE OUTPUT")
                         .font(.caption2.weight(.bold)).tracking(1.2)
                         .foregroundStyle(Theme.accent)
                     Text(probe.title).font(.headline).lineLimit(2)
@@ -31,7 +31,7 @@ struct FormatPanel: View {
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                Picker("Download quality", selection: $selection) {
+                Picker("Download output", selection: $selection) {
                     ForEach(probe.availableFormats) { format in
                         Text(optionLabel(for: format))
                             .accessibilityLabel(optionAccessibilityLabel(for: format))
@@ -40,9 +40,11 @@ struct FormatPanel: View {
                 }
                 .pickerStyle(.radioGroup)
 
-                Text("Up to 1080p is saved as MP4. Higher resolutions are saved as MKV.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if selection?.isAudio != true {
+                    Text("Up to 1080p is saved as MP4. Higher resolutions are saved as MKV.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Toggle(isOn: $includeSubtitles) {
@@ -72,7 +74,7 @@ struct FormatPanel: View {
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
                 Button("Download") {
-                    // The box can stay checked while switching to MP3: the gate lives here.
+                    // The box can stay checked while switching to audio: the gate lives here.
                     if let selection { onConfirm(selection, includeSubtitles && subtitlesSelectable) }
                 }
                 .buttonStyle(WaveButtonStyle())
@@ -102,11 +104,11 @@ struct FormatPanel: View {
         }) {
             return firstVideo
         }
-        return probe.availableFormats.first(where: { $0 == .audioMP3 })
+        return probe.availableFormats.first(where: \.isAudio)
     }
 
     private func optionLabel(for format: DownloadFormat) -> String {
-        var parts = [format.label, format.containerLabel]
+        var parts = format.isAudio ? [format.label] : [format.label, format.containerLabel]
         if let bytes = probe.approxSizeBytes[format] ?? probe.approxDownloadSize(for: format) {
             parts.append("~\(bytes.formatted(.byteCount(style: .file)))")
         }
@@ -114,7 +116,9 @@ struct FormatPanel: View {
     }
 
     private func optionAccessibilityLabel(for format: DownloadFormat) -> String {
-        var parts = [format.label, "\(format.containerLabel) output"]
+        var parts = format.isAudio
+            ? ["Extract audio as \(format.containerLabel)"]
+            : [format.label, "\(format.containerLabel) output"]
         if let bytes = probe.approxSizeBytes[format] ?? probe.approxDownloadSize(for: format) {
             parts.append("approximately \(bytes.formatted(.byteCount(style: .file)))")
         }
@@ -122,12 +126,12 @@ struct FormatPanel: View {
     }
 
     private var subtitlesSelectable: Bool {
-        !probe.subtitleLanguages.isEmpty && selection != .audioMP3
+        !probe.subtitleLanguages.isEmpty && selection?.isAudio != true
     }
 
     private var subtitleDetail: String {
         if probe.subtitleLanguages.isEmpty { return "No subtitles available" }
-        if selection == .audioMP3 { return "Not available for MP3" }
+        if selection?.isAudio == true { return "Not available for audio-only downloads" }
         let langs = probe.subtitleLanguages
         let shown = langs.prefix(6).joined(separator: ", ")
         return langs.count > 6 ? "\(shown), …" : shown

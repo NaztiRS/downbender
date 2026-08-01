@@ -120,6 +120,10 @@ public final class PlaylistAnalysis {
             }
         case .audioMP3:
             return 30_000
+        case .audioM4A:
+            return 24_000
+        case .audioOpus:
+            return 20_000
         }
     }
 }

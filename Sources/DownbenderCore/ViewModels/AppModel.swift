@@ -573,7 +573,7 @@ public final class AppModel {
                 destination: destination,
                 state: .queued
             )
-            item.includeSubtitles = includeSubtitles
+            item.includeSubtitles = includeSubtitles && !format.isAudio
             item.fileNameTemplate = fileNameTemplate
             if let known = playlistAnalysis?.sampleResults[entry.url] {
                 item.probe = known
@@ -588,7 +588,7 @@ public final class AppModel {
         // Choosing a yt-dlp format means this is the media path (also flips an ambiguous card back).
         item.source = .media
         item.format = format
-        item.includeSubtitles = includeSubtitles
+        item.includeSubtitles = includeSubtitles && !format.isAudio
         item.fileNameTemplate = fileNameTemplate
         item.destination = destination
         item.expectedTotalBytes = item.probe?.approxDownloadSize(for: format)

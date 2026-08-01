@@ -18,6 +18,8 @@ import Foundation
         .video(height: 360),
         .video(height: 144),
         .audioMP3,
+        .audioM4A,
+        .audioOpus,
     ])
     #expect(result.thumbnailURL?.host == "i.ytimg.com")
 }
@@ -48,8 +50,10 @@ import Foundation
     // 2160p is listed but carries no size metadata: never substitute a lower quality's size.
     #expect(result.approxSizeBytes[.video(height: 2160)] == nil)
 
-    // audioMP3 never carries a size: the conversion changes the real weight.
-    #expect(result.approxSizeBytes[.audioMP3] == nil)
+    // Extracted audio never carries a size: conversion changes the real output weight.
+    for format in DownloadFormat.audioFormats {
+        #expect(result.approxSizeBytes[format] == nil)
+    }
 }
 
 // MARK: - Sites with unknown codecs (e.g. archive.org: height present, vcodec/acodec null)
@@ -74,6 +78,8 @@ import Foundation
         .video(height: 360),
         .video(height: 300),
         .audioMP3,
+        .audioM4A,
+        .audioOpus,
     ])
 }
 
@@ -95,7 +101,9 @@ import Foundation
     #expect(result.availableFormats.contains(.video(height: 480)))
     #expect(!result.availableFormats.contains(.video(height: 0)))
     #expect(!result.availableFormats.contains(.video(height: -144)))
-    #expect(result.availableFormats.contains(.audioMP3))
+    for format in DownloadFormat.audioFormats {
+        #expect(result.availableFormats.contains(format))
+    }
 }
 
 @Test func formatParserUsesVideoSizeAloneWhenNoSeparateAudioExists() throws {
@@ -111,6 +119,23 @@ import Foundation
     let result = try FormatParser.parse(Data(json.utf8))
 
     #expect(result.approxSizeBytes[.video(height: 360)] == 1_000_000)
+}
+
+@Test func formatParserOmitsAudioOutputsWhenEveryTrackIsExplicitlyVideoOnly() throws {
+    let json = """
+    {
+      "id": "silent",
+      "title": "Silent video",
+      "formats": [
+        {"format_id": "v", "ext": "mp4", "height": 480, "vcodec": "avc1", "acodec": "none"}
+      ]
+    }
+    """
+
+    let result = try FormatParser.parse(Data(json.utf8))
+
+    #expect(result.availableFormats == [.video(height: 480)])
+    #expect(result.availableFormats.allSatisfy { !$0.isAudio })
 }
 
 // MARK: - Subtitles (creator-uploaded only)
@@ -150,7 +175,9 @@ import Foundation
     #expect(result.approxDownloadSize(for: .video(height: 720)) == 30_000_000)
     // 360p exists but carries no size: never invented.
     #expect(result.approxDownloadSize(for: .video(height: 360)) == nil)
-    #expect(result.approxDownloadSize(for: .audioMP3) == nil)
+    for format in DownloadFormat.audioFormats {
+        #expect(result.approxDownloadSize(for: format) == nil)
+    }
 }
 
 @Test func maximumDownloadSizeUsesTheHighestAvailableHeight() {

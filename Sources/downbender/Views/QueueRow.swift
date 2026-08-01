@@ -205,7 +205,7 @@ struct QueueRow: View {
         }
         .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Theme.border))
         .overlay(alignment: .bottomTrailing) {
-            if let seconds = item.probe?.durationSeconds, item.format != .audioMP3 {
+            if let seconds = item.probe?.durationSeconds, item.format?.isAudio != true {
                 Text(durationLabel(seconds))
                     .font(.system(size: 9, weight: .semibold, design: .monospaced).monospacedDigit())
                     .foregroundStyle(.white)
@@ -226,7 +226,7 @@ struct QueueRow: View {
 
     private var fallbackSymbol: String {
         switch item.source {
-        case .media: item.format == .audioMP3 ? "music.note" : "film"
+        case .media: item.format?.isAudio == true ? "music.note" : "film"
         case .directFile, .ambiguous: FileIcon.symbol(for: item.title)
         }
     }

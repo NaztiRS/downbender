@@ -21,8 +21,7 @@ struct PlaylistPanel: View {
         .video(height: 720),
         .video(height: 480),
         .video(height: 360),
-        .audioMP3,
-    ]
+    ] + DownloadFormat.audioFormats
 
     init(
         analysis: PlaylistAnalysis,
@@ -55,12 +54,10 @@ struct PlaylistPanel: View {
             entrySelection
 
             VStack(alignment: .leading, spacing: 7) {
-                Picker("Quality for all videos", selection: $selection) {
+                Picker("Output for all items", selection: $selection) {
                     ForEach(Self.choices) { format in
-                        Text("\(format.preferenceLabel) · \(format.containerLabel)")
-                            .accessibilityLabel(
-                                "\(format.preferenceLabel), \(format.containerLabel) output"
-                            )
+                        Text(choiceLabel(for: format))
+                            .accessibilityLabel(choiceAccessibilityLabel(for: format))
                             .tag(format)
                     }
                 }
@@ -82,7 +79,7 @@ struct PlaylistPanel: View {
                 }
             }
             .toggleStyle(.checkbox)
-            .disabled(selection == .audioMP3)
+            .disabled(selection.isAudio)
 
             HStack(spacing: 8) {
                 Image(systemName: "folder").foregroundStyle(.secondary)
@@ -102,8 +99,8 @@ struct PlaylistPanel: View {
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .keyboardShortcut(.cancelAction)
                 Button(downloadButtonTitle) {
-                    // The box can stay checked while switching to MP3: the gate lives here.
-                    onConfirm(selectedEntries, selection, includeSubtitles && selection != .audioMP3)
+                    // The box can stay checked while switching to audio: the gate lives here.
+                    onConfirm(selectedEntries, selection, includeSubtitles && !selection.isAudio)
                 }
                 .buttonStyle(WaveButtonStyle())
                 .keyboardShortcut(.defaultAction)
@@ -251,9 +248,21 @@ struct PlaylistPanel: View {
             return "Downloads the highest available resolution for each video."
         case .video(let height):
             return "Each video uses the closest available resolution at or below \(height)p."
-        case .audioMP3:
-            return "Extracts the audio from every item as MP3."
+        case .audioMP3, .audioM4A, .audioOpus:
+            return "Extracts the audio from every item as \(selection.containerLabel)."
         }
+    }
+
+    private func choiceLabel(for format: DownloadFormat) -> String {
+        format.isAudio
+            ? format.preferenceLabel
+            : "\(format.preferenceLabel) · \(format.containerLabel)"
+    }
+
+    private func choiceAccessibilityLabel(for format: DownloadFormat) -> String {
+        format.isAudio
+            ? "Extract audio as \(format.containerLabel)"
+            : "\(format.preferenceLabel), \(format.containerLabel) output"
     }
 
     private var outputSummary: String {
@@ -269,12 +278,15 @@ struct PlaylistPanel: View {
     }
 
     private var subtitleDetail: String {
-        if selection == .audioMP3 { return "Not available for MP3" }
+        if selection.isAudio { return "Not available for audio-only downloads" }
         return "Embedded when a video has creator subtitles"
     }
 
     private var downloadButtonTitle: String {
         let count = selectedEntries.count
+        if selection.isAudio {
+            return "Extract \(count) audio \(count == 1 ? "file" : "files")"
+        }
         return "Download \(count) \(count == 1 ? "video" : "videos")"
     }
 
