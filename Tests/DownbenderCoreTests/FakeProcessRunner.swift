@@ -7,11 +7,24 @@ final class ArgumentRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String] = []
     private var perCall: [[String]] = []
-    func record(_ args: [String]) { lock.lock(); storage = args; perCall.append(args); lock.unlock() }
+    private var executablePerCall: [URL] = []
+    func record(executableURL: URL, arguments: [String]) {
+        lock.lock()
+        storage = arguments
+        perCall.append(arguments)
+        executablePerCall.append(executableURL)
+        lock.unlock()
+    }
     /// Arguments of the last call (classic behavior).
     var arguments: [String] { lock.lock(); defer { lock.unlock() }; return storage }
     /// Arguments of EVERY call, in order (for per-attempt asserts in retries).
     var allArguments: [[String]] { lock.lock(); defer { lock.unlock() }; return perCall }
+    /// Absolute executable used for every invocation, in the same order as `allArguments`.
+    var allExecutableURLs: [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return executablePerCall
+    }
 }
 
 /// Thread-safe invocation counter; `next()` returns the 0-based index of the current call.
@@ -46,7 +59,7 @@ struct FakeProcessRunner: ProcessRunning {
         arguments: [String],
         onStdoutLine: @Sendable @escaping (String) -> Void
     ) async throws -> ProcessResult {
-        recordedArguments.record(arguments)
+        recordedArguments.record(executableURL: executableURL, arguments: arguments)
         let index = calls.next()
         let replay: Replay
         if let replays, !replays.isEmpty {

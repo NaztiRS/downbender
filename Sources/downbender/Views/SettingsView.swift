@@ -247,6 +247,7 @@ struct SettingsView: View {
                 CommandSectionHeader(index: "03", title: "Browser extension")
             }
 
+            DownloadEngineSection(controller: model.engineController)
             UpdatesSection(updater: model.updater, model: model)
         }
         .formStyle(CommandFormStyle())
@@ -258,6 +259,7 @@ struct SettingsView: View {
         .frame(width: 500, height: 580)
         .task {
             refreshBrowserState()
+            await model.engineController.refreshVersions()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshBrowserState()
@@ -547,7 +549,102 @@ private struct FileNameSettings: View {
     }
 }
 
-/// One check and one "Update now" cover both the app and the download engine (yt-dlp).
+private struct DownloadEngineSection: View {
+    @Bindable var controller: YtdlpEngineController
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("yt-dlp download engine")
+                        Text("Stable stays bundled; nightly is downloaded only when you request it.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                    }
+                } icon: {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                        .foregroundStyle(Theme.accent)
+                }
+
+                CommandRule(inset: 0)
+
+                Picker("Active engine", selection: channelBinding) {
+                    Text("Stable · bundled").tag(YtdlpEngineChannel.stable)
+                    if controller.nightlyInstalled {
+                        Text("Nightly · latest fixes").tag(YtdlpEngineChannel.nightly)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(controller.isInstalling)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Using \(controller.selectedChannel.displayName)")
+                        .font(.caption.weight(.semibold))
+                    Text(versionDetail)
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                    Text("Stable always remains available offline. Nightly may fix recent site changes sooner.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                }
+
+                switch controller.phase {
+                case .idle:
+                    Button(controller.nightlyInstalled ? "Update latest fixes" : "Try latest fixes") {
+                        Task { try? await controller.installLatestAndSelect() }
+                    }
+                    .buttonStyle(CommandButtonStyle(.secondary))
+                    .accessibilityHint("Downloads, verifies, and selects the latest official yt-dlp nightly")
+
+                case .installing(let fraction):
+                    UpdateProgressView(title: "Installing latest fixes", fraction: fraction)
+
+                case .failed(let message):
+                    Label("Latest fixes update failed", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.warning)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(Theme.muted)
+                        .textSelection(.enabled)
+                    HStack {
+                        Button("Try again") {
+                            Task { try? await controller.installLatestAndSelect() }
+                        }
+                        .buttonStyle(CommandButtonStyle(.secondary))
+                        if controller.selectedChannel != .stable {
+                            Button("Use stable") { controller.useStable() }
+                                .buttonStyle(CommandButtonStyle(.secondary))
+                        }
+                    }
+                }
+            }
+            .commandPanel(padding: 14)
+        } header: {
+            CommandSectionHeader(index: "04", title: "Download engine")
+        }
+    }
+
+    private var channelBinding: Binding<YtdlpEngineChannel> {
+        Binding(
+            get: { controller.selectedChannel },
+            set: { channel in
+                Task { try? await controller.select(channel) }
+            }
+        )
+    }
+
+    private var versionDetail: String {
+        let stable = controller.stableVersion ?? "bundled version"
+        guard controller.nightlyInstalled else {
+            return "Stable \(stable) · Nightly not installed"
+        }
+        let nightly = controller.nightlyVersion ?? "installed"
+        return "Stable \(stable) · Nightly \(nightly)"
+    }
+}
+
+/// Downbender application updates are independent from the optional nightly engine.
 private struct UpdatesSection: View {
     let updater: UnifiedUpdater
     @Bindable var model: AppModel
@@ -577,8 +674,8 @@ private struct UpdatesSection: View {
                 case .idle:
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Downbender & download engine")
-                            Text("One check covers the app and its engine.")
+                            Text("Downbender application")
+                            Text("Checks for a newer Downbender release.")
                                 .font(.caption)
                                 .foregroundStyle(Theme.muted)
                         }
@@ -600,25 +697,21 @@ private struct UpdatesSection: View {
                         Label("Checking…", systemImage: "arrow.triangle.2.circlepath")
                     }
 
-                case .upToDate(let app, let engine):
-                    Label("You're up to date (v\(app) · engine \(engine))", systemImage: "checkmark.seal.fill")
+                case .upToDate(let app):
+                    Label("Downbender v\(app) is up to date", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(Theme.success)
                     Button("Check again") {
                         Task { await model.checkForUpdates() }
                     }
                     .buttonStyle(CommandButtonStyle(.secondary))
 
-                case .available(let appVersion, let engineInstalled, let engineLatest):
+                case .available(let appVersion):
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Update available")
-                            Text(detail(
-                                appVersion: appVersion,
-                                engineInstalled: engineInstalled,
-                                engineLatest: engineLatest
-                            ))
-                            .font(.caption)
-                            .foregroundStyle(Theme.muted)
+                            Text("Downbender v\(Downbender.version) → v\(appVersion)")
+                                .font(.caption)
+                                .foregroundStyle(Theme.muted)
                         }
                     } icon: {
                         Image(systemName: "arrow.down.circle")
@@ -628,9 +721,6 @@ private struct UpdatesSection: View {
                         Task { await updater.update() }
                     }
                     .buttonStyle(CommandButtonStyle(.primary))
-
-                case .workingOnEngine(let fraction):
-                    UpdateProgressView(title: "Updating download engine", fraction: fraction)
 
                 case .workingOnApp(let fraction):
                     UpdateProgressView(title: "Downloading Downbender", fraction: fraction)
@@ -682,15 +772,8 @@ private struct UpdatesSection: View {
             }
             .commandPanel(padding: 14)
         } header: {
-            CommandSectionHeader(index: "04", title: "Updates")
+            CommandSectionHeader(index: "05", title: "Downbender updates")
         }
-    }
-
-    private func detail(appVersion: String?, engineInstalled: String?, engineLatest: String?) -> String {
-        var parts: [String] = []
-        if let appVersion { parts.append("Downbender v\(Downbender.version) → v\(appVersion)") }
-        if let engineInstalled, let engineLatest { parts.append("engine \(engineInstalled) → \(engineLatest)") }
-        return parts.joined(separator: " · ")
     }
 }
 

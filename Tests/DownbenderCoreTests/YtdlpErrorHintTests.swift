@@ -29,3 +29,18 @@ import Testing
     #expect(lower?.contains("network") == true)
     #expect(YtdlpErrorHint.hint(for: raw)?.suggestedAction == nil)
 }
+
+@Test func latestFixesAreOfferedOnlyForLikelyExtractorFailures() {
+    #expect(YtdlpErrorHint.shouldOfferLatestFixes(
+        for: "ERROR: [youtube] Unable to extract player response"
+    ))
+    #expect(!YtdlpErrorHint.shouldOfferLatestFixes(
+        for: "ERROR: Sign in to confirm you're not a bot. Use --cookies-from-browser."
+    ))
+    #expect(!YtdlpErrorHint.shouldOfferLatestFixes(
+        for: "ERROR: Failed to resolve googlevideo.com"
+    ))
+    #expect(!YtdlpErrorHint.shouldOfferLatestFixes(
+        for: "ERROR: No space left on device"
+    ))
+}

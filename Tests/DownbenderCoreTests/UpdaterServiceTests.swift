@@ -2,6 +2,17 @@ import Testing
 import Foundation
 @testable import DownbenderCore
 
+private struct WedgedVersionRunner: ProcessRunning {
+    func run(
+        executableURL: URL,
+        arguments: [String],
+        onStdoutLine: @Sendable @escaping (String) -> Void
+    ) async throws -> ProcessResult {
+        try await Task.sleep(for: .seconds(300))
+        return ProcessResult(exitCode: 0, stderr: "")
+    }
+}
+
 @Test func updaterParsesTagNameFromReleaseJSON() throws {
     let json = #"{"tag_name":"2025.06.30","name":"yt-dlp 2025.06.30","assets":[]}"#
     let tag = try UpdaterService.parseTagName(Data(json.utf8))
@@ -37,7 +48,7 @@ import Foundation
     let service = UpdaterService(appSupportDirectory: URL(fileURLWithPath: "/tmp/downbender"))
     let version = try await service.installedVersion(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
     #expect(version == "2025.06.30")
-    #expect(runner.recordedArguments.arguments == ["--version"])
+    #expect(runner.recordedArguments.arguments == ["--ignore-config", "--version"])
 }
 
 @Test func updaterThrowsWhenYtdlpVersionFails() async {
@@ -54,4 +65,18 @@ import Foundation
     await #expect(throws: UpdaterError.self) {
         _ = try await service.installedVersion(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
     }
+}
+
+@Test func updaterTimesOutWhenInstalledEngineCannotReportItsVersion() async {
+    let service = UpdaterService(appSupportDirectory: URL(fileURLWithPath: "/tmp/downbender"))
+    let start = ContinuousClock.now
+
+    await #expect(throws: UpdaterError.validationTimedOut) {
+        _ = try await service.installedVersion(
+            runner: WedgedVersionRunner(),
+            ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"),
+            timeout: .milliseconds(50)
+        )
+    }
+    #expect(ContinuousClock.now - start < .seconds(3))
 }

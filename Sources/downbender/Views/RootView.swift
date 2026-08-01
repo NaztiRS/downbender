@@ -54,8 +54,7 @@ struct RootView: View {
                     Rectangle().fill(Theme.border).frame(height: 1)
                 }
             } else if !model.automaticAppUpdatesEnabled,
-                      case let .available(appVersion, _, _) = model.updater.phase,
-                      let version = appVersion,
+                      case let .available(version) = model.updater.phase,
                       model.dismissedAppUpdateVersion != version {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.down.square.fill")

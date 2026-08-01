@@ -9,6 +9,8 @@ struct QueueRow: View {
     @State private var confirmingDelete = false
     @State private var deleteError: String?
     @State private var fileMissing = false
+    @State private var tryingLatestFixes = false
+    @State private var latestFixesError: String?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -54,6 +56,14 @@ struct QueueRow: View {
         } message: {
             Text("“\(item.title)” is no longer on disk. It may have been moved or deleted.")
         }
+        .alert("Couldn't change download engine", isPresented: Binding(
+            get: { latestFixesError != nil },
+            set: { if !$0 { latestFixesError = nil } }
+        )) {
+            Button("OK", role: .cancel) { latestFixesError = nil }
+        } message: {
+            Text(latestFixesError ?? "Stable remains available.")
+        }
         .contextMenu { contextMenuItems }
     }
 
@@ -66,13 +76,13 @@ struct QueueRow: View {
                 .buttonStyle(.plain)
                 .help(primaryActionLabel)
                 .accessibilityLabel(item.title)
-                .accessibilityValue(accessibilityStatus)
+                .accessibilityValue(accessibleStatusAndEngine)
                 .accessibilityHint(primaryActionHint)
             } else {
                 rowSummary
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(item.title)
-                    .accessibilityValue(accessibilityStatus)
+                    .accessibilityValue(accessibleStatusAndEngine)
             }
         }
         .modifier(DeliveredFileDragModifier(fileURL: draggableFileURL))
@@ -238,6 +248,7 @@ struct QueueRow: View {
             iconButton("xmark.circle.fill", .tertiary, "Discard") { model.remove(item) }
         case .probeFailed(let msg):
             iconButton("arrow.clockwise.circle.fill", .secondary, "Retry analysis") { model.retryProbe(item) }
+            engineRecoveryButton
             infoButton(message: msg, title: "Analysis error")
             iconButton("xmark.circle.fill", .tertiary, "Remove from list") { model.remove(item) }
         case .readyToChoose:
@@ -256,6 +267,7 @@ struct QueueRow: View {
             iconButton("xmark.circle.fill", .tertiary, "Remove from list") { model.remove(item) }
         case .failed(let msg):
             iconButton("arrow.clockwise.circle.fill", .secondary, "Retry") { model.queue.retry(item) }
+            engineRecoveryButton
             infoButton(message: msg, title: "Download error")
             iconButton("xmark.circle.fill", .tertiary, "Remove from list") { model.remove(item) }
         case .cancelled:
@@ -288,8 +300,57 @@ struct QueueRow: View {
             .help("Show full error")
             .accessibilityLabel("Show full error")
             .sheet(isPresented: $showingError) {
-                ErrorDetailSheet(title: title, message: message, onClose: { showingError = false })
+                ErrorDetailSheet(
+                    title: title,
+                    message: message,
+                    onClose: { showingError = false },
+                    engineRecoveryTitle: engineRecoveryTitle,
+                    onEngineRecovery: engineRecoveryTitle == nil ? nil : {
+                        showingError = false
+                        performEngineRecovery()
+                    }
+                )
             }
+    }
+
+    @ViewBuilder private var engineRecoveryButton: some View {
+        if tryingLatestFixes {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 26, height: 26)
+                .accessibilityLabel("Installing latest fixes")
+        } else if model.canTryLatestFixes(for: item) {
+            iconButton("sparkles", Theme.accent, "Try latest fixes") {
+                performEngineRecovery()
+            }
+        } else if model.canRetryWithStable(item) {
+            iconButton("arrow.uturn.backward.circle.fill", Theme.accent, "Retry with stable") {
+                performEngineRecovery()
+            }
+        }
+    }
+
+    private var engineRecoveryTitle: String? {
+        if model.canTryLatestFixes(for: item) { return "Try latest fixes" }
+        if model.canRetryWithStable(item) { return "Retry with stable" }
+        return nil
+    }
+
+    private func performEngineRecovery() {
+        if model.canRetryWithStable(item) {
+            model.retryWithStable(item)
+            return
+        }
+        guard model.canTryLatestFixes(for: item), !tryingLatestFixes else { return }
+        tryingLatestFixes = true
+        Task { @MainActor in
+            defer { tryingLatestFixes = false }
+            do {
+                try await model.retryWithLatestFixes(item)
+            } catch {
+                latestFixesError = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Context menu
@@ -300,6 +361,9 @@ struct QueueRow: View {
             Button("Remove from list") { model.remove(item) }
         case .probeFailed:
             Button("Retry analysis") { model.retryProbe(item) }
+            if let engineRecoveryTitle {
+                Button(engineRecoveryTitle) { performEngineRecovery() }
+            }
             Button("Remove from list") { model.remove(item) }
         case .readyToChoose:
             Button("Choose quality…") { choosing = true }
@@ -317,7 +381,13 @@ struct QueueRow: View {
             Button("Show in Finder") { revealInFinder() }
             Button("Remove from list") { model.remove(item) }
             Button("Delete file…", role: .destructive) { confirmingDelete = true }
-        case .failed, .cancelled:
+        case .failed:
+            Button("Retry") { model.queue.retry(item) }
+            if let engineRecoveryTitle {
+                Button(engineRecoveryTitle) { performEngineRecovery() }
+            }
+            Button("Remove from list") { model.remove(item) }
+        case .cancelled:
             Button("Retry") { model.queue.retry(item) }
             Button("Remove from list") { model.remove(item) }
         }
@@ -393,7 +463,11 @@ struct QueueRow: View {
         case .directFile: "DIRECT"
         case .ambiguous: "DETECT"
         }
-        return [host, kind].compactMap { $0 }.joined(separator: " / ")
+        let engine: String? = switch item.source {
+        case .media: item.lastEngineChannel?.rawValue.uppercased()
+        case .directFile, .ambiguous: nil
+        }
+        return [host, kind, engine].compactMap { $0 }.joined(separator: " / ")
     }
 
     private var hasPrimaryAction: Bool {
@@ -434,6 +508,13 @@ struct QueueRow: View {
         default:
             return statusLine
         }
+    }
+
+    private var accessibleStatusAndEngine: String {
+        guard item.source == .media, let channel = item.lastEngineChannel else {
+            return accessibilityStatus
+        }
+        return "\(accessibilityStatus). Engine: \(channel.displayName)"
     }
 
     private var draggableFileURL: URL? {

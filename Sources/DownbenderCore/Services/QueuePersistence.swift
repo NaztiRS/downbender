@@ -23,6 +23,8 @@ public struct PersistedItem: Codable, Equatable, Sendable {
     public var deliveredMismatch: Bool
     public var deliveredPath: String?
     public var resumeData: Data?
+    /// Optional keeps existing version-1 queue files decodable.
+    public var lastEngineChannel: String?
 }
 
 public extension PersistedItem {
@@ -61,6 +63,7 @@ public extension PersistedItem {
         deliveredMismatch = item.deliveredMismatch
         deliveredPath = item.deliveredFileURL?.path
         resumeData = item.resumeData
+        lastEngineChannel = item.lastEngineChannel?.rawValue
     }
 
     /// Rebuilds a live item. Interrupted work comes back PAUSED (nothing self-starts on
@@ -98,6 +101,7 @@ public extension PersistedItem {
         item.deliveredMismatch = deliveredMismatch
         item.deliveredFileURL = deliveredPath.map { URL(fileURLWithPath: $0) }
         item.resumeData = resumeData
+        item.lastEngineChannel = lastEngineChannel.flatMap(YtdlpEngineChannel.init(rawValue:))
         return item
     }
 

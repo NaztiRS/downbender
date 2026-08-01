@@ -56,6 +56,12 @@ public final class DownloadItem: Identifiable {
     public var deliveredNote: String = ""
     public var deliveredMismatch: Bool = false
     public var deliveredFileURL: URL?
+    /// Engine that actually handled the most recent probe or media-download attempt.
+    /// This is informational; ordinary future retries use the then-selected global channel.
+    public var lastEngineChannel: YtdlpEngineChannel?
+    /// One-shot channel requested by an explicit recovery action. It is consumed when the
+    /// next probe/download starts so waiting in the queue cannot change the promised engine.
+    @ObservationIgnored var nextEngineChannel: YtdlpEngineChannel?
 
     public var source: Source = .media
     /// URLSession resume data captured when a direct download is paused/interrupted;

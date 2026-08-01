@@ -140,7 +140,7 @@ private struct ForcedReplacementError: Error {}
     #expect(!FileManager.default.fileExists(atPath: cleanupMarker.path))
 }
 
-@Test func installDefersStaleEngineOverrideCleanupUntilNextLaunch() async throws {
+@Test func installDefersStaleEngineOverrideCleanupAndPreservesNightly() async throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     let installed = root.appendingPathComponent("Installed/Downbender.app")
@@ -150,7 +150,9 @@ private struct ForcedReplacementError: Error {}
     try makeFakeApp(at: fresh, bundleID: "com.naztirs.downbender", marker: "new")
     try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
     let engine = support.appendingPathComponent("yt-dlp_macos")
+    let nightly = support.appendingPathComponent("yt-dlp-nightly_macos")
     try Data("stale".utf8).write(to: engine)
+    try Data("nightly".utf8).write(to: nightly)
 
     let updater = AppSelfUpdater(
         runner: FakeProcessRunner(),
@@ -164,12 +166,15 @@ private struct ForcedReplacementError: Error {}
     // The old process may still launch yt-dlp before restart, so neither it nor the marker
     // may disappear during the swap.
     #expect(FileManager.default.fileExists(atPath: engine.path))
+    #expect(FileManager.default.fileExists(atPath: nightly.path))
     #expect(FileManager.default.fileExists(atPath: cleanupMarker.path))
 
     try AppSelfUpdater.finishDeferredCleanup(appSupportDirectory: support)
 
     // The new app performs this before BinaryLocator, so its bundled engine is selected.
     #expect(!FileManager.default.fileExists(atPath: engine.path))
+    #expect(FileManager.default.fileExists(atPath: nightly.path))
+    #expect(try Data(contentsOf: nightly) == Data("nightly".utf8))
     #expect(!FileManager.default.fileExists(atPath: cleanupMarker.path))
 }
 

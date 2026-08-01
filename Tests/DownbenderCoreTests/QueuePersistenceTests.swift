@@ -66,6 +66,7 @@ private func freshFile() -> URL {
                              destination: URL(fileURLWithPath: "/tmp/dest"), state: .downloading)
     media.includeSubtitles = true
     media.fraction = 0.42
+    media.lastEngineChannel = .nightly
     let direct = DownloadItem(url: "https://example.com/f.zip", title: "f.zip",
                               destination: URL(fileURLWithPath: "/tmp/dest"), state: .done)
     direct.source = .directFile(DirectFileInfo(suggestedName: "f.zip", sizeBytes: 123, contentType: "application/zip"))
@@ -80,6 +81,7 @@ private func freshFile() -> URL {
     #expect(first.format == .video(height: 1080))
     #expect(first.includeSubtitles == true)
     #expect(first.fraction == 0.42)
+    #expect(first.lastEngineChannel == .nightly)
 
     let second = loaded[1].makeItem()
     #expect(second.state == .done)

@@ -6,17 +6,11 @@ import Foundation
 private func makeUpdater(
     installedApp: String = "1.0.0",
     latestAppTag: @escaping @Sendable () async throws -> String = { "v1.0.0" },
-    engineInstalled: @escaping @Sendable () async throws -> String = { "2026.07.04" },
-    engineLatest: @escaping @Sendable () async throws -> String = { "2026.07.04" },
-    updateEngine: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void = { _ in },
     updateApp: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void = { _ in }
 ) -> UnifiedUpdater {
     UnifiedUpdater(
         installedAppVersion: installedApp,
         fetchLatestAppTag: latestAppTag,
-        fetchEngineInstalled: engineInstalled,
-        fetchEngineLatest: engineLatest,
-        updateEngine: updateEngine,
         updateApp: updateApp
     )
 }
@@ -26,70 +20,36 @@ struct FakeUpdateError: Error {}
 @MainActor @Test func checkReportsUpToDateWhenNothingIsNewer() async {
     let updater = makeUpdater()
     await updater.check()
-    #expect(updater.phase == .upToDate(app: "1.0.0", engine: "2026.07.04"))
+    #expect(updater.phase == .upToDate(app: "1.0.0"))
 }
 
 @MainActor @Test func checkReportsAppUpdate() async {
     let updater = makeUpdater(latestAppTag: { "v1.1.0" })
     await updater.check()
-    #expect(updater.phase == .available(appVersion: "1.1.0", engineInstalled: nil, engineLatest: nil))
+    #expect(updater.phase == .available(appVersion: "1.1.0"))
 }
 
-@MainActor @Test func checkReportsEngineUpdate() async {
-    let updater = makeUpdater(engineLatest: { "2026.08.01" })
-    await updater.check()
-    #expect(updater.phase == .available(appVersion: nil, engineInstalled: "2026.07.04", engineLatest: "2026.08.01"))
-}
-
-@MainActor @Test func checkReportsBothUpdatesAtOnce() async {
-    let updater = makeUpdater(latestAppTag: { "v2.0.0" }, engineLatest: { "2026.08.01" })
-    await updater.check()
-    #expect(updater.phase == .available(appVersion: "2.0.0", engineInstalled: "2026.07.04", engineLatest: "2026.08.01"))
-}
-
-/// Before the first public release (404) or offline on one side: the working side still reports.
-@MainActor @Test func checkSurvivesAppSideFailure() async {
-    let updater = makeUpdater(latestAppTag: { throw FakeUpdateError() }, engineLatest: { "2026.08.01" })
-    await updater.check()
-    #expect(updater.phase == .available(appVersion: nil, engineInstalled: "2026.07.04", engineLatest: "2026.08.01"))
-}
-
-@MainActor @Test func checkFailsWhenBothSidesFail() async {
-    let updater = makeUpdater(
-        latestAppTag: { throw FakeUpdateError() },
-        engineInstalled: { throw FakeUpdateError() },
-        engineLatest: { throw FakeUpdateError() }
-    )
+@MainActor @Test func checkFailureSurfacesAsFailed() async {
+    let updater = makeUpdater(latestAppTag: { throw FakeUpdateError() })
     await updater.check()
     if case .failed = updater.phase {} else { Issue.record("expected .failed, got \(updater.phase)") }
 }
 
-@MainActor @Test func updateEngineOnlyEndsUpToDate() async {
-    let engineUpdated = SendableBox(false)
-    let updater = makeUpdater(
-        engineLatest: { "2026.08.01" },
-        updateEngine: { onProgress in onProgress(0.5); engineUpdated.value = true }
-    )
+@MainActor @Test func olderReleaseReportsInstalledAppAsUpToDate() async {
+    let updater = makeUpdater(installedApp: "2.0.0", latestAppTag: { "v1.9.0" })
     await updater.check()
-    await updater.update()
-    #expect(engineUpdated.value)
-    #expect(updater.phase == .upToDate(app: "1.0.0", engine: "2026.08.01"))
+    #expect(updater.phase == .upToDate(app: "2.0.0"))
 }
 
-/// An app update supersedes the engine one: the new app ships a fresh engine and install() drops the override.
 @MainActor @Test func updateWithAppAvailableInstallsAppAndEndsReadyToRestart() async {
     let appUpdated = SendableBox(false)
-    let engineUpdated = SendableBox(false)
     let updater = makeUpdater(
         latestAppTag: { "v1.1.0" },
-        engineLatest: { "2026.08.01" },
-        updateEngine: { _ in engineUpdated.value = true },
         updateApp: { onProgress in onProgress(1.0); appUpdated.value = true }
     )
     await updater.check()
     await updater.update()
     #expect(appUpdated.value)
-    #expect(!engineUpdated.value)
     #expect(updater.phase == .readyToRestart)
 }
 
@@ -111,11 +71,8 @@ struct FakeUpdateError: Error {}
 
 @MainActor @Test func automaticUpdateInstallsOnlyTheAppAndEndsReadyToRestart() async {
     let appUpdates = CallCounter()
-    let engineUpdates = CallCounter()
     let updater = makeUpdater(
         latestAppTag: { "v1.1.0" },
-        engineLatest: { "2026.08.01" },
-        updateEngine: { _ in _ = engineUpdates.next() },
         updateApp: { onProgress in
             onProgress(1)
             _ = appUpdates.next()
@@ -125,32 +82,21 @@ struct FakeUpdateError: Error {}
     await updater.checkAndInstallAppUpdate()
 
     let appUpdateCount = appUpdates.count
-    let engineUpdateCount = engineUpdates.count
     #expect(appUpdateCount == 1)
-    #expect(engineUpdateCount == 0)
     #expect(updater.phase == .readyToRestart)
 }
 
-@MainActor @Test func automaticUpdateLeavesAnEngineOnlyUpdateForManualInstallation() async {
+@MainActor @Test func automaticUpdateDoesNothingWhenAppIsCurrent() async {
     let appUpdates = CallCounter()
-    let engineUpdates = CallCounter()
     let updater = makeUpdater(
-        engineLatest: { "2026.08.01" },
-        updateEngine: { _ in _ = engineUpdates.next() },
         updateApp: { _ in _ = appUpdates.next() }
     )
 
     await updater.checkAndInstallAppUpdate()
 
     let appUpdateCount = appUpdates.count
-    let engineUpdateCount = engineUpdates.count
     #expect(appUpdateCount == 0)
-    #expect(engineUpdateCount == 0)
-    #expect(updater.phase == .available(
-        appVersion: nil,
-        engineInstalled: "2026.07.04",
-        engineLatest: "2026.08.01"
-    ))
+    #expect(updater.phase == .upToDate(app: "1.0.0"))
 }
 
 @MainActor @Test func concurrentAutomaticRequestsCoalesceIntoOneCheckAndInstall() async {
@@ -205,6 +151,39 @@ struct FakeUpdateError: Error {}
     await updater.checkAndInstallAppUpdate()
     await allowFetchToFinish.open()
     await manualCheck.value
+
+    let fetchCount = fetches.count
+    let appUpdateCount = appUpdates.count
+    #expect(fetchCount == 1)
+    #expect(appUpdateCount == 1)
+    #expect(updater.phase == .readyToRestart)
+}
+
+@MainActor @Test func automaticRequestDuringManualUpdateDoesNotInstallTwice() async {
+    let installStarted = AsyncGate()
+    let allowInstallToFinish = AsyncGate()
+    let fetches = CallCounter()
+    let appUpdates = CallCounter()
+    let updater = makeUpdater(
+        latestAppTag: {
+            _ = fetches.next()
+            return "v1.1.0"
+        },
+        updateApp: { _ in
+            _ = appUpdates.next()
+            await installStarted.open()
+            await allowInstallToFinish.wait()
+        }
+    )
+    await updater.check()
+
+    let manualUpdate = Task { @MainActor in
+        await updater.update()
+    }
+    await installStarted.wait()
+    await updater.checkAndInstallAppUpdate()
+    await allowInstallToFinish.open()
+    await manualUpdate.value
 
     let fetchCount = fetches.count
     let appUpdateCount = appUpdates.count

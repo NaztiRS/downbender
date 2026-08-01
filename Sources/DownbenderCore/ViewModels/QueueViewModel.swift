@@ -219,6 +219,7 @@ public final class QueueViewModel {
         case .queued, .paused:
             item.state = .cancelled
             item.resumeData = nil
+            item.nextEngineChannel = nil
         case .downloading, .merging:
             if let task = tasks[item.id] {
                 task.cancel()

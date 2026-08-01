@@ -68,11 +68,15 @@ public final class AppModel {
     public let clipboard = ClipboardWatcher()
     /// Shared by the main window and Settings so update progress and restart readiness never disappear.
     public let updater: UnifiedUpdater
+    /// Stable/nightly selection and installation state shared by Settings and queue rows.
+    public let engineController: YtdlpEngineController
     public private(set) var dismissedAppUpdateVersion: String?
     public private(set) var queue: QueueViewModel!
 
-    private let probe: ProbeService
-    private let coordinator: DownloadCoordinator
+    private let stableProbe: ProbeService
+    private let nightlyProbe: ProbeService
+    private let stableCoordinator: DownloadCoordinator
+    private let nightlyCoordinator: DownloadCoordinator
     private let directCoordinator: DirectDownloadCoordinator
     private let directDownloader = DirectDownloadService()
     private let directSessionFactory: @Sendable () -> URLSession
@@ -93,6 +97,7 @@ public final class AppModel {
         runner: ProcessRunning = ProcessRunner(),
         defaults: UserDefaults = .standard,
         updater: UnifiedUpdater? = nil,
+        engineController: YtdlpEngineController? = nil,
         directSessionFactory: @escaping @Sendable () -> URLSession = { DirectDownloadService.makeSession() }
     ) {
         // Observers don't fire during init: restoring persisted values writes nothing back.
@@ -123,56 +128,105 @@ public final class AppModel {
         self.notifier = notifier
         self.cookiesBrowser = cookiesBrowser
         self.queuePersistence = QueuePersistence(fileURL: appSupportDirectory.appendingPathComponent("queue.json"))
+        let engine = UpdaterService(appSupportDirectory: appSupportDirectory)
+        let nightlyURL = BinaryLocator.nightlyYtdlpURL(appSupportDirectory: appSupportDirectory)
+        if let engineController {
+            self.engineController = engineController
+        } else {
+            self.engineController = YtdlpEngineController(
+                stableURL: binaries.ytdlp,
+                nightlyURL: nightlyURL,
+                defaults: defaults,
+                readVersion: { url in
+                    try await engine.installedVersion(runner: runner, ytdlpURL: url)
+                },
+                installLatestNightly: { onProgress in
+                    let installed = try await engine.installLatestNightly(
+                        runner: runner,
+                        onProgress: onProgress
+                    )
+                    return YtdlpEngineInstallation(
+                        executableURL: installed.binaryURL,
+                        version: installed.version
+                    )
+                }
+            )
+        }
         if let updater {
             self.updater = updater
         } else {
-            let engine = UpdaterService(appSupportDirectory: appSupportDirectory)
             let selfUpdater = AppSelfUpdater(
                 runner: runner,
                 installURL: Bundle.main.bundleURL,
                 expectedBundleID: Bundle.main.bundleIdentifier ?? "com.naztirs.downbender",
                 appSupportDirectory: appSupportDirectory
             )
-            let ytdlpURL = binaries.ytdlp
             self.updater = UnifiedUpdater(
                 installedAppVersion: Downbender.version,
                 fetchLatestAppTag: {
                     try await UpdaterService.latestVersion(from: AppUpdateChecker.releaseAPIURL)
-                },
-                fetchEngineInstalled: {
-                    try await engine.installedVersion(runner: runner, ytdlpURL: ytdlpURL)
-                },
-                fetchEngineLatest: { try await UpdaterService.latestVersion() },
-                updateEngine: { onProgress in
-                    _ = try await engine.updateYtdlp(onProgress: onProgress)
                 },
                 updateApp: { onProgress in
                     try await selfUpdater.update(onProgress: onProgress)
                 }
             )
         }
-        self.probe = ProbeService(runner: runner, ytdlpURL: binaries.ytdlp, denoURL: binaries.deno)
-        let download = DownloadService(
-            runner: runner, ytdlpURL: binaries.ytdlp, ffmpegDirectory: binaries.ffmpegDirectory,
+        self.stableProbe = ProbeService(
+            runner: runner,
+            ytdlpURL: self.engineController.stableURL,
+            denoURL: binaries.deno
+        )
+        self.nightlyProbe = ProbeService(
+            runner: runner,
+            ytdlpURL: self.engineController.nightlyURL,
+            denoURL: binaries.deno
+        )
+        let stableDownload = DownloadService(
+            runner: runner,
+            ytdlpURL: self.engineController.stableURL,
+            ffmpegDirectory: binaries.ffmpegDirectory,
+            denoURL: binaries.deno
+        )
+        let nightlyDownload = DownloadService(
+            runner: runner,
+            ytdlpURL: self.engineController.nightlyURL,
+            ffmpegDirectory: binaries.ffmpegDirectory,
             denoURL: binaries.deno
         )
         let inspector = MediaInspector(
             runner: runner, ffprobeURL: binaries.ffmpegDirectory.appendingPathComponent("ffprobe")
         )
-        self.coordinator = DownloadCoordinator(download: download, inspect: inspector.videoDimensions(of:))
+        self.stableCoordinator = DownloadCoordinator(
+            download: stableDownload,
+            inspect: inspector.videoDimensions(of:)
+        )
+        self.nightlyCoordinator = DownloadCoordinator(
+            download: nightlyDownload,
+            inspect: inspector.videoDimensions(of:)
+        )
         self.directSessionFactory = directSessionFactory
         self.directCoordinator = DirectDownloadCoordinator(service: DirectDownloadService(), maxBytes: nil, sessionFactory: directSessionFactory)
-        self.queue = QueueViewModel(maxConcurrent: maxConcurrent, perform: { [weak self, coordinator, directCoordinator, tmpDirectory] item in
+        let stable = self.stableCoordinator
+        let nightly = self.nightlyCoordinator
+        let direct = self.directCoordinator
+        self.queue = QueueViewModel(maxConcurrent: maxConcurrent, perform: { [weak self] item in
             switch item.source {
             case .media:
+                guard let self else { return }
+                let engine = await self.resolveEngine(for: item)
+                guard !Task.isCancelled else { return }
+                item.lastEngineChannel = engine.channel
+                let coordinator = engine.channel == .nightly
+                    ? nightly
+                    : stable
                 await coordinator.run(
                     item,
                     tmpDirectory: tmpDirectory,
-                    cookiesBrowser: self?.cookiesBrowser?.rawValue
+                    cookiesBrowser: self.cookiesBrowser?.rawValue
                 )
             case .directFile, .ambiguous:
-                await directCoordinator.run(item, tmpDirectory: tmpDirectory,
-                                            allowInsecureHTTP: self?.httpConfirmed.contains(item.id) == true)
+                await direct.run(item, tmpDirectory: tmpDirectory,
+                                 allowInsecureHTTP: self?.httpConfirmed.contains(item.id) == true)
             }
             switch item.state {
             case .done:
@@ -352,15 +406,20 @@ public final class AppModel {
     private func runProbe(for item: DownloadItem) {
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
+            guard let self else { return }
+            let engine = await resolveEngine(for: item)
+            guard !Task.isCancelled else { return }
+            item.lastEngineChannel = engine.channel
+            let probe = probeService(for: engine.channel)
             let maxAttempts = 3
             for attempt in 1...maxAttempts {
                 do {
-                    let outcome = try await self?.probe.probe(
+                    let outcome = try await probe.probe(
                         url: item.url,
-                        cookiesBrowser: self?.cookiesBrowser?.rawValue,
+                        cookiesBrowser: cookiesBrowser?.rawValue,
                         expandPlaylist: item.expandsPlaylist
                     )
-                    guard let outcome, !Task.isCancelled else { return }
+                    guard !Task.isCancelled else { return }
                     switch outcome {
                     case .video(let result):
                         item.title = result.title
@@ -372,27 +431,27 @@ public final class AppModel {
                             item.source = .ambiguous(DirectFileInfo(suggestedName: URL(string: item.url)?.lastPathComponent))
                         }
                         item.state = .readyToChoose
-                        self?.queueDidMutate()
+                        queueDidMutate()
                         // One-click: a CONFIRMED video (never generic/ambiguous) with a default
                         // quality set skips the chooser and goes straight to the queue.
-                        if let self, self.oneClickDownload, !result.isGeneric,
-                           let preferred = self.defaultQuality,
+                        if oneClickDownload, !result.isGeneric,
+                           let preferred = defaultQuality,
                            let format = result.closestMatch(to: preferred) {
-                            self.choose(format, for: item)
+                            choose(format, for: item)
                         }
                     case .playlist(let playlist):
                         guard !playlist.entries.isEmpty else {
                             item.state = .probeFailed("Playlist is empty.")
-                            self?.queueDidMutate()
+                            queueDidMutate()
                             return
                         }
                         // The probing card becomes the playlist panel: one choice for all entries.
-                        self?.queue.remove(item)
-                        self?.presentAnalysis(playlist)
+                        queue.remove(item)
+                        presentAnalysis(playlist)
                     }
                     return
                 } catch {
-                    guard !Task.isCancelled, let self else { return }
+                    guard !Task.isCancelled else { return }
                     // Transient blips (DNS flaps, probe timeout) retry silently, like the download does.
                     if attempt < maxAttempts, TransientFailure.isTransient(error) {
                         try? await Task.sleep(for: self.probeRetryDelay)
@@ -456,7 +515,8 @@ public final class AppModel {
     private func calibrateEstimate(_ analysis: PlaylistAnalysis) async {
         let entries = analysis.playlist.entries.prefix(8)
         guard !entries.isEmpty else { return }
-        let probe = self.probe
+        let engine = await engineController.resolveSelectedEngine()
+        let probe = probeService(for: engine.channel)
         let cookies = cookiesBrowser?.rawValue
         await withTaskGroup(of: (String, ProbeResult?).self) { group in
             let window = 3
@@ -563,6 +623,75 @@ public final class AppModel {
         runProbe(for: item)
     }
 
+    /// A site extractor failure can often be fixed by a freshly published nightly. Network,
+    /// cookie, filesystem and direct-download errors deliberately keep their targeted actions.
+    public func canTryLatestFixes(for item: DownloadItem) -> Bool {
+        guard !engineController.isInstalling,
+              item.source == .media, item.lastEngineChannel != .nightly,
+              let message = failureMessage(for: item)
+        else { return false }
+        return YtdlpErrorHint.shouldOfferLatestFixes(for: message)
+    }
+
+    public func canRetryWithStable(_ item: DownloadItem) -> Bool {
+        guard item.source == .media, item.lastEngineChannel == .nightly,
+              let message = failureMessage(for: item)
+        else { return false }
+        return YtdlpErrorHint.shouldOfferLatestFixes(for: message)
+    }
+
+    /// Installs the newest official nightly transactionally, activates it, then retries the
+    /// same card. If installation fails, the item and the previous engine choice are untouched.
+    public func retryWithLatestFixes(_ item: DownloadItem) async throws {
+        guard canTryLatestFixes(for: item) else { return }
+        if engineController.selectedChannel == .nightly, engineController.nightlyInstalled {
+            try await engineController.select(.nightly)
+        } else {
+            try await engineController.installLatestAndSelect()
+        }
+        guard queue.items.contains(where: { $0.id == item.id }) else { return }
+        retryFailedItem(item, using: .nightly)
+    }
+
+    public func retryWithStable(_ item: DownloadItem) {
+        guard canRetryWithStable(item) else { return }
+        engineController.useStable()
+        retryFailedItem(item, using: .stable)
+    }
+
+    private func retryFailedItem(_ item: DownloadItem, using channel: YtdlpEngineChannel) {
+        switch item.state {
+        case .probeFailed:
+            item.nextEngineChannel = channel
+            item.state = .probing
+            runProbe(for: item)
+        case .failed:
+            item.nextEngineChannel = channel
+            queue.retry(item)
+        default:
+            break
+        }
+    }
+
+    private func failureMessage(for item: DownloadItem) -> String? {
+        switch item.state {
+        case .probeFailed(let message), .failed(let message): message
+        default: nil
+        }
+    }
+
+    private func probeService(for channel: YtdlpEngineChannel) -> ProbeService {
+        channel == .nightly ? nightlyProbe : stableProbe
+    }
+
+    private func resolveEngine(for item: DownloadItem) async -> YtdlpEngineDescriptor {
+        guard let channel = item.nextEngineChannel else {
+            return await engineController.resolveSelectedEngine()
+        }
+        item.nextEngineChannel = nil
+        return await engineController.resolveEngine(channel)
+    }
+
     /// Removes the card from the list (cancelling any in-flight probe or download). Does not touch files.
     public func remove(_ item: DownloadItem) {
         probeTasks[item.id]?.cancel()
@@ -605,8 +734,8 @@ public final class AppModel {
         }
     }
 
-    /// A user-initiated refresh respects the switch too: app updates install automatically,
-    /// while engine-only updates remain available for the existing manual action.
+    /// A user-initiated refresh respects the automatic-app-update switch. The optional
+    /// nightly engine has its own explicit control in Settings.
     public func checkForUpdates() async {
         if automaticAppUpdatesEnabled {
             await updater.checkAndInstallAppUpdate()

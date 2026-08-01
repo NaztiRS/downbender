@@ -72,6 +72,7 @@ private final class UpdaterURLProtocol: URLProtocol, @unchecked Sendable {
 struct UpdaterIntegrityTests {
     private let binaryURL = URL(string: "https://updates.example/yt-dlp_macos")!
     private let checksumsURL = URL(string: "https://updates.example/SHA2-256SUMS")!
+    private let nightlyAPIURL = URL(string: "https://updates.example/nightly/latest")!
     private let abcChecksum = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
     @Test func verifiedUpdateReplacesExistingBinaryAndMakesItExecutable() async throws {
@@ -221,6 +222,169 @@ struct UpdaterIntegrityTests {
 
         let version = try await UpdaterService.latestVersion(session: session, from: endpoint)
         #expect(version == "2026.07.25")
+    }
+
+    @Test func nightlyAssetURLsArePinnedToOneOfficialRelease() throws {
+        let tag = "2026.08.01.010203"
+        let assets = try UpdaterService.nightlyAssetURLs(for: tag)
+
+        #expect(assets.binary.absoluteString ==
+            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/\(tag)/yt-dlp_macos")
+        #expect(assets.checksums.absoluteString ==
+            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/\(tag)/SHA2-256SUMS")
+        #expect(throws: UpdaterError.badVersionOutput) {
+            _ = try UpdaterService.nightlyAssetURLs(for: "../latest")
+        }
+    }
+
+    @Test func verifiedNightlyReplacesOnlyNightlyAndReturnsItsVersion() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stable = root.appendingPathComponent("yt-dlp_macos")
+        let nightly = root.appendingPathComponent("yt-dlp-nightly_macos")
+        let stableData = Data("bundled or stable override".utf8)
+        try stableData.write(to: stable)
+        try Data("previous nightly".utf8).write(to: nightly)
+
+        let tag = "2026.08.01.010203"
+        let assets = try UpdaterService.nightlyAssetURLs(for: tag)
+        let binary = Data("abc".utf8)
+        UpdaterURLProtocol.handler = { request in
+            let data: Data
+            switch request.url {
+            case self.nightlyAPIURL:
+                data = Data(#"{"tag_name":"\#(tag)"}"#.utf8)
+            case assets.checksums:
+                data = Data("\(self.abcChecksum)  yt-dlp_macos\n".utf8)
+            case assets.binary:
+                data = binary
+            default:
+                throw URLError(.badURL)
+            }
+            return Self.response(for: request, status: 200, data: data)
+        }
+        let session = UpdaterURLProtocol.session()
+        defer {
+            session.invalidateAndCancel()
+            UpdaterURLProtocol.handler = nil
+        }
+
+        let runner = FakeProcessRunner(stdoutLines: [tag])
+        let result = try await UpdaterService(appSupportDirectory: root).installLatestNightly(
+            session: session,
+            runner: runner,
+            latestReleaseURL: nightlyAPIURL
+        )
+
+        #expect(result == NightlyInstallResult(binaryURL: nightly, version: tag))
+        #expect(try Data(contentsOf: nightly) == binary)
+        #expect(try Data(contentsOf: stable) == stableData)
+        #expect(runner.recordedArguments.arguments == ["--ignore-config", "--version"])
+        let attributes = try FileManager.default.attributesOfItem(atPath: nightly.path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o755)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).allSatisfy {
+            !$0.hasSuffix(".candidate")
+        })
+    }
+
+    @Test func nightlyChecksumFailureKeepsBothInstalledEnginesUntouched() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stable = root.appendingPathComponent("yt-dlp_macos")
+        let nightly = root.appendingPathComponent("yt-dlp-nightly_macos")
+        let stableData = Data("stable".utf8)
+        let nightlyData = Data("trusted nightly".utf8)
+        try stableData.write(to: stable)
+        try nightlyData.write(to: nightly)
+
+        let tag = "2026.08.01.010203"
+        let assets = try UpdaterService.nightlyAssetURLs(for: tag)
+        UpdaterURLProtocol.handler = { request in
+            let data: Data
+            switch request.url {
+            case self.nightlyAPIURL:
+                data = Data(#"{"tag_name":"\#(tag)"}"#.utf8)
+            case assets.checksums:
+                data = Data("\(self.abcChecksum)  yt-dlp_macos\n".utf8)
+            case assets.binary:
+                data = Data("tampered".utf8)
+            default:
+                throw URLError(.badURL)
+            }
+            return Self.response(for: request, status: 200, data: data)
+        }
+        let session = UpdaterURLProtocol.session()
+        defer {
+            session.invalidateAndCancel()
+            UpdaterURLProtocol.handler = nil
+        }
+
+        let runner = FakeProcessRunner(stdoutLines: [tag])
+        await #expect(throws: UpdaterError.checksumMismatch(
+            expected: abcChecksum,
+            actual: "d121be3103007b41edf96f8262925f8c7d61894afe9a041843b631f69445bc57"
+        )) {
+            _ = try await UpdaterService(appSupportDirectory: root).installLatestNightly(
+                session: session,
+                runner: runner,
+                latestReleaseURL: nightlyAPIURL
+            )
+        }
+        #expect(runner.recordedArguments.allArguments.isEmpty)
+        #expect(try Data(contentsOf: nightly) == nightlyData)
+        #expect(try Data(contentsOf: stable) == stableData)
+    }
+
+    @Test func invalidNightlyVersionOutputKeepsPreviousNightly() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let nightly = root.appendingPathComponent("yt-dlp-nightly_macos")
+        let old = Data("trusted nightly".utf8)
+        try old.write(to: nightly)
+
+        let tag = "2026.08.01.010203"
+        let assets = try UpdaterService.nightlyAssetURLs(for: tag)
+        UpdaterURLProtocol.handler = { request in
+            let data: Data
+            switch request.url {
+            case self.nightlyAPIURL:
+                data = Data(#"{"tag_name":"\#(tag)"}"#.utf8)
+            case assets.checksums:
+                data = Data("\(self.abcChecksum)  yt-dlp_macos\n".utf8)
+            case assets.binary:
+                data = Data("abc".utf8)
+            default:
+                throw URLError(.badURL)
+            }
+            return Self.response(for: request, status: 200, data: data)
+        }
+        let session = UpdaterURLProtocol.session()
+        defer {
+            session.invalidateAndCancel()
+            UpdaterURLProtocol.handler = nil
+        }
+
+        let service = UpdaterService(appSupportDirectory: root)
+        await #expect(throws: UpdaterError.badVersionOutput) {
+            _ = try await service.installLatestNightly(
+                session: session,
+                runner: FakeProcessRunner(stdoutLines: ["   "]),
+                latestReleaseURL: nightlyAPIURL
+            )
+        }
+        #expect(try Data(contentsOf: nightly) == old)
+
+        await #expect(throws: UpdaterError.versionMismatch(
+            expected: tag,
+            actual: "2026.07.31.235959"
+        )) {
+            _ = try await service.installLatestNightly(
+                session: session,
+                runner: FakeProcessRunner(stdoutLines: ["2026.07.31.235959"]),
+                latestReleaseURL: nightlyAPIURL
+            )
+        }
+        #expect(try Data(contentsOf: nightly) == old)
     }
 
     private func temporaryDirectory() throws -> URL {

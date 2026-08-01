@@ -18,9 +18,6 @@ import Foundation
         updater: UnifiedUpdater(
             installedAppVersion: "1.0.0",
             fetchLatestAppTag: { "v1.0.0" },
-            fetchEngineInstalled: { "2026.07.04" },
-            fetchEngineLatest: { "2026.07.04" },
-            updateEngine: { _ in },
             updateApp: { _ in }
         ),
         directSessionFactory: { FailingURLProtocol.session() }

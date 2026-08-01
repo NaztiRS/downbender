@@ -6,9 +6,25 @@ struct ErrorDetailSheet: View {
     let title: String
     let message: String
     var onClose: () -> Void
+    var engineRecoveryTitle: String?
+    var onEngineRecovery: (() -> Void)?
 
     @Environment(\.openSettings) private var openSettings
     @State private var copied = false
+
+    init(
+        title: String,
+        message: String,
+        onClose: @escaping () -> Void,
+        engineRecoveryTitle: String? = nil,
+        onEngineRecovery: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.message = message
+        self.onClose = onClose
+        self.engineRecoveryTitle = engineRecoveryTitle
+        self.onEngineRecovery = onEngineRecovery
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -40,6 +56,15 @@ struct ErrorDetailSheet: View {
                         Label("Open Settings…", systemImage: "gearshape")
                     }
                     .accessibilityHint("Choose a browser under Browser cookies, then try the download again")
+                }
+
+                if let engineRecoveryTitle, let onEngineRecovery {
+                    Button {
+                        onEngineRecovery()
+                    } label: {
+                        Label(engineRecoveryTitle, systemImage: "sparkles")
+                    }
+                    .accessibilityHint("Retries this item with a different yt-dlp engine")
                 }
 
                 Spacer()

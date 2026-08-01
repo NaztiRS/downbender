@@ -41,4 +41,25 @@ public enum YtdlpErrorHint {
     public static func friendly(_ raw: String) -> String? {
         hint(for: raw)?.message
     }
+
+    /// Nightly is useful for extractor/site breakage, not for failures that already have a
+    /// more specific remedy or originate outside yt-dlp's extractor code.
+    public static func shouldOfferLatestFixes(for raw: String) -> Bool {
+        if hint(for: raw)?.suggestedAction == .openSettings { return false }
+        if TransientFailure.isTransientMessage(raw) { return false }
+
+        let lower = raw.lowercased()
+        let unrelatedFailures = [
+            "this looks like a web page",
+            "no space left",
+            "disk full",
+            "permission denied",
+            "operation not permitted",
+            "file name too long",
+            "ffmpeg not found",
+            "ffprobe not found",
+            "no format selected",
+        ]
+        return !unrelatedFailures.contains(where: lower.contains)
+    }
 }

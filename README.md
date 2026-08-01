@@ -30,9 +30,10 @@ YouTube and many other sites, or extracts their audio as MP3 — powered by
   to Downbender.
 - Configurable file names for media downloads, with safe yt-dlp fields such as title, uploader, and upload date.
 - Live queue status in the menu bar and Dock, plus actionable completion notices; system banners are used when macOS permits them.
-- Self-contained: yt-dlp, FFmpeg and Deno ship inside the app. Nothing to install.
-- Optional automatic app updates that wait for you to restart, plus manual download-engine
-  updates in Settings.
+- Self-contained by default: stable yt-dlp, FFmpeg and Deno ship inside the app.
+- Keep bundled stable available offline, or download a separately verified yt-dlp nightly
+  on demand when a site needs newer fixes.
+- Optional automatic Downbender updates that wait for you to restart.
 
 ## Requirements
 
@@ -81,8 +82,9 @@ row to reveal the file in Finder.
   yt-dlp fields and keep `%(ext)s` at the end. The setting applies to future
   media downloads, while direct files retain the name supplied by their server.
 - **Downloads suddenly failing?** YouTube changes constantly. Use
-  **Settings → Updates → Check for updates** to update the
-  engine without reinstalling the app.
+  **Try latest fixes** on the failed item, or open **Settings → Download engine**.
+  Downbender verifies the official nightly checksum and version before selecting it;
+  the bundled stable engine remains available at all times.
 
 ### Browser extension (manual install)
 

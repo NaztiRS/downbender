@@ -1,19 +1,15 @@
 import Foundation
 import Observation
 
-/// One check, one "Update now" for two updatables: the app (GitHub release) and the
-/// engine (yt-dlp). An app update supersedes the engine one: the new app ships a fresh
-/// bundled engine and the installer drops the Application Support override.
+/// Checks and installs Downbender application updates.
 @MainActor @Observable
 public final class UnifiedUpdater {
     public enum Phase: Equatable {
         case idle
         case checking
-        case upToDate(app: String, engine: String)
-        /// At least one side is non-nil.
-        case available(appVersion: String?, engineInstalled: String?, engineLatest: String?)
+        case upToDate(app: String)
+        case available(appVersion: String)
         /// nil fraction = indeterminate (the server didn't report a total size).
-        case workingOnEngine(Double?)
         case workingOnApp(Double?)
         /// The app was swapped on disk; it takes effect on relaunch.
         case readyToRestart
@@ -30,9 +26,6 @@ public final class UnifiedUpdater {
 
     private let installedAppVersion: String
     private let fetchLatestAppTag: @Sendable () async throws -> String
-    private let fetchEngineInstalled: @Sendable () async throws -> String
-    private let fetchEngineLatest: @Sendable () async throws -> String
-    private let updateEngine: @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
     private let updateApp: @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
     @ObservationIgnored private var activeOperation: ActiveOperation?
     /// If automatic updating is enabled while a manual check/update is suspended, the
@@ -42,21 +35,14 @@ public final class UnifiedUpdater {
     public init(
         installedAppVersion: String,
         fetchLatestAppTag: @escaping @Sendable () async throws -> String,
-        fetchEngineInstalled: @escaping @Sendable () async throws -> String,
-        fetchEngineLatest: @escaping @Sendable () async throws -> String,
-        updateEngine: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void,
         updateApp: @escaping @Sendable (@escaping @Sendable (Double?) -> Void) async throws -> Void
     ) {
         self.installedAppVersion = installedAppVersion
         self.fetchLatestAppTag = fetchLatestAppTag
-        self.fetchEngineInstalled = fetchEngineInstalled
-        self.fetchEngineLatest = fetchEngineLatest
-        self.updateEngine = updateEngine
         self.updateApp = updateApp
     }
 
-    /// Queries both sides in parallel; one side failing (no release yet, endpoint down)
-    /// doesn't kill the check — the working side still reports. Only a total failure becomes .failed.
+    /// Queries the latest application release without starting a duplicate operation.
     public func check() async {
         guard activeOperation == nil, phase != .readyToRestart else { return }
         activeOperation = .checking
@@ -70,9 +56,9 @@ public final class UnifiedUpdater {
         }
     }
 
-    /// Checks for updates and silently installs Downbender itself when a newer app exists.
-    /// Engine-only updates deliberately remain manual. Concurrent automatic calls coalesce,
-    /// while a request arriving during a manual check reuses that check's result.
+    /// Checks for updates and silently installs Downbender when a newer release exists.
+    /// Concurrent automatic calls coalesce, while a request arriving during a manual
+    /// check reuses that check's result.
     public func checkAndInstallAppUpdate() async {
         guard phase != .readyToRestart else { return }
         switch activeOperation {
@@ -90,35 +76,17 @@ public final class UnifiedUpdater {
 
     private func performCheck() async {
         phase = .checking
-        async let appTagResult = Result { try await fetchLatestAppTag() }
-        async let engineInstalledResult = Result { try await fetchEngineInstalled() }
-        async let engineLatestResult = Result { try await fetchEngineLatest() }
-        let (appTag, engineInstalled, engineLatest) = await (appTagResult, engineInstalledResult, engineLatestResult)
-
-        let newAppVersion: String? = (try? appTag.get()).flatMap { tag in
-            AppUpdateChecker.isNewer(latestTag: tag, than: installedAppVersion)
-                ? tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-                : nil
-        }
-        let engine: (installed: String, latest: String)? = {
-            guard let installed = try? engineInstalled.get(), let latest = try? engineLatest.get() else { return nil }
-            return (installed, latest)
-        }()
-
-        if case .failure(let error) = appTag, engine == nil {
+        do {
+            let latestTag = try await fetchLatestAppTag()
+            if AppUpdateChecker.isNewer(latestTag: latestTag, than: installedAppVersion) {
+                phase = .available(
+                    appVersion: latestTag.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+                )
+            } else {
+                phase = .upToDate(app: installedAppVersion)
+            }
+        } catch {
             phase = .failed(error.localizedDescription)
-            return
-        }
-
-        let engineNeedsUpdate = engine.map { !UpdaterService.isUpToDate(installed: $0.installed, latest: $0.latest) } ?? false
-        if newAppVersion == nil && !engineNeedsUpdate {
-            phase = .upToDate(app: installedAppVersion, engine: engine?.installed ?? "?")
-        } else {
-            phase = .available(
-                appVersion: newAppVersion,
-                engineInstalled: engineNeedsUpdate ? engine?.installed : nil,
-                engineLatest: engineNeedsUpdate ? engine?.latest : nil
-            )
         }
     }
 
@@ -138,27 +106,16 @@ public final class UnifiedUpdater {
     }
 
     private func performManualUpdate() async {
-        guard case let .available(appVersion, _, engineLatest) = phase else { return }
+        guard case .available = phase else { return }
         do {
-            if appVersion != nil {
-                try await installApp()
-            } else if let engineLatest {
-                phase = .workingOnEngine(0)
-                try await updateEngine { [weak self] fraction in
-                    Task { @MainActor in
-                        guard let self, case .workingOnEngine(let current) = self.phase else { return }
-                        self.phase = .workingOnEngine(Self.advancingProgress(current: current, reported: fraction))
-                    }
-                }
-                phase = .upToDate(app: installedAppVersion, engine: engineLatest)
-            }
+            try await installApp()
         } catch {
             phase = .failed(error.localizedDescription)
         }
     }
 
     private func installAvailableAppOnly() async {
-        guard case .available(appVersion: .some, engineInstalled: _, engineLatest: _) = phase else { return }
+        guard case .available = phase else { return }
         do {
             try await installApp()
         } catch {
@@ -186,12 +143,5 @@ public final class UnifiedUpdater {
         let clamped = min(max(reported, 0), 1)
         guard let current else { return clamped }
         return max(current, clamped)
-    }
-}
-
-/// async-let needs an expression; Result's throwing initializer wraps one.
-private extension Result where Failure == Error {
-    init(catching body: @Sendable () async throws -> Success) async {
-        do { self = .success(try await body()) } catch { self = .failure(error) }
     }
 }
