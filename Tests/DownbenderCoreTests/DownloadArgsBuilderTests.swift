@@ -7,6 +7,7 @@ private func args(
     denoURL: URL? = nil,
     cookiesBrowser: String? = nil,
     includeSubtitles: Bool = false,
+    detailedDiagnostics: Bool = false,
     useTVClient: Bool = false
 ) -> [String] {
     DownloadArgsBuilder.arguments(
@@ -18,6 +19,7 @@ private func args(
         denoURL: denoURL,
         cookiesBrowser: cookiesBrowser,
         includeSubtitles: includeSubtitles,
+        detailedDiagnostics: detailedDiagnostics,
         useTVClient: useTVClient
     )
 }
@@ -110,6 +112,14 @@ private func value(after flag: String, in arguments: [String]) -> String? {
 @Test func includesNoQuietSoDestinationAndMergerLinesAppear() {
     #expect(args(.video(height: 1080)).contains("--no-quiet"))
     #expect(args(.audioMP3).contains("--no-quiet"))
+}
+
+@Test func verboseLoggingIsOneShotAndExplicitForEveryOutputKind() {
+    for format in [DownloadFormat.video(height: 1080), .audioM4A, .audioOpus] {
+        #expect(!args(format).contains("--verbose"))
+        let detailed = args(format, detailedDiagnostics: true)
+        #expect(detailed.filter { $0 == "--verbose" }.count == 1)
+    }
 }
 
 // Counterpart of the ProgressParserTests round-trip: without this assert, dropping the flag would leave the suite green and the bar frozen at 0%.

@@ -8,6 +8,8 @@ struct ErrorDetailSheet: View {
     var onClose: () -> Void
     var engineRecoveryTitle: String?
     var onEngineRecovery: (() -> Void)?
+    var diagnosticsReport: String?
+    var onRetryWithDiagnostics: (() -> Void)?
 
     @Environment(\.openSettings) private var openSettings
     @State private var copied = false
@@ -17,13 +19,17 @@ struct ErrorDetailSheet: View {
         message: String,
         onClose: @escaping () -> Void,
         engineRecoveryTitle: String? = nil,
-        onEngineRecovery: (() -> Void)? = nil
+        onEngineRecovery: (() -> Void)? = nil,
+        diagnosticsReport: String? = nil,
+        onRetryWithDiagnostics: (() -> Void)? = nil
     ) {
         self.title = title
         self.message = message
         self.onClose = onClose
         self.engineRecoveryTitle = engineRecoveryTitle
         self.onEngineRecovery = onEngineRecovery
+        self.diagnosticsReport = diagnosticsReport
+        self.onRetryWithDiagnostics = onRetryWithDiagnostics
     }
 
     var body: some View {
@@ -35,36 +41,63 @@ struct ErrorDetailSheet: View {
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Suggestion: \(hint.message)")
             }
+            if diagnosticsReport != nil {
+                Label(
+                    "Full URLs, local paths, and cookie details are removed. Nothing is sent automatically.",
+                    systemImage: "hand.raised.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(
+                    "Privacy: Full URLs, local paths, and cookie details are removed. Nothing is sent automatically."
+                )
+            }
             ScrollView {
-                Text(message)
+                Text(diagnosticsReport ?? message)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(minHeight: 120, maxHeight: 260)
+            if hint?.suggestedAction == .openSettings || engineRecoveryTitle != nil {
+                HStack {
+                    if hint?.suggestedAction == .openSettings {
+                        Button {
+                            openSettings()
+                        } label: {
+                            Label("Open Settings…", systemImage: "gearshape")
+                        }
+                        .accessibilityHint("Choose a browser under Browser cookies, then try the download again")
+                    }
+
+                    if let engineRecoveryTitle, let onEngineRecovery {
+                        Button {
+                            onEngineRecovery()
+                        } label: {
+                            Label(engineRecoveryTitle, systemImage: "sparkles")
+                        }
+                        .accessibilityHint("Retries this item with a different yt-dlp engine")
+                    }
+                    Spacer()
+                }
+            }
             HStack {
                 Button(action: copyError) {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copyButtonTitle, systemImage: copied ? "checkmark" : "doc.on.doc")
                 }
-                .accessibilityLabel(copied ? "Error copied" : "Copy error")
-                .accessibilityHint("Copies the full error message to the clipboard")
+                .accessibilityLabel(copyAccessibilityLabel)
+                .accessibilityValue(copied ? "Copied" : "")
+                .accessibilityHint(copyAccessibilityHint)
 
-                if hint?.suggestedAction == .openSettings {
+                if let onRetryWithDiagnostics {
                     Button {
-                        openSettings()
+                        onRetryWithDiagnostics()
                     } label: {
-                        Label("Open Settings…", systemImage: "gearshape")
+                        Label("Retry with diagnostics", systemImage: "doc.text.magnifyingglass")
                     }
-                    .accessibilityHint("Choose a browser under Browser cookies, then try the download again")
-                }
-
-                if let engineRecoveryTitle, let onEngineRecovery {
-                    Button {
-                        onEngineRecovery()
-                    } label: {
-                        Label(engineRecoveryTitle, systemImage: "sparkles")
-                    }
-                    .accessibilityHint("Retries this item with a different yt-dlp engine")
+                    .accessibilityHint(
+                        "Retries this item with detailed logging. Nothing is sent automatically."
+                    )
                 }
 
                 Spacer()
@@ -78,12 +111,33 @@ struct ErrorDetailSheet: View {
     }
 
     private var hint: YtdlpErrorHint.Hint? {
-        YtdlpErrorHint.hint(for: message)
+        YtdlpErrorHint.hint(for: diagnosticsReport ?? message)
+    }
+
+    private var copyButtonTitle: String {
+        if diagnosticsReport != nil {
+            return copied ? "Diagnostics copied" : "Copy diagnostics"
+        }
+        return copied ? "Copied" : "Copy"
+    }
+
+    private var copyAccessibilityLabel: String {
+        if diagnosticsReport != nil {
+            return "Copy diagnostics"
+        }
+        return "Copy error"
+    }
+
+    private var copyAccessibilityHint: String {
+        if diagnosticsReport != nil {
+            return "Copies a privacy-safe diagnostics report to the clipboard"
+        }
+        return "Copies the full error message to the clipboard"
     }
 
     private func copyError() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(message, forType: .string)
+        NSPasteboard.general.setString(diagnosticsReport ?? message, forType: .string)
         copied = true
     }
 }

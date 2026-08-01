@@ -70,12 +70,23 @@ extension DirectDownloadTests {
         MockURLProtocol.respond(status: 403, data: Data())
         let coordinator = DirectDownloadCoordinator(service: DirectDownloadService(), maxBytes: nil,
                                                     sessionFactory: { MockURLProtocol.session() })
-        let item = DownloadItem(url: "https://example.com/a.zip", title: "a.zip", destination: dest, state: .downloading)
+        let item = DownloadItem(
+            url: "https://user:pass@example.com/a.zip?token=secret",
+            title: "a.zip",
+            destination: dest,
+            state: .downloading
+        )
         item.source = .directFile(DirectFileInfo())
 
         await coordinator.run(item, tmpDirectory: dest)
         guard case .failed(let msg) = item.state else { Issue.record("expected .failed"); return }
         #expect(msg.contains("Access denied"))
+        #expect(item.failureDiagnostics?.operation == .directDownload)
+        #expect(item.failureDiagnostics?.host == "example.com")
+        #expect(item.failureDiagnostics?.engineChannel == nil)
+        #expect(item.failureDiagnostics?.attempts.count == 1)
+        #expect(item.failureDiagnostics?.report.contains("token=secret") == false)
+        #expect(item.failureDiagnostics?.report.contains("user:pass") == false)
     }
 
     @MainActor
@@ -92,6 +103,45 @@ extension DirectDownloadTests {
         await coordinator.run(item, tmpDirectory: dest)
         guard case .failed(let msg) = item.state else { Issue.record("expected .failed"); return }
         #expect(msg.contains("free space"))
+        #expect(item.failureDiagnostics?.attempts.count == 1)
+        #expect(item.failureDiagnostics?.report.contains("free space") == true)
+    }
+
+    @MainActor
+    @Test func directCoordinatorDoesNotExposeRawFilesystemPathsInState() async throws {
+        let dest = freshDir()
+        defer { try? FileManager.default.removeItem(at: dest) }
+        MockURLProtocol.handler = { _ in
+            throw NSError(
+                domain: "DirectDownloadTests",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "Failed at /Users/alice/My Videos/token=secret",
+                ]
+            )
+        }
+        let coordinator = DirectDownloadCoordinator(
+            service: DirectDownloadService(),
+            maxBytes: nil,
+            sessionFactory: { MockURLProtocol.session() }
+        )
+        let item = DownloadItem(
+            url: "https://example.com/a.zip",
+            title: "a.zip",
+            destination: dest,
+            state: .downloading
+        )
+        item.source = .directFile(DirectFileInfo())
+
+        await coordinator.run(item, tmpDirectory: dest)
+
+        guard case .failed(let message) = item.state else {
+            Issue.record("expected .failed")
+            return
+        }
+        #expect(!message.contains("alice"))
+        #expect(!message.contains("token=secret"))
+        #expect(message.contains("<path>"))
     }
 
     @MainActor

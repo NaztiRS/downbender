@@ -179,6 +179,7 @@ public final class QueueViewModel {
             item.etaText = ""
             item.deliveredNote = ""
             item.deliveredMismatch = false
+            item.failureDiagnostics = nil
             item.state = .queued
             pump()
             onMutation?()
@@ -220,6 +221,7 @@ public final class QueueViewModel {
             item.state = .cancelled
             item.resumeData = nil
             item.nextEngineChannel = nil
+            item.nextAttemptCapturesDiagnostics = false
         case .downloading, .merging:
             if let task = tasks[item.id] {
                 task.cancel()

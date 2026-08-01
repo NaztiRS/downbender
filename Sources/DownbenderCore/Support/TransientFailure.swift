@@ -11,6 +11,14 @@ public enum TransientFailure {
     public static func isTransient(_ error: Error) -> Bool {
         if let download = error as? DownloadError, download == .stalled { return true }
         if let probe = error as? ProbeError, probe == .timedOut { return true }
+        if let download = error as? DownloadError,
+           case .ytdlpFailed(let details) = download {
+            return isTransientMessage(details.output)
+        }
+        if let probe = error as? ProbeError,
+           case .ytdlpFailed(let details) = probe {
+            return isTransientMessage(details.output)
+        }
         if let urlError = error as? URLError { return transientURLCodes.contains(urlError.code) }
         return isTransientMessage(error.localizedDescription)
     }

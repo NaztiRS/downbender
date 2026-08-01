@@ -1,16 +1,15 @@
 import Foundation
 
 public enum DownloadError: Error, Equatable {
-    case ytdlpFailed(String)
+    case ytdlpFailed(YtdlpFailureDetails)
     case stalled
 }
 
 extension DownloadError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .ytdlpFailed(let stderr):
-            let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "yt-dlp failed with no error message." : trimmed
+        case .ytdlpFailed(let details):
+            return details.summary
         case .stalled:
             return "The download stalled — no data arrived for a while."
         }
@@ -56,6 +55,7 @@ public struct DownloadService: Sendable {
         cookiesBrowser: String? = nil,
         fileNameTemplate: String = FileNameTemplate.defaultValue,
         includeSubtitles: Bool = false,
+        detailedDiagnostics: Bool = false,
         expectedTotalBytes: Int64? = nil,
         stallTimeout: Duration = .seconds(120),
         onProgress: @Sendable @escaping (DownloadProgress) -> Void,
@@ -66,7 +66,9 @@ public struct DownloadService: Sendable {
             tmpDirectory: tmpDirectory, ffmpegDirectory: ffmpegDirectory,
             denoURL: denoURL, cookiesBrowser: cookiesBrowser,
             fileNameTemplate: fileNameTemplate,
-            includeSubtitles: includeSubtitles, useTVClient: useTVClient
+            includeSubtitles: includeSubtitles,
+            detailedDiagnostics: detailedDiagnostics,
+            useTVClient: useTVClient
         )
         // bv*+ba downloads 2 files, audio-only 1; the tracker fuses the phases into one monotonic bar.
         let tracker = UnifiedProgressTracker(
@@ -108,7 +110,9 @@ public struct DownloadService: Sendable {
             guard let result = try await group.next()! else { throw DownloadError.stalled }
             return result
         }
-        guard result.exitCode == 0 else { throw DownloadError.ytdlpFailed(result.stderr) }
+        guard result.exitCode == 0 else {
+            throw DownloadError.ytdlpFailed(YtdlpFailureDetails(result: result))
+        }
         let path = deliveredPath.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return path.isEmpty ? nil : URL(fileURLWithPath: path)
     }

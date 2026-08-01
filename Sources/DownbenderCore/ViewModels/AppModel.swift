@@ -213,16 +213,32 @@ public final class AppModel {
             switch item.source {
             case .media:
                 guard let self else { return }
+                let detailedDiagnostics = item.nextAttemptCapturesDiagnostics
                 let engine = await self.resolveEngine(for: item)
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.finishCancelledMediaPreparation(item)
+                    return
+                }
                 item.lastEngineChannel = engine.channel
+                if detailedDiagnostics, engine.version == nil {
+                    item.lastEngineVersion = await self.engineController.diagnosticVersion(for: engine.channel)
+                } else {
+                    item.lastEngineVersion = engine.version
+                }
+                guard !Task.isCancelled else {
+                    self.finishCancelledMediaPreparation(item)
+                    return
+                }
+                item.nextEngineChannel = nil
+                item.nextAttemptCapturesDiagnostics = false
                 let coordinator = engine.channel == .nightly
                     ? nightly
                     : stable
                 await coordinator.run(
                     item,
                     tmpDirectory: tmpDirectory,
-                    cookiesBrowser: self.cookiesBrowser?.rawValue
+                    cookiesBrowser: self.cookiesBrowser?.rawValue,
+                    detailedDiagnostics: detailedDiagnostics
                 )
             case .directFile, .ambiguous:
                 await direct.run(item, tmpDirectory: tmpDirectory,
@@ -399,25 +415,39 @@ public final class AppModel {
 
     public func retryProbe(_ item: DownloadItem) {
         guard case .probeFailed = item.state else { return }
+        item.failureDiagnostics = nil
+        item.nextAttemptCapturesDiagnostics = false
         item.state = .probing
         runProbe(for: item)
     }
 
     private func runProbe(for item: DownloadItem) {
+        item.failureDiagnostics = nil
         probeTasks[item.id] = Task { @MainActor [weak self] in
             defer { self?.probeTasks[item.id] = nil }
             guard let self else { return }
+            let detailedDiagnostics = item.nextAttemptCapturesDiagnostics
             let engine = await resolveEngine(for: item)
             guard !Task.isCancelled else { return }
             item.lastEngineChannel = engine.channel
+            if detailedDiagnostics, engine.version == nil {
+                item.lastEngineVersion = await engineController.diagnosticVersion(for: engine.channel)
+            } else {
+                item.lastEngineVersion = engine.version
+            }
+            guard !Task.isCancelled else { return }
+            item.nextEngineChannel = nil
+            item.nextAttemptCapturesDiagnostics = false
             let probe = probeService(for: engine.channel)
             let maxAttempts = 3
+            var failedAttempts: [FailureAttempt] = []
             for attempt in 1...maxAttempts {
                 do {
                     let outcome = try await probe.probe(
                         url: item.url,
                         cookiesBrowser: cookiesBrowser?.rawValue,
-                        expandPlaylist: item.expandsPlaylist
+                        expandPlaylist: item.expandsPlaylist,
+                        detailedDiagnostics: detailedDiagnostics
                     )
                     guard !Task.isCancelled else { return }
                     switch outcome {
@@ -441,7 +471,19 @@ public final class AppModel {
                         }
                     case .playlist(let playlist):
                         guard !playlist.entries.isEmpty else {
-                            item.state = .probeFailed("Playlist is empty.")
+                            let message = "Playlist is empty."
+                            item.failureDiagnostics = probeDiagnostics(
+                                for: item,
+                                engine: engine,
+                                attempts: [FailureAttempt(
+                                    number: 1,
+                                    exitCode: nil,
+                                    detailed: detailedDiagnostics,
+                                    summary: message,
+                                    output: message
+                                )]
+                            )
+                            item.state = .probeFailed(message)
                             queueDidMutate()
                             return
                         }
@@ -452,6 +494,11 @@ public final class AppModel {
                     return
                 } catch {
                     guard !Task.isCancelled else { return }
+                    failedAttempts.append(probeFailureAttempt(
+                        for: error,
+                        number: attempt,
+                        detailed: detailedDiagnostics
+                    ))
                     // Transient blips (DNS flaps, probe timeout) retry silently, like the download does.
                     if attempt < maxAttempts, TransientFailure.isTransient(error) {
                         try? await Task.sleep(for: self.probeRetryDelay)
@@ -472,12 +519,22 @@ public final class AppModel {
                             return
                         }
                         // Reachable but a web page (or other non-file): a clear message beats yt-dlp's raw error.
+                        item.failureDiagnostics = probeDiagnostics(
+                            for: item,
+                            engine: engine,
+                            attempts: failedAttempts
+                        )
                         item.state = .probeFailed("This looks like a web page, not a video or a downloadable file.")
                         queueDidMutate()
                         return
                     }
                     guard !Task.isCancelled else { return }
-                    item.state = .probeFailed(error.localizedDescription)
+                    item.failureDiagnostics = probeDiagnostics(
+                        for: item,
+                        engine: engine,
+                        attempts: failedAttempts
+                    )
+                    item.state = .probeFailed(failedAttempts.last?.summary ?? error.localizedDescription)
                     queueDidMutate()
                     return
                 }
@@ -640,6 +697,16 @@ public final class AppModel {
         return YtdlpErrorHint.shouldOfferLatestFixes(for: message)
     }
 
+    public func canRetryWithDiagnostics(_ item: DownloadItem) -> Bool {
+        guard item.source == .media, let message = failureMessage(for: item) else { return false }
+        let synthesizedFailures = [
+            "playlist is empty",
+            "this looks like a web page",
+            "no format selected",
+        ]
+        return !synthesizedFailures.contains { message.lowercased().contains($0) }
+    }
+
     /// Installs the newest official nightly transactionally, activates it, then retries the
     /// same card. If installation fails, the item and the previous engine choice are untouched.
     public func retryWithLatestFixes(_ item: DownloadItem) async throws {
@@ -659,6 +726,26 @@ public final class AppModel {
         retryFailedItem(item, using: .stable)
     }
 
+    /// Replays the same failed media operation with bounded verbose logging. The engine used
+    /// by the failed attempt is pinned when possible; output options and destination are untouched.
+    public func retryWithDiagnostics(_ item: DownloadItem) {
+        guard canRetryWithDiagnostics(item) else { return }
+        let channel = item.lastEngineChannel ?? engineController.selectedChannel
+        item.nextEngineChannel = channel
+        item.nextAttemptCapturesDiagnostics = true
+        item.failureDiagnostics = nil
+        switch item.state {
+        case .probeFailed:
+            item.state = .probing
+            runProbe(for: item)
+        case .failed:
+            queue.retry(item)
+        default:
+            item.nextEngineChannel = nil
+            item.nextAttemptCapturesDiagnostics = false
+        }
+    }
+
     private func retryFailedItem(_ item: DownloadItem, using channel: YtdlpEngineChannel) {
         switch item.state {
         case .probeFailed:
@@ -675,9 +762,87 @@ public final class AppModel {
 
     private func failureMessage(for item: DownloadItem) -> String? {
         switch item.state {
-        case .probeFailed(let message), .failed(let message): message
-        default: nil
+        case .probeFailed(let message), .failed(let message):
+            if let diagnostics = item.failureDiagnostics {
+                return message + "\n" + diagnostics.report
+            }
+            return message
+        default: return nil
         }
+    }
+
+    public func diagnosticsReport(for item: DownloadItem) -> String {
+        if let diagnostics = item.failureDiagnostics { return diagnostics.report }
+        let message = failureMessage(for: item) ?? "No failure details are available."
+        let operation: DiagnosticOperation
+        switch item.state {
+        case .probeFailed:
+            operation = .analysis
+        default:
+            operation = item.source == .media ? .download : .directDownload
+        }
+        let outputDescription: String? = if item.source == .media {
+            item.format.map { "\($0.preferenceLabel) · \($0.containerLabel)" }
+                ?? "Output not selected"
+        } else {
+            "Direct file"
+        }
+        return FailureDiagnostics(
+            host: FailureDiagnostics.host(from: item.url),
+            operation: operation,
+            engineChannel: item.source == .media ? item.lastEngineChannel : nil,
+            engineVersion: item.source == .media ? item.lastEngineVersion : nil,
+            outputDescription: outputDescription,
+            includeSubtitles: item.source == .media ? item.includeSubtitles : nil,
+            attempts: [FailureAttempt(
+                number: 1,
+                exitCode: nil,
+                detailed: false,
+                summary: message,
+                output: message
+            )]
+        ).report
+    }
+
+    private func probeFailureAttempt(
+        for error: Error,
+        number: Int,
+        detailed: Bool
+    ) -> FailureAttempt {
+        if let probeError = error as? ProbeError,
+           case .ytdlpFailed(let details) = probeError {
+            return FailureAttempt(
+                number: number,
+                exitCode: details.exitCode,
+                detailed: detailed,
+                summary: details.summary,
+                output: details.output
+            )
+        }
+        let message = error.localizedDescription
+        return FailureAttempt(
+            number: number,
+            exitCode: nil,
+            detailed: detailed,
+            summary: message,
+            output: message
+        )
+    }
+
+    private func probeDiagnostics(
+        for item: DownloadItem,
+        engine: YtdlpEngineDescriptor,
+        attempts: [FailureAttempt]
+    ) -> FailureDiagnostics {
+        FailureDiagnostics(
+            host: FailureDiagnostics.host(from: item.url),
+            operation: .analysis,
+            engineChannel: engine.channel,
+            engineVersion: item.lastEngineVersion ?? engine.version,
+            outputDescription: item.expandsPlaylist ? "Playlist analysis" : "Output not selected",
+            includeSubtitles: nil,
+            attempts: attempts
+        )
     }
 
     private func probeService(for channel: YtdlpEngineChannel) -> ProbeService {
@@ -688,8 +853,14 @@ public final class AppModel {
         guard let channel = item.nextEngineChannel else {
             return await engineController.resolveSelectedEngine()
         }
-        item.nextEngineChannel = nil
         return await engineController.resolveEngine(channel)
+    }
+
+    private func finishCancelledMediaPreparation(_ item: DownloadItem) {
+        guard item.state == .downloading || item.state == .merging else { return }
+        item.nextEngineChannel = nil
+        item.nextAttemptCapturesDiagnostics = false
+        item.state = .cancelled
     }
 
     /// Removes the card from the list (cancelling any in-flight probe or download). Does not touch files.

@@ -25,6 +25,12 @@ public struct PersistedItem: Codable, Equatable, Sendable {
     public var resumeData: Data?
     /// Optional keeps existing version-1 queue files decodable.
     public var lastEngineChannel: String?
+    /// Optional fields keep older version-1 queue files decodable.
+    public var lastEngineVersion: String?
+    public var failureDiagnostics: FailureDiagnostics?
+    /// Pending one-shot recovery intent survives a quit while the item waits or is paused.
+    public var pendingEngineChannel: String?
+    public var pendingDetailedDiagnostics: Bool?
 }
 
 public extension PersistedItem {
@@ -64,6 +70,10 @@ public extension PersistedItem {
         deliveredPath = item.deliveredFileURL?.path
         resumeData = item.resumeData
         lastEngineChannel = item.lastEngineChannel?.rawValue
+        lastEngineVersion = item.lastEngineVersion
+        failureDiagnostics = item.failureDiagnostics
+        pendingEngineChannel = item.nextEngineChannel?.rawValue
+        pendingDetailedDiagnostics = item.nextAttemptCapturesDiagnostics ? true : nil
     }
 
     /// Rebuilds a live item. Interrupted work comes back PAUSED (nothing self-starts on
@@ -102,6 +112,10 @@ public extension PersistedItem {
         item.deliveredFileURL = deliveredPath.map { URL(fileURLWithPath: $0) }
         item.resumeData = resumeData
         item.lastEngineChannel = lastEngineChannel.flatMap(YtdlpEngineChannel.init(rawValue:))
+        item.lastEngineVersion = lastEngineVersion
+        item.failureDiagnostics = failureDiagnostics
+        item.nextEngineChannel = pendingEngineChannel.flatMap(YtdlpEngineChannel.init(rawValue:))
+        item.nextAttemptCapturesDiagnostics = pendingDetailedDiagnostics == true
         return item
     }
 

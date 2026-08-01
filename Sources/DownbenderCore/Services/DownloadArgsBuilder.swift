@@ -8,11 +8,17 @@ public enum DownloadArgsBuilder {
 
     /// Flags common to EVERY yt-dlp invocation (probe and download).
     /// `noPlaylist: false` only when the user explicitly asked to expand a watch+list URL.
-    static func baseArgs(denoURL: URL?, cookiesBrowser: String?, noPlaylist: Bool = true) -> [String] {
+    static func baseArgs(
+        denoURL: URL?,
+        cookiesBrowser: String?,
+        noPlaylist: Bool = true,
+        detailedDiagnostics: Bool = false
+    ) -> [String] {
         // 30 s per network read: a dead socket aborts instead of hanging forever; yt-dlp's
         // own --retries picks it up. Applies to probe AND download (both build on baseArgs).
         var args = ["--no-config", "--socket-timeout", "30"]
         if noPlaylist { args.append("--no-playlist") }
+        if detailedDiagnostics { args.append("--verbose") }
         if let denoURL { args += ["--js-runtimes", "deno:\(denoURL.path)"] }
         if let cookiesBrowser { args += ["--cookies-from-browser", cookiesBrowser] }
         return args
@@ -28,9 +34,14 @@ public enum DownloadArgsBuilder {
         cookiesBrowser: String? = nil,
         fileNameTemplate: String = FileNameTemplate.defaultValue,
         includeSubtitles: Bool = false,
+        detailedDiagnostics: Bool = false,
         useTVClient: Bool = false
     ) -> [String] {
-        var args = baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser)
+        var args = baseArgs(
+            denoURL: denoURL,
+            cookiesBrowser: cookiesBrowser,
+            detailedDiagnostics: detailedDiagnostics
+        )
         args += [
             // --print implies quiet: without --no-quiet yt-dlp emits neither the
             // "[download] Destination:" lines (unified-progress phases) nor "[Merger]".

@@ -61,9 +61,21 @@ public final class DirectDownloadCoordinator {
     }
 
     public func run(_ item: DownloadItem, tmpDirectory: URL, allowInsecureHTTP: Bool = false) async {
+        item.failureDiagnostics = nil
         item.state = .downloading
         if let known = knownSize(item), let free = freeCapacity(at: item.destination), known > free {
-            item.state = .failed(DirectDownloadError.notEnoughDiskSpace.localizedDescription)
+            let message = DirectDownloadError.notEnoughDiskSpace.localizedDescription
+            item.failureDiagnostics = directDiagnostics(
+                for: item,
+                attempts: [FailureAttempt(
+                    number: 1,
+                    exitCode: nil,
+                    detailed: false,
+                    summary: message,
+                    output: message
+                )]
+            )
+            item.state = .failed(message)
             return
         }
         let suggested: String? = {
@@ -74,6 +86,7 @@ public final class DirectDownloadCoordinator {
         }()
         // Same shape as DownloadCoordinator: transient network blips get fresh attempts.
         let maxAttempts = 3
+        var failedAttempts: [FailureAttempt] = []
         for attempt in 1...maxAttempts {
             let session = sessionFactory()
             let progressUpdates = ProgressCoalescer(
@@ -120,6 +133,14 @@ public final class DirectDownloadCoordinator {
                     return
                 }
                 item.resumeData = nil
+                let message = error.localizedDescription
+                failedAttempts.append(FailureAttempt(
+                    number: attempt,
+                    exitCode: nil,
+                    detailed: false,
+                    summary: message,
+                    output: message
+                ))
                 if let urlError = error as? URLError,
                    TransientFailure.transientURLCodes.contains(urlError.code), attempt < maxAttempts {
                     item.fraction = 0
@@ -129,7 +150,8 @@ public final class DirectDownloadCoordinator {
                     if Task.isCancelled { finishInterrupted(item); return }
                     continue
                 }
-                item.state = .failed(error.localizedDescription)
+                item.failureDiagnostics = directDiagnostics(for: item, attempts: failedAttempts)
+                item.state = .failed(failedAttempts.last?.summary ?? "The download failed.")
                 return
             }
         }
@@ -139,6 +161,21 @@ public final class DirectDownloadCoordinator {
     /// cancelling the Task, so only an execution state gets overwritten here.
     private func finishInterrupted(_ item: DownloadItem) {
         if item.state == .downloading { item.state = .cancelled }
+    }
+
+    private func directDiagnostics(
+        for item: DownloadItem,
+        attempts: [FailureAttempt]
+    ) -> FailureDiagnostics {
+        FailureDiagnostics(
+            host: FailureDiagnostics.host(from: item.url),
+            operation: .directDownload,
+            engineChannel: nil,
+            engineVersion: nil,
+            outputDescription: "Direct file",
+            includeSubtitles: nil,
+            attempts: attempts
+        )
     }
 
     private func knownSize(_ item: DownloadItem) -> Int64? {

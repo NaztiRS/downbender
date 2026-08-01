@@ -688,6 +688,152 @@ private func playlistFixtureJSON() throws -> String {
     #expect(message == "Playlist is empty.")
 }
 
+// MARK: - Diagnostics
+
+@MainActor
+@Test func retryDownloadWithDiagnosticsPreservesEveryFrozenOption() async {
+    let runner = FakeProcessRunner(replays: [
+        .init(stdoutLines: ["2026.07.04"], exitCode: 0),
+        .init(
+            stderr: "Authorization: Bearer secret\nERROR: unavailable at https://cdn.example/x?sig=secret",
+            exitCode: 7
+        ),
+    ])
+    let model = makeModel(runner: runner)
+    let destination = URL(fileURLWithPath: "/tmp/chosen-destination")
+    let template = "%(upload_date)s - %(title)s.%(ext)s"
+    let item = DownloadItem(
+        url: "https://youtu.be/diagnostics",
+        title: "Diagnostics",
+        format: .video(height: 1080),
+        fileNameTemplate: template,
+        destination: destination,
+        state: .failed("initial failure")
+    )
+    item.includeSubtitles = true
+    item.expectedTotalBytes = 42_000_000
+    item.lastEngineChannel = .stable
+    model.queue.add(item)
+
+    model.retryWithDiagnostics(item)
+    await waitUntilFinished(item)
+
+    guard case .failed = item.state else {
+        Issue.record("expected detailed retry to fail, got \(item.state)")
+        return
+    }
+    #expect(item.url == "https://youtu.be/diagnostics")
+    #expect(item.source == .media)
+    #expect(item.format == .video(height: 1080))
+    #expect(item.includeSubtitles == true)
+    #expect(item.fileNameTemplate == template)
+    #expect(item.destination == destination)
+    #expect(item.expectedTotalBytes == 42_000_000)
+    #expect(item.lastEngineChannel == .stable)
+    #expect(item.lastEngineVersion == "2026.07.04")
+
+    let calls = runner.recordedArguments.allArguments
+    #expect(calls.count == 2)
+    #expect(calls[0] == ["--ignore-config", "--version"])
+    let downloadArgs = calls[1]
+    #expect(downloadArgs.filter { $0 == "--verbose" }.count == 1)
+    #expect(downloadArgs.contains("--embed-subs"))
+    #expect(downloadArgs.last == item.url)
+    guard let outputIndex = downloadArgs.firstIndex(of: "-o") else {
+        Issue.record("missing -o")
+        return
+    }
+    #expect(downloadArgs[outputIndex + 1] == template)
+    let destinations = downloadArgs.indices
+        .filter { downloadArgs[$0] == "-P" }
+        .map { downloadArgs[$0 + 1] }
+    #expect(destinations.contains(destination.path))
+    #expect(item.failureDiagnostics?.attempts.first?.detailed == true)
+    #expect(item.failureDiagnostics?.attempts.first?.exitCode == 7)
+    #expect(item.failureDiagnostics?.report.contains("secret") == false)
+
+    model.queue.retry(item)
+    await waitUntilFinished(item)
+    #expect(!runner.recordedArguments.allArguments.last!.contains("--verbose"))
+}
+
+@MainActor
+@Test func pausingDuringDiagnosticVersionLookupPreservesPausedStateAndOneShotIntent() async {
+    let runner = FakeProcessRunner(
+        replays: [
+            .init(stdoutLines: ["2026.07.04"], exitCode: 0),
+            .init(stdoutLines: ["2026.07.04"], exitCode: 0),
+            .init(stdoutLines: ["DBPATH /tmp/dest/song.opus"], exitCode: 0),
+        ],
+        beforeReturn: { call in
+            guard call == 0 else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+        }
+    )
+    let model = makeModel(runner: runner)
+    let item = DownloadItem(
+        url: "https://youtu.be/diagnostics-pause",
+        title: "Diagnostics pause",
+        format: .audioOpus,
+        destination: URL(fileURLWithPath: "/tmp/dest"),
+        state: .failed("initial failure")
+    )
+    item.lastEngineChannel = .stable
+    model.queue.add(item)
+
+    model.retryWithDiagnostics(item)
+    await waitUntil { runner.calls.count == 1 }
+    model.queue.pause(item)
+    await waitUntil { !model.queue.hasLiveTasks }
+
+    #expect(item.state == .paused)
+    #expect(item.nextEngineChannel == .stable)
+    #expect(item.nextAttemptCapturesDiagnostics)
+    #expect(runner.calls.count == 1)
+
+    model.queue.resume(item)
+    await waitUntilFinished(item)
+
+    #expect(item.state == .done)
+    #expect(runner.calls.count == 3)
+    #expect(runner.recordedArguments.allArguments[1] == ["--ignore-config", "--version"])
+    #expect(runner.recordedArguments.allArguments[2].contains("--verbose"))
+    #expect(item.nextEngineChannel == nil)
+    #expect(!item.nextAttemptCapturesDiagnostics)
+}
+
+@MainActor
+@Test func diagnosticRetryIsHiddenForSyntheticAndNativeFailures() {
+    let model = makeModel(runner: FakeProcessRunner())
+    let destination = URL(fileURLWithPath: "/tmp/dest")
+    let realMediaFailure = DownloadItem(
+        url: "https://youtu.be/failure",
+        title: "Failure",
+        format: .audioMP3,
+        destination: destination,
+        state: .failed("ERROR: extractor stopped")
+    )
+    let emptyPlaylist = DownloadItem(
+        url: "https://youtu.be/playlist",
+        title: "Playlist",
+        destination: destination,
+        state: .probeFailed("Playlist is empty.")
+    )
+    let direct = DownloadItem(
+        url: "https://example.com/file.zip",
+        title: "file.zip",
+        destination: destination,
+        state: .failed("Access denied")
+    )
+    direct.source = .directFile(DirectFileInfo())
+
+    #expect(model.canRetryWithDiagnostics(realMediaFailure))
+    #expect(!model.canRetryWithDiagnostics(emptyPlaylist))
+    #expect(!model.canRetryWithDiagnostics(direct))
+}
+
 // MARK: - Subtitles
 
 @MainActor

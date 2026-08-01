@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ProbeError: Error, Equatable {
-    case ytdlpFailed(String)
+    case ytdlpFailed(YtdlpFailureDetails)
     case badOutput
     case timedOut
 }
@@ -9,9 +9,8 @@ public enum ProbeError: Error, Equatable {
 extension ProbeError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .ytdlpFailed(let stderr):
-            let trimmed = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "yt-dlp failed with no error message." : trimmed
+        case .ytdlpFailed(let details):
+            return details.summary
         case .badOutput:
             return "yt-dlp returned unexpected output."
         case .timedOut:
@@ -42,18 +41,26 @@ public struct ProbeService: Sendable {
         url: String,
         cookiesBrowser: String? = nil,
         expandPlaylist: Bool = false,
+        detailedDiagnostics: Bool = false,
         timeout: Duration = .seconds(90)
     ) async throws -> ProbeOutcome {
         do {
             return try await withTotalTimeout(timeout) { [self] in
                 let acc = Accumulator()
-                let args = DownloadArgsBuilder.baseArgs(denoURL: denoURL, cookiesBrowser: cookiesBrowser, noPlaylist: !expandPlaylist) + ["--flat-playlist", "-J", url]
+                let args = DownloadArgsBuilder.baseArgs(
+                    denoURL: denoURL,
+                    cookiesBrowser: cookiesBrowser,
+                    noPlaylist: !expandPlaylist,
+                    detailedDiagnostics: detailedDiagnostics
+                ) + ["--flat-playlist", "-J", url]
                 let result = try await runner.run(
                     executableURL: ytdlpURL,
                     arguments: args,
                     onStdoutLine: { acc.append($0) }
                 )
-                guard result.exitCode == 0 else { throw ProbeError.ytdlpFailed(result.stderr) }
+                guard result.exitCode == 0 else {
+                    throw ProbeError.ytdlpFailed(YtdlpFailureDetails(result: result))
+                }
                 guard let data = acc.text.data(using: .utf8), !data.isEmpty else { throw ProbeError.badOutput }
                 return try FormatParser.parseOutcome(data)
             }

@@ -57,6 +57,49 @@ import Foundation
     }
 }
 
+@Test func probeServiceAddsVerboseOnlyForDetailedDiagnostics() async throws {
+    let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
+    let json = try String(contentsOf: url, encoding: .utf8)
+    let regularRunner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)
+    let detailedRunner = FakeProcessRunner(stdoutLines: [json], exitCode: 0)
+
+    _ = try? await ProbeService(
+        runner: regularRunner,
+        ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp")
+    ).probe(url: "https://youtu.be/abc123")
+    _ = try? await ProbeService(
+        runner: detailedRunner,
+        ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp")
+    ).probe(url: "https://youtu.be/abc123", detailedDiagnostics: true)
+
+    #expect(!regularRunner.recordedArguments.arguments.contains("--verbose"))
+    #expect(detailedRunner.recordedArguments.arguments.filter { $0 == "--verbose" }.count == 1)
+}
+
+@Test func probeServiceFailurePreservesSafeStructuredDetails() async {
+    let runner = FakeProcessRunner(
+        stderr: "Authorization: Bearer secret\nERROR: private at https://example.com/x?token=secret",
+        exitCode: 7
+    )
+    let service = ProbeService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/fake/yt-dlp"))
+
+    do {
+        _ = try await service.probe(url: "https://youtu.be/abc123", detailedDiagnostics: true)
+        Issue.record("expected ProbeError")
+    } catch let error as ProbeError {
+        guard case .ytdlpFailed(let details) = error else {
+            Issue.record("unexpected probe error: \(error)")
+            return
+        }
+        #expect(details.exitCode == 7)
+        #expect(details.summary == "ERROR: private at <url>")
+        #expect(details.output.contains("Authorization: <redacted>"))
+        #expect(!details.output.contains("secret"))
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+}
+
 @Test func probeServicePassesDenoRuntimeAndCookiesFlags() async throws {
     let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
     let json = try String(contentsOf: url, encoding: .utf8)

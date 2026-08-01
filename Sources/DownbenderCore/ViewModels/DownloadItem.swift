@@ -59,9 +59,16 @@ public final class DownloadItem: Identifiable {
     /// Engine that actually handled the most recent probe or media-download attempt.
     /// This is informational; ordinary future retries use the then-selected global channel.
     public var lastEngineChannel: YtdlpEngineChannel?
+    /// Version snapshot for the same attempt. It can be unknown until a detailed retry asks
+    /// the engine to identify itself.
+    public var lastEngineVersion: String?
+    /// Privacy-safe, bounded details for the most recent failed operation.
+    public var failureDiagnostics: FailureDiagnostics?
     /// One-shot channel requested by an explicit recovery action. It is consumed when the
     /// next probe/download starts so waiting in the queue cannot change the promised engine.
     @ObservationIgnored var nextEngineChannel: YtdlpEngineChannel?
+    /// One-shot request for verbose yt-dlp logging on the next complete operation.
+    @ObservationIgnored var nextAttemptCapturesDiagnostics = false
 
     public var source: Source = .media
     /// URLSession resume data captured when a direct download is paused/interrupted;

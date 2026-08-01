@@ -19,3 +19,14 @@ import Foundation
     #expect(!TransientFailure.isTransient(URLError(.badURL)))
     #expect(!TransientFailure.isTransient(URLError(.cancelled)))
 }
+
+@Test func structuredYtdlpFailuresUseCompleteSanitizedOutputForClassification() {
+    let details = YtdlpFailureDetails(
+        exitCode: 1,
+        summary: "ERROR: The extractor stopped.",
+        output: "HTTP Error 403: Forbidden\nERROR: The extractor stopped."
+    )
+
+    #expect(TransientFailure.isTransient(DownloadError.ytdlpFailed(details)))
+    #expect(TransientFailure.isTransient(ProbeError.ytdlpFailed(details)))
+}

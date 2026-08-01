@@ -196,6 +196,9 @@ import Foundation
     await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
     #expect(runner.calls.count == 3)
     if case .failed = item.state {} else { Issue.record("expected .failed, got \(item.state)") }
+    #expect(item.failureDiagnostics?.attempts.count == 3)
+    #expect(item.failureDiagnostics?.attempts.map(\.number) == [1, 2, 3])
+    #expect(item.failureDiagnostics?.attempts.allSatisfy { !$0.detailed } == true)
 }
 
 @MainActor
@@ -214,6 +217,7 @@ import Foundation
     await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
     #expect(runner.calls.count == 2)
     #expect(item.state == .done)
+    #expect(item.failureDiagnostics == nil)
 }
 
 // If the failed attempt reached .merging before the 403, the retry must go back to .downloading:
@@ -361,14 +365,40 @@ import Foundation
 
 @MainActor
 @Test func coordinatorDoesNotRetryNon403Errors() async {
-    let runner = FakeProcessRunner(stderr: "ERROR: Video unavailable", exitCode: 1)
+    let runner = FakeProcessRunner(
+        stderr: "Authorization: Bearer secret\nERROR: Video unavailable at https://cdn.example/x?sig=secret",
+        exitCode: 7
+    )
     let download = DownloadService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/x"), ffmpegDirectory: URL(fileURLWithPath: "/y"))
     let coordinator = DownloadCoordinator(download: download, retryDelay: .milliseconds(10))
-    let item = DownloadItem(url: "u", title: "t", format: .video(height: 1080), destination: URL(fileURLWithPath: "/tmp"))
+    let item = DownloadItem(
+        url: "https://www.youtube.com/watch?v=private",
+        title: "t",
+        format: .video(height: 1080),
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+    item.includeSubtitles = true
+    item.lastEngineChannel = .stable
+    item.lastEngineVersion = "2026.07.04"
 
-    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    await coordinator.run(
+        item,
+        tmpDirectory: URL(fileURLWithPath: "/tmp/work"),
+        detailedDiagnostics: true
+    )
     #expect(runner.calls.count == 1)
     if case .failed = item.state {} else { Issue.record("expected .failed, got \(item.state)") }
+    let diagnostics = item.failureDiagnostics
+    #expect(diagnostics?.host == "youtube.com")
+    #expect(diagnostics?.engineChannel == .stable)
+    #expect(diagnostics?.engineVersion == "2026.07.04")
+    #expect(diagnostics?.outputDescription == "Up to 1080p · MP4")
+    #expect(diagnostics?.includeSubtitles == true)
+    #expect(diagnostics?.attempts.first?.exitCode == 7)
+    #expect(diagnostics?.attempts.first?.detailed == true)
+    #expect(diagnostics?.report.contains("Authorization: <redacted>") == true)
+    #expect(diagnostics?.report.contains("secret") == false)
+    #expect(runner.recordedArguments.arguments.contains("--verbose"))
 }
 
 @MainActor

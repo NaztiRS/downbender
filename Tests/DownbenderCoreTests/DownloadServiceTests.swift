@@ -116,6 +116,43 @@ import Foundation
     }
 }
 
+@Test func downloadServiceFailurePreservesExitAndUsesVerboseOnlyWhenRequested() async {
+    let runner = FakeProcessRunner(
+        stderr: "Cookie: SID=secret\nERROR: unavailable at https://cdn.example/x?sig=secret",
+        exitCode: 9
+    )
+    let service = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+
+    do {
+        try await service.download(
+            url: "https://youtu.be/abc123",
+            format: .audioOpus,
+            destination: URL(fileURLWithPath: "/d"),
+            tmpDirectory: URL(fileURLWithPath: "/t"),
+            detailedDiagnostics: true,
+            onProgress: { _ in }
+        )
+        Issue.record("expected DownloadError")
+    } catch let error as DownloadError {
+        guard case .ytdlpFailed(let details) = error else {
+            Issue.record("unexpected download error: \(error)")
+            return
+        }
+        #expect(details.exitCode == 9)
+        #expect(details.summary == "ERROR: unavailable at <url>")
+        #expect(details.output.contains("Cookie: <redacted>"))
+        #expect(!details.output.contains("secret"))
+    } catch {
+        Issue.record("unexpected error: \(error)")
+    }
+
+    #expect(runner.recordedArguments.arguments.filter { $0 == "--verbose" }.count == 1)
+}
+
 @Test func downloadServicePassesSubtitleFlagsThrough() async throws {
     let runner = FakeProcessRunner(stdoutLines: ["DBPATH /tmp/out/video.mp4"], exitCode: 0)
     let service = DownloadService(

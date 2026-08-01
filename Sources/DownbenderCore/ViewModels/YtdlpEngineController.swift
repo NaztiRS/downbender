@@ -130,6 +130,24 @@ public final class YtdlpEngineController {
         }
     }
 
+    /// Detailed diagnostics ask the actual engine to identify itself once. Ordinary downloads
+    /// avoid this subprocess; cached versions from Settings are reused whenever available.
+    public func diagnosticVersion(for channel: YtdlpEngineChannel) async -> String? {
+        switch channel {
+        case .stable:
+            if let stableVersion { return stableVersion }
+            guard let version = try? await readVersion(stableURL)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !version.isEmpty
+            else { return nil }
+            stableVersion = version
+            return version
+        case .nightly:
+            if let nightlyVersion { return nightlyVersion }
+            return try? await validateNightly()
+        }
+    }
+
     public func select(_ channel: YtdlpEngineChannel) async throws {
         guard !isInstalling else { throw YtdlpEngineSelectionError.installationInProgress }
         switch channel {

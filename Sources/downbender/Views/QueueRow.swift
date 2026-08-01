@@ -293,12 +293,12 @@ struct QueueRow: View {
         .accessibilityLabel(help)
     }
 
-    /// Shows the full error text, selectable, since the caption truncates it.
+    /// Shows the privacy-safe diagnostic report, selectable and copyable.
     private func infoButton(message: String, title: String) -> some View {
         Button { showingError = true } label: { Image(systemName: "info.circle").font(.title3) }
             .buttonStyle(.plain).foregroundStyle(.secondary)
-            .help("Show full error")
-            .accessibilityLabel("Show full error")
+            .help("Show error diagnostics")
+            .accessibilityLabel("Show error diagnostics")
             .sheet(isPresented: $showingError) {
                 ErrorDetailSheet(
                     title: title,
@@ -308,7 +308,12 @@ struct QueueRow: View {
                     onEngineRecovery: engineRecoveryTitle == nil ? nil : {
                         showingError = false
                         performEngineRecovery()
-                    }
+                    },
+                    diagnosticsReport: model.diagnosticsReport(for: item),
+                    onRetryWithDiagnostics: model.canRetryWithDiagnostics(item) ? {
+                        showingError = false
+                        model.retryWithDiagnostics(item)
+                    } : nil
                 )
             }
     }
@@ -364,6 +369,12 @@ struct QueueRow: View {
             if let engineRecoveryTitle {
                 Button(engineRecoveryTitle) { performEngineRecovery() }
             }
+            Divider()
+            Button("Copy diagnostics") { copyDiagnostics() }
+            if model.canRetryWithDiagnostics(item) {
+                Button("Retry with diagnostics") { performDiagnosticsRetry() }
+            }
+            Divider()
             Button("Remove from list") { model.remove(item) }
         case .readyToChoose:
             Button("Choose quality…") { choosing = true }
@@ -386,6 +397,12 @@ struct QueueRow: View {
             if let engineRecoveryTitle {
                 Button(engineRecoveryTitle) { performEngineRecovery() }
             }
+            Divider()
+            Button("Copy diagnostics") { copyDiagnostics() }
+            if model.canRetryWithDiagnostics(item) {
+                Button("Retry with diagnostics") { performDiagnosticsRetry() }
+            }
+            Divider()
             Button("Remove from list") { model.remove(item) }
         case .cancelled:
             Button("Retry") { model.queue.retry(item) }
@@ -414,6 +431,15 @@ struct QueueRow: View {
     private func deleteFile() {
         do { try model.deleteFile(of: item) }
         catch { deleteError = error.localizedDescription }
+    }
+
+    private func copyDiagnostics() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(model.diagnosticsReport(for: item), forType: .string)
+    }
+
+    private func performDiagnosticsRetry() {
+        model.retryWithDiagnostics(item)
     }
 
     // MARK: - Presentation

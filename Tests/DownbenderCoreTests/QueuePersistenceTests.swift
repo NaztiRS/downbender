@@ -148,6 +148,73 @@ private func freshFile() -> URL {
 }
 
 @MainActor
+@Test func privacySafeDiagnosticsSurviveVersionOneQueueRoundTrip() throws {
+    let file = freshFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let store = QueuePersistence(fileURL: file)
+    let failed = DownloadItem(
+        url: "https://youtu.be/diagnostics",
+        title: "Diagnostics",
+        format: .video(height: 1080),
+        destination: URL(fileURLWithPath: "/tmp/dest"),
+        state: .failed("unavailable")
+    )
+    failed.lastEngineChannel = .nightly
+    failed.lastEngineVersion = "2026.08.01.010203"
+    failed.failureDiagnostics = FailureDiagnostics(
+        appVersion: "1.7.0",
+        systemVersion: "macOS Test",
+        host: "youtube.com",
+        operation: .download,
+        engineChannel: .nightly,
+        engineVersion: failed.lastEngineVersion,
+        outputDescription: "Up to 1080p · MP4",
+        includeSubtitles: false,
+        attempts: [FailureAttempt(
+            number: 1,
+            exitCode: 7,
+            detailed: true,
+            summary: "token=persistence-secret",
+            output: "Cookie: persistence-secret"
+        )]
+    )
+
+    store.saveNow([failed])
+
+    let storedJSON = try String(contentsOf: file, encoding: .utf8)
+    #expect(!storedJSON.contains("persistence-secret"))
+    #expect(QueuePersistence.currentVersion == 1)
+    let restored = store.load()[0].makeItem()
+    #expect(restored.lastEngineChannel == .nightly)
+    #expect(restored.lastEngineVersion == "2026.08.01.010203")
+    #expect(restored.failureDiagnostics == failed.failureDiagnostics)
+    #expect(restored.failureDiagnostics?.report.contains("<redacted>") == true)
+}
+
+@MainActor
+@Test func pendingDetailedRetrySurvivesQueueRoundTrip() {
+    let file = freshFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let store = QueuePersistence(fileURL: file)
+    let item = DownloadItem(
+        url: "https://youtu.be/pending-diagnostics",
+        title: "Pending diagnostics",
+        format: .audioOpus,
+        destination: URL(fileURLWithPath: "/tmp/dest"),
+        state: .queued
+    )
+    item.nextEngineChannel = .stable
+    item.nextAttemptCapturesDiagnostics = true
+
+    store.saveNow([item])
+
+    let restored = store.load()[0].makeItem()
+    #expect(restored.state == .paused)
+    #expect(restored.nextEngineChannel == .stable)
+    #expect(restored.nextAttemptCapturesDiagnostics)
+}
+
+@MainActor
 @Test func corruptOrUnknownVersionFilesYieldEmptyQueue() throws {
     let file = freshFile()
     defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }

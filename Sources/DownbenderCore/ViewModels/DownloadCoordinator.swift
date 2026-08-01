@@ -37,15 +37,18 @@ public final class DownloadCoordinator {
     public func run(
         _ item: DownloadItem,
         tmpDirectory: URL,
-        cookiesBrowser: String? = nil
+        cookiesBrowser: String? = nil,
+        detailedDiagnostics: Bool = false
     ) async {
         // Defensive: pump() only starts items that went through start(), which requires a format.
         guard let format = item.format else {
             item.state = .failed("No format selected.")
             return
         }
+        item.failureDiagnostics = nil
         item.state = .downloading
         let fileNameTemplate = item.fileNameTemplate
+        var failedAttempts: [FailureAttempt] = []
         // YouTube 403s are intermittent: a FRESH yt-dlp invocation renegotiates the session's
         // signed URLs from scratch, so the manual retry that used to work is automated here.
         let maxAttempts = 3
@@ -72,6 +75,7 @@ public final class DownloadCoordinator {
                     cookiesBrowser: cookiesBrowser,
                     fileNameTemplate: fileNameTemplate,
                     includeSubtitles: item.includeSubtitles,
+                    detailedDiagnostics: detailedDiagnostics,
                     expectedTotalBytes: item.expectedTotalBytes,
                     onProgress: { progress in
                         progressUpdates.submit(progress)
@@ -124,7 +128,13 @@ public final class DownloadCoordinator {
                     finishInterrupted(item)
                     return
                 }
-                let message = error.localizedDescription
+                let failure = failureAttempt(
+                    for: error,
+                    number: attempt,
+                    detailed: detailedDiagnostics
+                )
+                failedAttempts.append(failure)
+                let message = failure.summary
                 if TransientFailure.isTransient(error), attempt < maxAttempts {
                     // Reset progress AND state: the failed attempt may have reached .merging, and without
                     // returning to .downloading the hop guards would discard all of the retry's progress.
@@ -139,6 +149,15 @@ public final class DownloadCoordinator {
                     }
                     continue
                 }
+                item.failureDiagnostics = FailureDiagnostics(
+                    host: FailureDiagnostics.host(from: item.url),
+                    operation: .download,
+                    engineChannel: item.lastEngineChannel,
+                    engineVersion: item.lastEngineVersion,
+                    outputDescription: "\(format.preferenceLabel) · \(format.containerLabel)",
+                    includeSubtitles: item.includeSubtitles,
+                    attempts: failedAttempts
+                )
                 item.state = .failed(message)
                 return
             }
@@ -149,5 +168,30 @@ public final class DownloadCoordinator {
     /// BEFORE cancelling encodes the intent, so only execution states get overwritten here.
     private func finishInterrupted(_ item: DownloadItem) {
         if item.state == .downloading || item.state == .merging { item.state = .cancelled }
+    }
+
+    private func failureAttempt(
+        for error: Error,
+        number: Int,
+        detailed: Bool
+    ) -> FailureAttempt {
+        if let downloadError = error as? DownloadError,
+           case .ytdlpFailed(let details) = downloadError {
+            return FailureAttempt(
+                number: number,
+                exitCode: details.exitCode,
+                detailed: detailed,
+                summary: details.summary,
+                output: details.output
+            )
+        }
+        let message = error.localizedDescription
+        return FailureAttempt(
+            number: number,
+            exitCode: nil,
+            detailed: detailed,
+            summary: message,
+            output: message
+        )
     }
 }
