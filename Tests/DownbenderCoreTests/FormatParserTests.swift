@@ -211,6 +211,31 @@ import Foundation
     #expect(playlist.entries[2].title == "https://www.youtube.com/watch?v=vid3")
 }
 
+@Test func parseOutcomeSkipsNullPlaylistEntriesWithoutLosingUsableVideos() throws {
+    let json = #"""
+    {
+      "_type": "playlist",
+      "title": "Partially unavailable",
+      "entries": [
+        {"id": "one", "ie_key": "Youtube", "title": "One"},
+        null,
+        {"id": "two", "ie_key": "Youtube", "title": "Two"}
+      ]
+    }
+    """#
+
+    guard case .playlist(let playlist) = try FormatParser.parseOutcome(Data(json.utf8)) else {
+        Issue.record("expected .playlist")
+        return
+    }
+
+    #expect(playlist.entries.map(\.title) == ["One", "Two"])
+    #expect(playlist.entries.map(\.url) == [
+        "https://www.youtube.com/watch?v=one",
+        "https://www.youtube.com/watch?v=two",
+    ])
+}
+
 @Test func parseOutcomeReturnsVideoForSingleVideoJSON() throws {
     let url = Bundle.module.url(forResource: "probe", withExtension: "json", subdirectory: "Fixtures")!
     let outcome = try FormatParser.parseOutcome(try Data(contentsOf: url))

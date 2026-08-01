@@ -338,6 +338,84 @@ private func playlistFixtureJSON() throws -> String {
 }
 
 @MainActor
+@Test func acceptPlaylistEnqueuesOnlySelectedEntriesInSuppliedOrderWithChosenOptions() {
+    let model = makeModel(runner: FakeProcessRunner(exitCode: 0))
+    model.queue.setMaxConcurrent(0)
+    let originalDestination = model.destination
+    let selectedDestination = URL(fileURLWithPath: "/tmp/playlist-selection-destination")
+    model.destination = selectedDestination
+    defer { model.destination = originalDestination }
+
+    let playlist = PlaylistProbe(
+        title: "Selection",
+        entries: [
+            PlaylistEntry(
+                url: "https://youtu.be/one",
+                title: "One",
+                thumbnailURL: URL(string: "https://example.com/one.jpg")
+            ),
+            PlaylistEntry(url: "https://youtu.be/two", title: "Two"),
+            PlaylistEntry(url: "https://youtu.be/three", title: "Three"),
+        ]
+    )
+
+    model.acceptPlaylist(
+        playlist,
+        selectedEntries: [playlist.entries[2], playlist.entries[0]],
+        format: .video(height: 720),
+        includeSubtitles: true
+    )
+
+    #expect(model.queue.items.map(\.url) == ["https://youtu.be/three", "https://youtu.be/one"])
+    #expect(model.queue.items.map(\.title) == ["Three", "One"])
+    #expect(model.queue.items.allSatisfy { $0.state == .queued })
+    #expect(model.queue.items.allSatisfy { $0.format == .video(height: 720) })
+    #expect(model.queue.items.allSatisfy { $0.includeSubtitles })
+    #expect(model.queue.items.allSatisfy { $0.destination == selectedDestination })
+    #expect(model.queue.items[1].thumbnailURL == URL(string: "https://example.com/one.jpg"))
+}
+
+@MainActor
+@Test func acceptingAnEmptyPlaylistSelectionDoesNotEnqueueOrDismissAnalysis() async throws {
+    let runner = FakeProcessRunner(stdoutLines: [try playlistFixtureJSON()], exitCode: 0)
+    let model = makeModel(runner: runner)
+    model.addURL("https://www.youtube.com/playlist?list=PLtest123")
+    await waitForPendingPlaylist(model)
+    guard let playlist = model.pendingPlaylist else {
+        Issue.record("expected pendingPlaylist")
+        return
+    }
+
+    model.acceptPlaylist(
+        playlist,
+        selectedEntries: [],
+        format: .audioMP3,
+        includeSubtitles: true
+    )
+
+    #expect(model.queue.items.isEmpty)
+    #expect(model.pendingPlaylist == playlist)
+}
+
+@MainActor
+@Test func playlistSelectionPreservesRepeatedEntriesWithTheSameURL() {
+    let model = makeModel(runner: FakeProcessRunner(exitCode: 0))
+    model.queue.setMaxConcurrent(0)
+    let repeated = PlaylistEntry(url: "https://youtu.be/repeated", title: "Repeated")
+    let playlist = PlaylistProbe(title: "Duplicates", entries: [repeated, repeated])
+
+    model.acceptPlaylist(
+        playlist,
+        selectedEntries: playlist.entries,
+        format: .audioMP3
+    )
+
+    #expect(model.queue.items.count == 2)
+    #expect(model.queue.items.map(\.url) == [repeated.url, repeated.url])
+    #expect(model.queue.items.map(\.title) == [repeated.title, repeated.title])
+}
+
+@MainActor
 @Test func watchURLWithListAsksForScopeInsteadOfProbing() async throws {
     let runner = FakeProcessRunner(stdoutLines: [try probeFixtureJSON()], exitCode: 0)
     let model = makeModel(runner: runner)
@@ -461,6 +539,105 @@ private func playlistFixtureJSON() throws -> String {
     #expect(analysis.estimatedTotalBytes(for: .video(height: 1440)) == 135_000_000)
     #expect(analysis.estimatedTotalBytes(for: .video(height: 2160)) == 270_000_000)
     #expect(analysis.estimatedTotalBytes(for: .maximumVideo) == 270_000_000)
+}
+
+@MainActor
+@Test func playlistEstimateUsesOnlySelectedEntriesAndHandlesEmptySelection() {
+    let playlist = PlaylistProbe(
+        title: "Selected durations",
+        entries: [
+            PlaylistEntry(url: "https://youtu.be/one", title: "One", durationSeconds: 60),
+            PlaylistEntry(url: "https://youtu.be/two", title: "Two", durationSeconds: 120),
+            PlaylistEntry(url: "https://youtu.be/three", title: "Three", durationSeconds: 180),
+        ]
+    )
+    let analysis = PlaylistAnalysis(playlist: playlist)
+
+    #expect(
+        analysis.estimatedTotalBytes(
+            for: .video(height: 720),
+            selectedEntries: [playlist.entries[2], playlist.entries[0]]
+        ) == 48_000_000
+    )
+    #expect(
+        analysis.estimatedTotalBytes(
+            for: .video(height: 720),
+            selectedEntries: []
+        ) == 0
+    )
+    // The compatibility API still estimates the complete playlist.
+    #expect(analysis.estimatedTotalBytes(for: .video(height: 720)) == 72_000_000)
+}
+
+@MainActor
+@Test func playlistEstimatePrefersCalibrationFromTheSelectedSubset() {
+    let format = DownloadFormat.video(height: 720)
+    let playlist = PlaylistProbe(
+        title: "Different rates",
+        entries: [
+            PlaylistEntry(url: "https://youtu.be/slow", title: "Slow", durationSeconds: 100),
+            PlaylistEntry(url: "https://youtu.be/fast", title: "Fast", durationSeconds: 200),
+        ]
+    )
+    let analysis = PlaylistAnalysis(playlist: playlist)
+    analysis.sampleResults = [
+        playlist.entries[0].url: ProbeResult(
+            videoID: "slow",
+            title: "Slow",
+            thumbnailURL: nil,
+            durationSeconds: 100,
+            availableFormats: [format],
+            approxSizeBytes: [format: 10_000_000]
+        ),
+        playlist.entries[1].url: ProbeResult(
+            videoID: "fast",
+            title: "Fast",
+            thumbnailURL: nil,
+            durationSeconds: 200,
+            availableFormats: [format],
+            approxSizeBytes: [format: 60_000_000]
+        ),
+    ]
+
+    #expect(
+        analysis.estimatedTotalBytes(
+            for: format,
+            selectedEntries: [playlist.entries[1]]
+        ) == 60_000_000
+    )
+}
+
+@MainActor
+@Test func playlistEstimateIgnoresNonpositiveAndNonfiniteDurations() {
+    let playlist = PlaylistProbe(
+        title: "Malformed durations",
+        entries: [
+            PlaylistEntry(url: "https://youtu.be/zero", title: "Zero", durationSeconds: 0),
+            PlaylistEntry(
+                url: "https://youtu.be/infinite",
+                title: "Infinite",
+                durationSeconds: .infinity
+            ),
+            PlaylistEntry(url: "https://youtu.be/known", title: "Known", durationSeconds: 90),
+        ]
+    )
+    let analysis = PlaylistAnalysis(playlist: playlist)
+
+    // Neither selected entry has usable metadata, so the valid playlist-wide 90s duration
+    // supplies the fallback average for both selected entries.
+    #expect(
+        analysis.estimatedTotalBytes(
+            for: .video(height: 720),
+            selectedEntries: [playlist.entries[0], playlist.entries[1]]
+        ) == 36_000_000
+    )
+    // With a valid selected duration, the malformed neighbor is imputed from that selection.
+    #expect(
+        analysis.estimatedTotalBytes(
+            for: .video(height: 720),
+            selectedEntries: [playlist.entries[2], playlist.entries[0]]
+        ) == 36_000_000
+    )
 }
 
 @MainActor

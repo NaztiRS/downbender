@@ -65,5 +65,7 @@ struct RawPlaylistEntry: Decodable {
 
 struct RawPlaylist: Decodable {
     let title: String?
-    let entries: [RawPlaylistEntry]?
+    /// yt-dlp represents some unavailable/private entries as JSON `null`. Keep the element
+    /// optional so one unavailable video cannot make decoding the entire playlist fail.
+    let entries: [RawPlaylistEntry?]?
 }

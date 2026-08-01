@@ -479,10 +479,32 @@ public final class AppModel {
         }
     }
 
-    /// Enqueues every entry directly (no blocking per-item probe; whatever the background
-    /// estimation already learned travels with the item as its expected size).
+    /// Backward-compatible all-entry acceptance. New callers that expose playlist selection
+    /// should use the `selectedEntries` overload below.
     public func acceptPlaylist(_ playlist: PlaylistProbe, format: DownloadFormat, includeSubtitles: Bool = false) {
-        for entry in playlist.entries {
+        acceptPlaylist(
+            playlist,
+            selectedEntries: playlist.entries,
+            format: format,
+            includeSubtitles: includeSubtitles
+        )
+    }
+
+    /// Enqueues only the selected entries, in the exact order supplied by the caller. There is
+    /// no blocking per-item probe; whatever the background estimation already learned travels
+    /// with each item as its expected size.
+    ///
+    /// Empty selection is intentionally a no-op: the UI normally disables confirmation, while
+    /// this guard keeps programmatic callers from dismissing the analysis without adding work.
+    public func acceptPlaylist(
+        _ playlist: PlaylistProbe,
+        selectedEntries: [PlaylistEntry],
+        format: DownloadFormat,
+        includeSubtitles: Bool = false
+    ) {
+        guard !selectedEntries.isEmpty else { return }
+
+        for entry in selectedEntries {
             let item = DownloadItem(
                 url: entry.url,
                 title: entry.title,

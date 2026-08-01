@@ -100,11 +100,17 @@ struct RootView: View {
                         PlaylistPanel(
                             analysis: analysis,
                             destination: $model.destination,
-                            onConfirm: { format, includeSubtitles in
-                                model.acceptPlaylist(analysis.playlist, format: format, includeSubtitles: includeSubtitles)
+                            onConfirm: { entries, format, includeSubtitles in
+                                model.acceptPlaylist(
+                                    analysis.playlist,
+                                    selectedEntries: entries,
+                                    format: format,
+                                    includeSubtitles: includeSubtitles
+                                )
                             },
                             onCancel: { model.dismissPlaylistAnalysis() }
                         )
+                        .id(ObjectIdentifier(analysis))
                     }
                 }
         }

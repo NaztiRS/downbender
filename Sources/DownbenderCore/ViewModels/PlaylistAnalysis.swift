@@ -17,30 +17,83 @@ public final class PlaylistAnalysis {
 
     /// nil only when no entry has a duration and nothing has been sampled yet.
     public func estimatedTotalBytes(for format: DownloadFormat) -> Int64? {
-        let durations = playlist.entries.compactMap(\.durationSeconds)
-        let rate = measuredRate(for: format) ?? Self.nominalRate(for: format)
+        estimatedTotalBytes(for: format, selectedEntries: playlist.entries)
+    }
+
+    /// Estimate for a caller-selected subset. The supplied order is irrelevant to the
+    /// arithmetic but deliberately remains an array: playlist URLs are not guaranteed to be
+    /// unique, so a URL set cannot faithfully represent entry selection.
+    ///
+    /// An empty selection has a known zero-byte total. For entries whose flat playlist probe
+    /// omitted a duration, known durations from the selection (or, as a fallback, the whole
+    /// playlist) provide an average rather than making the estimate disappear.
+    public func estimatedTotalBytes(
+        for format: DownloadFormat,
+        selectedEntries: [PlaylistEntry]
+    ) -> Int64? {
+        guard !selectedEntries.isEmpty else { return 0 }
+
+        let durations = selectedEntries.compactMap { Self.usableDuration($0.durationSeconds) }
+        let rate = measuredRate(for: format, selectedEntries: selectedEntries)
+            ?? Self.nominalRate(for: format)
         if durations.isEmpty {
-            // No durations (rare outside YouTube): extrapolate the sampled average per video.
-            guard !sampleResults.isEmpty else { return nil }
-            let sizes = sampleResults.values.compactMap { $0.approxDownloadSize(for: format) }
+            // A selected entry may lack a duration even when neighboring playlist entries have
+            // one. Their average is a better instant estimate than hiding the total entirely.
+            let playlistDurations = playlist.entries.compactMap {
+                Self.usableDuration($0.durationSeconds)
+            }
+            if !playlistDurations.isEmpty {
+                let average = playlistDurations.reduce(0, +) / Double(playlistDurations.count)
+                return Int64(average * Double(selectedEntries.count) * rate)
+            }
+
+            // No durations anywhere (rare outside YouTube): extrapolate sampled per-video size.
+            let selectedSizes = selectedEntries.compactMap {
+                sampleResults[$0.url]?.approxDownloadSize(for: format)
+            }
+            let sizes = selectedSizes.isEmpty
+                ? sampleResults.values.compactMap { $0.approxDownloadSize(for: format) }
+                : selectedSizes
             guard !sizes.isEmpty else { return nil }
             let average = sizes.reduce(0, +) / Int64(sizes.count)
-            return average * Int64(playlist.entries.count)
+            return average * Int64(selectedEntries.count)
         }
         // Entries without a duration count as an average-length video.
         let known = durations.reduce(0, +)
         let average = known / Double(durations.count)
-        let total = known + average * Double(playlist.entries.count - durations.count)
+        let total = known + average * Double(selectedEntries.count - durations.count)
         return Int64(total * rate)
     }
 
-    /// Real bytes-per-second learned from the sample; nil until a sampled video has a size.
-    private func measuredRate(for format: DownloadFormat) -> Double? {
+    /// Zero, negative and non-finite values are malformed metadata, not real durations. In
+    /// particular, allowing infinity into the arithmetic can trap when the estimate becomes
+    /// an `Int64`.
+    private static func usableDuration(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    /// Real bytes-per-second learned from the selected sample. If none of the selected entries
+    /// was sampled, the playlist-wide sample remains useful as a calibration fallback.
+    private func measuredRate(
+        for format: DownloadFormat,
+        selectedEntries: [PlaylistEntry]
+    ) -> Double? {
+        let selectedURLs = Set(selectedEntries.map(\.url))
+        let selectedResults = sampleResults.compactMap { url, result in
+            selectedURLs.contains(url) ? result : nil
+        }
+        return measuredRate(for: format, results: selectedResults)
+            ?? measuredRate(for: format, results: Array(sampleResults.values))
+    }
+
+    private func measuredRate(for format: DownloadFormat, results: [ProbeResult]) -> Double? {
         var bytes: Int64 = 0
         var seconds: Double = 0
-        for result in sampleResults.values {
+        for result in results {
             guard let size = result.approxDownloadSize(for: format),
-                  let duration = result.durationSeconds, duration > 0 else { continue }
+                  let duration = result.durationSeconds,
+                  duration.isFinite, duration > 0 else { continue }
             bytes += size
             seconds += duration
         }

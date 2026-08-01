@@ -10,7 +10,8 @@ public enum FormatParser {
 
     static func parsePlaylist(_ data: Data) throws -> PlaylistProbe {
         let raw = try JSONDecoder().decode(RawPlaylist.self, from: data)
-        let entries = (raw.entries ?? []).compactMap { entry -> PlaylistEntry? in
+        let entries = (raw.entries ?? []).compactMap { rawEntry -> PlaylistEntry? in
+            guard let entry = rawEntry else { return nil }
             // An entry we cannot turn into a downloadable URL is useless: dropped.
             guard let url = entry.url ?? watchURL(entry) else { return nil }
             return PlaylistEntry(
