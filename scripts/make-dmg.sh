@@ -50,7 +50,8 @@ create-dmg \
 # expands Finder's icon canvas and leaves a scrollbar in the shipped DMG.
 ATTACH_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen -nobrowse "$RW_DMG")"
 MOUNT_DEVICE="$(printf '%s\n' "$ATTACH_OUTPUT" | awk '/Apple_HFS/ {print $1; exit}')"
-if [ -z "$MOUNT_DEVICE" ]; then
+MOUNT_POINT="$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F'\t' '/Apple_HFS/ {print $NF; exit}')"
+if [ -z "$MOUNT_DEVICE" ] || [ -z "$MOUNT_POINT" ]; then
   echo "error: could not find the mounted DMG device" >&2
   exit 1
 fi
@@ -80,6 +81,13 @@ tell application "Finder"
   delay 2
 end tell
 APPLESCRIPT
+
+# Give the mounted volume Downbender's icon instead of the generic disk one. Written by hand
+# here, after the layout script, rather than through create-dmg's --volicon: that adds the file
+# before Finder lays the window out, which is exactly what pushes items past the right edge and
+# leaves the scrollbar the block above exists to avoid. A dot file stays out of the window.
+cp "$STAGE/Downbender.app/Contents/Resources/AppIcon.icns" "$MOUNT_POINT/.VolumeIcon.icns"
+SetFile -a C "$MOUNT_POINT"
 
 hdiutil detach "$MOUNT_DEVICE" >/dev/null
 MOUNT_DEVICE=""
