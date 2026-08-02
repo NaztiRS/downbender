@@ -95,6 +95,80 @@ final class LineSink: @unchecked Sendable {
     #expect(result.exitCode != 0)   // terminated by signal, not exit 0
 }
 
+/// A pipe hands over arbitrary chunks, so a line far bigger than its ~64 KB buffer arrives split.
+/// `yt-dlp -J` answers with the whole probe as ONE line (600 KB+ for a YouTube video), and cutting
+/// it anywhere makes the JSON unparseable.
+@Test func processRunnerReassemblesALineLargerThanThePipeBuffer() async throws {
+    let sink = LineSink()
+    let result = try await ProcessRunner().run(
+        executableURL: URL(fileURLWithPath: "/bin/bash"),
+        arguments: ["-c", "head -c 200000 /dev/zero | tr '\\0' 'X'; echo"],
+        onStdoutLine: { sink.append($0) }
+    )
+    #expect(result.exitCode == 0)
+    #expect(sink.lines.count == 1)
+    #expect(sink.lines.first?.count == 200_000)
+}
+
+@Test func processRunnerDeliversAFinalLineWithoutTrailingNewline() async throws {
+    let sink = LineSink()
+    _ = try await ProcessRunner().run(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "printf 'sin-salto-final'"],
+        onStdoutLine: { sink.append($0) }
+    )
+    #expect(sink.lines == ["sin-salto-final"])
+}
+
+@Test func processRunnerTreatsCarriageReturnLineFeedAsOneBreak() async throws {
+    let sink = LineSink()
+    _ = try await ProcessRunner().run(
+        executableURL: URL(fileURLWithPath: "/bin/sh"),
+        arguments: ["-c", "printf 'uno\\r\\ndos\\r\\n'"],
+        onStdoutLine: { sink.append($0) }
+    )
+    #expect(sink.lines == ["uno", "dos"])
+}
+
+/// A child that stays silent must not hold back the stdout of every other child. Reading with
+/// `FileHandle.AsyncBytes` puts one blocking `read(2)` per process on a single serial executor,
+/// so the slow reader takes it first and the fast children cannot finish until it writes.
+@Test func silentChildDoesNotStallConcurrentRuns() async throws {
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    let slowestFast = await withTaskGroup(of: Duration?.self) { group in
+        group.addTask {
+            _ = try? await ProcessRunner().run(
+                executableURL: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "sleep 2; echo lento"],
+                onStdoutLine: { _ in }
+            )
+            return nil
+        }
+        // Give the silent child's reader time to take the executor before the fast ones queue up.
+        try? await Task.sleep(for: .milliseconds(100))
+        for _ in 0 ..< 4 {
+            group.addTask {
+                _ = try? await ProcessRunner().run(
+                    executableURL: URL(fileURLWithPath: "/bin/sh"),
+                    arguments: ["-c", "sleep 0.2; echo rapido"],
+                    onStdoutLine: { _ in }
+                )
+                return clock.now - start
+            }
+        }
+        var slowest = Duration.zero
+        for await elapsed in group where elapsed != nil {
+            slowest = max(slowest, elapsed!)
+        }
+        return slowest
+    }
+
+    // The fast children take ~0.3 s on their own and ~2 s when serialized behind the silent one.
+    #expect(slowestFast < .seconds(1))
+}
+
 @Test func stderrAccumulatorWaitReturnsWithoutEOF() {
     // A child that leaves an orphan holding the stderr pipe never delivers EOF; the
     // bounded wait must return anyway with whatever was buffered.

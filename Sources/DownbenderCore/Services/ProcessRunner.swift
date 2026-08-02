@@ -31,10 +31,38 @@ public struct ProcessRunner: ProcessRunning {
             }
         }
 
-        try process.run()
+        // stdout is drained the same way, and for a stronger reason: `FileHandle.AsyncBytes`
+        // (`.bytes.lines`) runs a BLOCKING read(2) on a single serial executor shared by the whole
+        // process, so one silent child — `yt-dlp -J` says nothing until the extraction ends —
+        // freezes the stdout of every other child in the app. Measured: 10 children sleeping
+        // 1…10 s all finished at 10.0 s with `.bytes.lines`, and 1.0…10.0 s with this handler.
+        // Unbounded buffering: dropping a line would lose the delivered-path marker.
+        let outHandle = outPipe.fileHandleForReading
+        let stdoutLines = AsyncStream<String>(bufferingPolicy: .unbounded) { continuation in
+            let splitter = LineSplitter()
+            continuation.onTermination = { _ in outHandle.readabilityHandler = nil }
+            outHandle.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                    handle.readabilityHandler = nil
+                    if let trailing = splitter.flush() { continuation.yield(trailing) }
+                    continuation.finish()
+                } else {
+                    for line in splitter.take(data) { continuation.yield(line) }
+                }
+            }
+        }
+
+        do {
+            try process.run()
+        } catch {
+            outHandle.readabilityHandler = nil
+            errHandle.readabilityHandler = nil
+            throw error
+        }
 
         return try await withTaskCancellationHandler {
-            for try await line in outPipe.fileHandleForReading.bytes.lines {
+            for await line in stdoutLines {
                 onStdoutLine(line)
             }
             process.waitUntilExit()
@@ -48,6 +76,55 @@ public struct ProcessRunner: ProcessRunning {
         } onCancel: {
             process.terminate()
         }
+    }
+}
+
+/// Reassembles lines from the arbitrary chunks a pipe delivers, holding the partial tail until
+/// its line break arrives. Both `\n` and `\r` break a line and `\r\n` counts as one, matching
+/// what the previous `AsyncLineSequence` did: yt-dlp runs with `--newline`, but a bare `\r`
+/// still shows up in some of its output.
+final class LineSplitter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending = Data()
+
+    func take(_ chunk: Data) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        pending.append(chunk)
+        var lines: [String] = []
+        var lineStart = pending.startIndex
+        var index = pending.startIndex
+        while index < pending.endIndex {
+            let byte = pending[index]
+            guard byte == 0x0A || byte == 0x0D else {
+                index = pending.index(after: index)
+                continue
+            }
+            // swiftlint:disable:next optional_data_string_conversion
+            lines.append(String(decoding: pending[lineStart ..< index], as: UTF8.self))
+            var next = pending.index(after: index)
+            if byte == 0x0D, next < pending.endIndex, pending[next] == 0x0A {
+                next = pending.index(after: next)
+            }
+            lineStart = next
+            index = next
+        }
+        // Rebuilding rebases the indices, so the next chunk starts from zero again.
+        pending = Data(pending[lineStart...])
+        return lines
+    }
+
+    /// Whatever is left when the pipe reaches EOF without a final line break.
+    func flush() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard !pending.isEmpty else { return nil }
+        // swiftlint:disable:next optional_data_string_conversion
+        let trailing = String(decoding: pending, as: UTF8.self)
+        pending = Data()
+        return trailing
     }
 }
 
