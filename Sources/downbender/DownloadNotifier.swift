@@ -66,7 +66,9 @@ final class DownloadNotifier: CompletionNotifying {
         )
         notices.insert(notice, at: 0)
         if notices.count > 5 {
+            let discardedIdentifiers = notices.dropFirst(5).map { $0.id.uuidString }
             notices.removeLast(notices.count - 5)
+            removeSystemNotifications(withIdentifiers: discardedIdentifiers)
         }
 
         if NSApp.isActive {
@@ -79,6 +81,15 @@ final class DownloadNotifier: CompletionNotifying {
 
     func dismiss(_ notice: CompletionNotice) {
         notices.removeAll { $0.id == notice.id }
+        removeSystemNotifications(withIdentifiers: [notice.id.uuidString])
+    }
+
+    /// The banner shows only the first queued notice. Closing it should close the visible
+    /// notification stack instead of immediately replacing it with an older, similar banner.
+    func dismissAll() {
+        let identifiers = notices.map { $0.id.uuidString }
+        notices.removeAll()
+        removeSystemNotifications(withIdentifiers: identifiers)
     }
 
     func performPrimaryAction(for notice: CompletionNotice) {
@@ -96,6 +107,8 @@ final class DownloadNotifier: CompletionNotifying {
                 NSSound(named: notice.success ? "Glass" : "Basso")?.play()
                 return
             }
+            // The user may have dismissed the in-app banner while authorization was pending.
+            guard notices.contains(where: { $0.id == notice.id }) else { return }
 
             let content = UNMutableNotificationContent()
             content.title = notice.heading
@@ -117,6 +130,10 @@ final class DownloadNotifier: CompletionNotifying {
                         trigger: nil
                     )
                 )
+                // `add` is async too. If dismissal raced it, remove the request that just landed.
+                if !notices.contains(where: { $0.id == notice.id }) {
+                    removeSystemNotifications(withIdentifiers: [notice.id.uuidString])
+                }
             } catch {
                 NSSound(named: notice.success ? "Glass" : "Basso")?.play()
             }
@@ -139,6 +156,12 @@ final class DownloadNotifier: CompletionNotifying {
         @unknown default:
             return false
         }
+    }
+
+    private func removeSystemNotifications(withIdentifiers identifiers: [String]) {
+        guard !identifiers.isEmpty else { return }
+        notificationCenter.removeDeliveredNotifications(withIdentifiers: identifiers)
+        notificationCenter.removePendingNotificationRequests(withIdentifiers: identifiers)
     }
 
     private func open(filePath: String?, noticeID: UUID?) {
@@ -209,9 +232,11 @@ struct CompletionBannerHost: View {
                 }
                 .buttonStyle(.bordered)
                 Button {
-                    notifier.dismiss(notice)
+                    notifier.dismissAll()
                 } label: {
                     Image(systemName: "xmark")
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss notification")

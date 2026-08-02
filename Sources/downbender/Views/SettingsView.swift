@@ -3,6 +3,7 @@ import DownbenderCore
 
 struct SettingsView: View {
     @Bindable var model: AppModel
+    let requestRelaunch: @MainActor () -> Void
     @State private var chromeIntegration: ChromeIntegrationState?
     @State private var browserInventory = BrowserInventory(installed: [])
     @State private var selectedBrowser: BrowserKind?
@@ -250,7 +251,7 @@ struct SettingsView: View {
             }
 
             DownloadEngineSection(controller: model.engineController)
-            UpdatesSection(updater: model.updater, model: model)
+            UpdatesSection(updater: model.updater, model: model, requestRelaunch: requestRelaunch)
         }
         .formStyle(CommandFormStyle())
         .scrollContentBackground(.hidden)
@@ -654,6 +655,7 @@ private struct DownloadEngineSection: View {
 private struct UpdatesSection: View {
     let updater: UnifiedUpdater
     @Bindable var model: AppModel
+    let requestRelaunch: @MainActor () -> Void
     @State private var confirmingRestart = false
 
     /// Downloads that would be interrupted when the app relaunches to finish updating.
@@ -729,7 +731,7 @@ private struct UpdatesSection: View {
                     .buttonStyle(CommandButtonStyle(.primary))
 
                 case .workingOnApp(let fraction):
-                    UpdateProgressView(title: "Downloading Downbender", fraction: fraction)
+                    UpdateProgressView(title: "Updating Downbender", fraction: fraction)
 
                 case .readyToRestart:
                     Label {
@@ -744,7 +746,7 @@ private struct UpdatesSection: View {
                             .foregroundStyle(Theme.success)
                     }
                     Button("Restart Downbender") {
-                        if activeDownloads > 0 { confirmingRestart = true } else { relaunchApp() }
+                        if activeDownloads > 0 { confirmingRestart = true } else { requestRelaunch() }
                     }
                     .buttonStyle(CommandButtonStyle(.primary))
                     .confirmationDialog(
@@ -756,7 +758,7 @@ private struct UpdatesSection: View {
                             "Restart (pauses \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))",
                             role: .destructive
                         ) {
-                            relaunchApp()
+                            requestRelaunch()
                         }
                         Button("Not now", role: .cancel) {}
                     } message: {
@@ -796,7 +798,7 @@ private struct UpdateProgressView: View {
                     Text("\(Int(min(max(fraction, 0), 1) * 100))%")
                         .contentTransition(.numericText())
                 } else {
-                    Text("Preparing…")
+                    Text("Downloading…")
                 }
             }
             .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -954,10 +956,4 @@ private struct CommandFormStyle: FormStyle {
             .padding(.vertical, 18)
         }
     }
-}
-
-/// Asks the app delegate to save/stop active work, terminate fully, and only then
-/// reopen the already-swapped bundle.
-@MainActor func relaunchApp() {
-    (NSApp.delegate as? DownbenderAppDelegate)?.requestRelaunch()
 }

@@ -75,8 +75,10 @@ public struct AppSelfUpdater: Sendable {
         let zip = try await download(session: session, from: url) { fraction in
             onProgress(Self.overallProgress(forDownloadFraction: fraction))
         }
+        defer { try? FileManager.default.removeItem(at: zip) }
         onProgress(0.92)
         let extracted = try await extract(zip: zip)
+        defer { try? FileManager.default.removeItem(at: extracted.deletingLastPathComponent()) }
         onProgress(0.97)
         try await install(appAt: extracted)
         onProgress(1)
@@ -93,15 +95,17 @@ public struct AppSelfUpdater: Sendable {
         // The GET can arrive without a total (chunked behind GitHub's CDN redirect), leaving the bar
         // indeterminate. A HEAD reliably returns the size, so progress can show a real percentage.
         let expected = try? await Self.headContentLength(url: url, session: session)
-        let delegate = DownloadProgressDelegate(onProgress: onProgress, expectedBytes: expected)
-        let (tmp, response) = try await session.download(from: url, delegate: delegate)
+        let delegate = DownloadProgressDelegate(
+            onProgress: onProgress,
+            expectedBytes: expected,
+            temporaryFileExtension: "zip"
+        )
+        let (tmp, response) = try await delegate.download(session: session, from: url)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            try? FileManager.default.removeItem(at: tmp)
             throw SelfUpdateError.badStatus((response as? HTTPURLResponse)?.statusCode ?? -1)
         }
-        // URLSession deletes the temp file when this call returns; move it somewhere stable (.zip for ditto).
-        let stable = FileManager.default.temporaryDirectory.appendingPathComponent("Downbender-update-\(UUID().uuidString).zip")
-        try FileManager.default.moveItem(at: tmp, to: stable)
-        return stable
+        return tmp
     }
 
     /// A HEAD to learn the asset size up front, so the bar can show a real percentage even when
@@ -110,7 +114,10 @@ public struct AppSelfUpdater: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         let (_, response) = try await session.data(for: request)
-        let length = (response as? HTTPURLResponse)?.expectedContentLength ?? -1
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode)
+        else { return nil }
+        let length = http.expectedContentLength
         return length > 0 ? length : nil
     }
 
@@ -119,6 +126,12 @@ public struct AppSelfUpdater: Sendable {
         let dest = zip.deletingPathExtension().appendingPathExtension("extracted")
         try? FileManager.default.removeItem(at: dest)
         try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        var shouldRemovePartialExtraction = true
+        defer {
+            if shouldRemovePartialExtraction {
+                try? FileManager.default.removeItem(at: dest)
+            }
+        }
         let result = try await runner.run(
             executableURL: URL(fileURLWithPath: "/usr/bin/ditto"),
             arguments: ["-x", "-k", zip.path, dest.path],
@@ -129,6 +142,7 @@ public struct AppSelfUpdater: Sendable {
         guard let app = contents.first(where: { $0.pathExtension == "app" }) else {
             throw SelfUpdateError.appNotFoundInArchive
         }
+        shouldRemovePartialExtraction = false
         return app
     }
 

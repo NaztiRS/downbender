@@ -132,7 +132,7 @@ public struct UpdaterService: Sendable {
 
         try FileManager.default.createDirectory(at: appSupportDirectory, withIntermediateDirectories: true)
         let delegate = DownloadProgressDelegate(onProgress: onProgress)
-        let (tmp, response) = try await session.download(from: binaryURL, delegate: delegate)
+        let (tmp, response) = try await delegate.download(session: session, from: binaryURL)
         defer { try? FileManager.default.removeItem(at: tmp) }
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -186,7 +186,7 @@ public struct UpdaterService: Sendable {
         }
 
         let delegate = DownloadProgressDelegate(onProgress: onProgress)
-        let (downloaded, binaryResponse) = try await session.download(from: assets.binary, delegate: delegate)
+        let (downloaded, binaryResponse) = try await delegate.download(session: session, from: assets.binary)
         defer { try? FileManager.default.removeItem(at: downloaded) }
         guard (binaryResponse as? HTTPURLResponse)?.statusCode == 200 else {
             throw UpdaterError.badStatus((binaryResponse as? HTTPURLResponse)?.statusCode ?? -1)
@@ -308,14 +308,45 @@ public struct UpdaterService: Sendable {
     }
 }
 
-/// Translates `didWriteData` into a 0…1 fraction, or nil when the total is unknown (indeterminate).
+/// Drives a download task manually so Foundation delivers its delegate callbacks. The async
+/// `session.download(from:delegate:)` convenience API bypasses the normal per-task delegate
+/// messages, which made updater progress sit at zero until the transfer had already finished.
 final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let lock = NSLock()
     let onProgress: @Sendable (Double?) -> Void
     /// Fallback total (from a prior HEAD) used when the GET response omits its size.
     let expectedBytes: Int64?
-    init(onProgress: @escaping @Sendable (Double?) -> Void, expectedBytes: Int64? = nil) {
+    private let temporaryFileExtension: String?
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var movedURL: URL?
+    private var moveError: Error?
+
+    init(
+        onProgress: @escaping @Sendable (Double?) -> Void,
+        expectedBytes: Int64? = nil,
+        temporaryFileExtension: String? = nil
+    ) {
         self.onProgress = onProgress
         self.expectedBytes = expectedBytes
+        self.temporaryFileExtension = temporaryFileExtension
+    }
+
+    /// Creates a task, attaches this delegate before resuming it, and bridges completion to async.
+    /// The system download URL is only valid during `didFinishDownloadingTo`, so that callback
+    /// moves it to a stable temporary location before the continuation is resumed.
+    func download(session: URLSession, from url: URL) async throws -> (URL, URLResponse) {
+        let task = session.downloadTask(with: url)
+        task.delegate = self
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                self.continuation = continuation
+                lock.unlock()
+                task.resume()
+            }
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     func urlSession(
@@ -336,10 +367,58 @@ final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unc
         }
     }
 
-    // Required by the protocol; the async download already returns the temporary URL.
     func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
-    ) {}
+    ) {
+        var stable = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Downbender-update-download-\(UUID().uuidString)")
+        if let temporaryFileExtension, !temporaryFileExtension.isEmpty {
+            stable.appendPathExtension(temporaryFileExtension)
+        }
+
+        do {
+            try FileManager.default.moveItem(at: location, to: stable)
+            lock.lock()
+            movedURL = stable
+            lock.unlock()
+        } catch {
+            lock.lock()
+            moveError = error
+            lock.unlock()
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        let movedURL = self.movedURL
+        self.movedURL = nil
+        let moveError = self.moveError
+        self.moveError = nil
+        lock.unlock()
+
+        guard let continuation else {
+            if let movedURL { try? FileManager.default.removeItem(at: movedURL) }
+            return
+        }
+        if let error {
+            if let movedURL { try? FileManager.default.removeItem(at: movedURL) }
+            if (error as? URLError)?.code == .cancelled {
+                continuation.resume(throwing: CancellationError())
+            } else {
+                continuation.resume(throwing: error)
+            }
+        } else if let moveError {
+            if let movedURL { try? FileManager.default.removeItem(at: movedURL) }
+            continuation.resume(throwing: moveError)
+        } else if let movedURL, let response = task.response {
+            continuation.resume(returning: (movedURL, response))
+        } else {
+            if let movedURL { try? FileManager.default.removeItem(at: movedURL) }
+            continuation.resume(throwing: URLError(.cannotWriteToFile))
+        }
+    }
 }

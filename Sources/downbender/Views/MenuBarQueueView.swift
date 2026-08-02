@@ -197,9 +197,11 @@ struct MenuBarQueueView: View {
             }
             .controlSize(.small)
             Button {
-                notifier.dismiss(notice)
+                notifier.dismissAll()
             } label: {
                 Image(systemName: "xmark")
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Dismiss")

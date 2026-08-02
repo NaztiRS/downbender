@@ -248,7 +248,7 @@ struct DownbenderApp: App {
         Window("Downbender", id: "main") {
             Group {
                 if let model {
-                    RootView(model: model)
+                    RootView(model: model, requestRelaunch: appDelegate.requestRelaunch)
                         .overlay(alignment: .top) {
                             CompletionBannerHost(notifier: appDelegate.notifier)
                         }
@@ -284,7 +284,7 @@ struct DownbenderApp: App {
         }
         Settings {
             if let model {
-                SettingsView(model: model)
+                SettingsView(model: model, requestRelaunch: appDelegate.requestRelaunch)
                     .tint(Theme.accent)
                     .preferredColorScheme(.dark)
             }

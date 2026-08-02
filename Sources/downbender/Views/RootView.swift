@@ -4,6 +4,7 @@ import DownbenderCore
 
 struct RootView: View {
     @State var model: AppModel
+    let requestRelaunch: @MainActor () -> Void
     @State private var urlText = ""
     @State private var isDropTargeted = false
     @State private var confirmingUpdateRestart = false
@@ -24,7 +25,39 @@ struct RootView: View {
                         )
                     }
                 }
-            if model.updater.phase == .readyToRestart {
+            if case let .workingOnApp(fraction) = model.updater.phase {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(Theme.accent)
+                    Text("Updating Downbender")
+                        .font(.system(size: 11, design: .monospaced))
+                    Spacer()
+                    if let fraction {
+                        ProgressView(value: min(max(fraction, 0), 1))
+                            .progressViewStyle(.linear)
+                            .frame(width: 120)
+                            .tint(Theme.accent)
+                        Text("\(Int(min(max(fraction, 0), 1) * 100))%")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.muted)
+                            .contentTransition(.numericText())
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .frame(width: 120)
+                            .tint(Theme.accent)
+                        Text("Downloading…")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Theme.surface)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Theme.border).frame(height: 1)
+                }
+                .animation(.easeOut(duration: 0.3), value: fraction)
+            } else if model.updater.phase == .readyToRestart {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Theme.success)
@@ -38,7 +71,7 @@ struct RootView: View {
                         if activeDownloads > 0 {
                             confirmingUpdateRestart = true
                         } else {
-                            relaunchApp()
+                            requestRelaunch()
                         }
                     } label: {
                         Text("RESTART")
@@ -137,7 +170,7 @@ struct RootView: View {
                 "Restart (pauses \(activeDownloads) download\(activeDownloads == 1 ? "" : "s"))",
                 role: .destructive
             ) {
-                relaunchApp()
+                requestRelaunch()
             }
             Button("Not now", role: .cancel) {}
         } message: {
