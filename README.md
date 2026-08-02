@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/AppIcon-command.png" alt="" width="104">
+  <img src="docs/assets/hero-wide-command-centered.png" alt="" width="920">
 </p>
 
 <h1 align="center">
