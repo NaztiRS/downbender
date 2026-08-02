@@ -72,13 +72,24 @@ public struct BundledBinaries: Sendable {
         )
     }
 
+    /// Stable yt-dlp ships as an already-extracted directory (`yt-dlp/yt-dlp` beside its
+    /// `_internal` tree). The self-extracting single file wrote 104 fresh Mach-O files to a new
+    /// temporary directory on every launch, and macOS rescans every unseen one through a single
+    /// serial system service: measured 10 concurrent launches at 78 s, against 0.4 s for the
+    /// directory layout whose inodes stay put. The flat `yt-dlp_macos` still resolves so an
+    /// older Resources layout keeps working.
+    private static func bundledYtdlpURL(in bundle: Bundle) -> URL? {
+        bundle.url(forResource: "yt-dlp", withExtension: nil, subdirectory: "yt-dlp")
+            ?? bundle.url(forResource: "yt-dlp_macos", withExtension: nil)
+    }
+
     public static func locate(
         bundle: Bundle = .main,
         appSupportDirectory: URL,
         fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) },
         isExecutable: (URL) -> Bool = { FileManager.default.isExecutableFile(atPath: $0.path) }
     ) -> BundledBinaries? {
-        guard let bundledYtdlp = bundle.url(forResource: "yt-dlp_macos", withExtension: nil) else { return nil }
+        guard let bundledYtdlp = bundledYtdlpURL(in: bundle) else { return nil }
         guard let ffmpeg = bundle.url(forResource: "ffmpeg", withExtension: nil) else { return nil }
         // deno is optional: if it isn't bundled, the app keeps working (degraded).
         let deno = bundle.url(forResource: "deno", withExtension: nil)

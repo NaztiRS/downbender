@@ -4,11 +4,10 @@ cd "$(dirname "$0")/.."
 DEST="Resources/binaries"
 mkdir -p "$DEST"
 
-# yt-dlp (self-contained universal binary, Unlicense)
-echo "Downloading yt-dlp_macos…"
-curl -L --fail -o "$DEST/yt-dlp_macos" \
-  "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos"
-chmod +x "$DEST/yt-dlp_macos"
+# yt-dlp (Unlicense). Built locally as an extracted directory rather than downloading the
+# official self-extracting binary: that one re-unpacks 104 Mach-O files on every launch and
+# macOS rescans them one at a time, so concurrent launches serialise. See scripts/build-ytdlp.sh.
+"$(dirname "$0")/build-ytdlp.sh"
 
 # ffmpeg + ffprobe (arm64, signed+notarized, martin-riedl.de). GPL build — the
 # reason Downbender itself is GPLv3 (see NOTICE).
@@ -30,4 +29,4 @@ chmod +x "$DEST/deno"
 rm -f "$DEST/deno.zip"
 
 ls -la "$DEST"
-echo "Verify: $DEST/yt-dlp_macos --version && $DEST/ffmpeg -version && $DEST/deno --version"
+echo "Verify: $DEST/yt-dlp/yt-dlp --version && $DEST/ffmpeg -version && $DEST/deno --version"

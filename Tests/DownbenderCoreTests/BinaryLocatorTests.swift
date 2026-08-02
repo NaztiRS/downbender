@@ -27,6 +27,50 @@ private func makeTestBundle() throws -> (root: URL, bundle: Bundle, stable: URL)
     return (root, try #require(Bundle(url: bundleURL)), stable)
 }
 
+/// Builds a bundle whose yt-dlp ships as an extracted directory (`yt-dlp/yt-dlp` plus its
+/// `_internal` tree) instead of the single self-extracting file.
+private func makeDirectoryLayoutBundle() throws -> (root: URL, bundle: Bundle, executable: URL) {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("binary-locator-dir-\(UUID().uuidString)")
+    let bundleURL = root.appendingPathComponent("Test.bundle")
+    let resources = bundleURL.appendingPathComponent("Contents/Resources")
+    let engine = resources.appendingPathComponent("yt-dlp")
+    try FileManager.default.createDirectory(
+        at: engine.appendingPathComponent("_internal"),
+        withIntermediateDirectories: true
+    )
+
+    let plist: [String: Any] = [
+        "CFBundleIdentifier": "com.downbender.tests.\(UUID().uuidString)",
+        "CFBundleName": "BinaryLocatorTests",
+        "CFBundlePackageType": "BNDL",
+        "CFBundleVersion": "1",
+    ]
+    let plistData = try PropertyListSerialization.data(
+        fromPropertyList: plist,
+        format: .xml,
+        options: 0
+    )
+    try plistData.write(to: bundleURL.appendingPathComponent("Contents/Info.plist"))
+    let executable = engine.appendingPathComponent("yt-dlp")
+    try Data("stable".utf8).write(to: executable)
+    try Data("python".utf8).write(to: engine.appendingPathComponent("_internal/libpython.dylib"))
+    try Data("ffmpeg".utf8).write(to: resources.appendingPathComponent("ffmpeg"))
+    return (root, try #require(Bundle(url: bundleURL)), executable)
+}
+
+@Test func locateFindsYtdlpShippedAsADirectory() throws {
+    let fixture = try makeDirectoryLayoutBundle()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+    let binaries = BundledBinaries.locate(
+        bundle: fixture.bundle,
+        appSupportDirectory: fixture.root.appendingPathComponent("support")
+    )
+
+    #expect(binaries?.ytdlp.standardizedFileURL == fixture.executable.standardizedFileURL)
+}
+
 @Test func legacyStableOverrideNeverWinsOverBundledYtdlp() {
     let legacyOverride = URL(fileURLWithPath: "/support/yt-dlp_macos")
     let bundled = URL(fileURLWithPath: "/app/yt-dlp_macos")

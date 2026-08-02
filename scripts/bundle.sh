@@ -25,7 +25,7 @@ chmod +x "$APP/Contents/MacOS/downbender-native-host"
 cp LICENSE NOTICE "$APP/Contents/Resources/"
 cp -R ChromeExtension "$APP/Contents/Resources/ChromeExtension"
 
-for b in yt-dlp_macos ffmpeg ffprobe deno; do
+for b in ffmpeg ffprobe deno; do
   if [ -f "Resources/binaries/$b" ]; then
     cp "Resources/binaries/$b" "$APP/Contents/Resources/$b"
     chmod +x "$APP/Contents/Resources/$b"
@@ -33,6 +33,16 @@ for b in yt-dlp_macos ffmpeg ffprobe deno; do
     echo "WARNING: missing Resources/binaries/$b"
   fi
 done
+
+# yt-dlp travels as its extracted directory (scripts/build-ytdlp.sh). The self-extracting single
+# file unpacked 104 Mach-O files to a new temporary directory on every launch, and macOS rescans
+# each unseen one through a single serial service, so launches could not run in parallel.
+if [ -d "Resources/binaries/yt-dlp" ]; then
+  cp -R "Resources/binaries/yt-dlp" "$APP/Contents/Resources/yt-dlp"
+  chmod +x "$APP/Contents/Resources/yt-dlp/yt-dlp"
+else
+  echo "WARNING: missing Resources/binaries/yt-dlp (run scripts/build-ytdlp.sh)"
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -90,9 +100,23 @@ if [ -f "$MENU_BAR_ICON_SRC" ]; then
   cp "$MENU_BAR_ICON_SRC" "$APP/Contents/Resources/DownbenderMenuBar.svg"
 fi
 
-for b in yt-dlp_macos ffmpeg ffprobe deno; do
+for b in ffmpeg ffprobe deno; do
   [ -f "$APP/Contents/Resources/$b" ] && codesign --force --sign - "$APP/Contents/Resources/$b"
 done
+# Nested code has to carry its own signature before the app seals its resources: the framework
+# as a bundle first, then every remaining loose Mach-O in the tree.
+if [ -d "$APP/Contents/Resources/yt-dlp" ]; then
+  find "$APP/Contents/Resources/yt-dlp" -type d -name "*.framework" -print0 |
+    while IFS= read -r -d '' framework; do
+      codesign --force --sign - "$framework"
+    done
+  find "$APP/Contents/Resources/yt-dlp" -type f -path "*.framework/*" -prune -o -type f -print0 |
+    while IFS= read -r -d '' file; do
+      case "$(file -b "$file")" in
+      *Mach-O*) codesign --force --sign - "$file" ;;
+      esac
+    done
+fi
 codesign --force --sign - "$APP/Contents/MacOS/downbender-native-host"
 codesign --force --sign - "$APP"
 echo "Built $APP"
