@@ -61,7 +61,7 @@ public struct ProcessRunner: ProcessRunning {
             throw error
         }
 
-        return try await withTaskCancellationHandler {
+        return await withTaskCancellationHandler {
             for await line in stdoutLines {
                 onStdoutLine(line)
             }
