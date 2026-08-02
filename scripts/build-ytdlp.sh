@@ -8,34 +8,40 @@
 # parallelise at all, which is what made ten simultaneous analyses finish in one late burst.
 #
 # The directory layout ships the same files with stable inodes, so the scan happens once, at
-# install time: 0.19 s per launch and 0.39 s for ten in parallel.
+# install time: 0.19 s per launch and 0.39 s for ten in parallel. Users never needed Python for
+# any of this — a complete interpreter has always travelled inside yt-dlp; the only change is
+# that it is no longer unpacked from scratch on every run.
 #
-# Usage: scripts/build-ytdlp.sh          (pinned version)
+# Nothing has to be installed to run this: the Python it needs is downloaded, used inside the
+# temporary build directory and thrown away, exactly like the ffmpeg and deno downloads next door
+# in fetch-binaries.sh. Nothing of it ships — what ships is the tree PyInstaller produces. Set
+# PYTHON=/path/to/python3 to build with an interpreter you already have instead.
+#
+# Usage: scripts/build-ytdlp.sh          (pinned versions)
 #        YTDLP_VERSION=2026.08.01 scripts/build-ytdlp.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 YTDLP_VERSION="${YTDLP_VERSION:-2026.07.04}"
 DEST="Resources/binaries/yt-dlp"
+# Relocatable CPython builds, pinned so the same command produces the same tree.
+PYTHON_RELEASE="20260728"
+PYTHON_VERSION="3.14.6"
+PYTHON_ARCHIVE="cpython-${PYTHON_VERSION}%2B${PYTHON_RELEASE}-aarch64-apple-darwin-install_only.tar.gz"
 
-PYTHON="${PYTHON:-}"
-if [ -z "$PYTHON" ]; then
-  for candidate in python3.14 python3.13 python3.12; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      PYTHON="$(command -v "$candidate")"
-      break
-    fi
-  done
-fi
-if [ -z "$PYTHON" ]; then
-  echo "ERROR: no python3.12+ found. Install one (brew install python@3.14) or set PYTHON=." >&2
-  exit 1
-fi
-
-echo "Building yt-dlp ${YTDLP_VERSION} with ${PYTHON}…"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+PYTHON="${PYTHON:-}"
+if [ -z "$PYTHON" ]; then
+  echo "Downloading CPython ${PYTHON_VERSION} (build toolchain only, not shipped)…"
+  curl -L --fail -o "$WORK/python.tar.gz" \
+    "https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE}/${PYTHON_ARCHIVE}"
+  tar xzf "$WORK/python.tar.gz" -C "$WORK"
+  PYTHON="$WORK/python/bin/python3"
+fi
+
+echo "Building yt-dlp ${YTDLP_VERSION} with ${PYTHON}…"
 "$PYTHON" -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" -q install --upgrade pip
 # The same optional libraries the official macOS build ships, so extraction behaviour matches:
