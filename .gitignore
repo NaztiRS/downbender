@@ -16,7 +16,7 @@ DerivedData/
 
 # Internal working docs (specs/plans) — kept out of the public tree
 docs-dev/
-Downbender.zip
+Downbender*.zip
 
 # Stray images dropped at repo root (icon experiments etc.) stay untracked
 /*.png
