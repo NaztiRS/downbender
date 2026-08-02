@@ -2,9 +2,7 @@
   <img src="docs/assets/hero-wide-command-centered.png" alt="" width="920">
 </p>
 
-<h1 align="center">
-  <img src="docs/assets/wordmark-command.png" alt="Downbender" width="480">
-</h1>
+<h1 align="center">Downbender</h1>
 
 <p align="center"><em>The last download master.</em></p>
 
