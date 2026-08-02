@@ -67,4 +67,34 @@ if [ "$BUILT" != "$YTDLP_VERSION" ]; then
   echo "ERROR: built $BUILT but expected $YTDLP_VERSION" >&2
   exit 1
 fi
+# Regression guard for the whole point of building this way: launches must run in parallel.
+# Absolute timings drift a lot with how warm the machine is (the same binary measured anywhere
+# between 5 s and 19 s), so the check compares the RATIO, which stayed put across every run:
+# a self-extracting build costs ~N times one launch, an extracted one costs about the same.
+warm_up() { "$DEST/yt-dlp" --version >/dev/null 2>&1; }
+# The command's own output is swallowed in here: redirecting at the call site would swallow the
+# measurement itself, since the caller reads this function through a command substitution.
+elapsed() {
+  local start
+  start=$(date +%s.%N)
+  "$@" >/dev/null 2>&1
+  awk -v s="$start" -v e="$(date +%s.%N)" 'BEGIN { printf "%.3f", e - s }'
+}
+launch_many() {
+  local n=$1 i
+  for ((i = 0; i < n; i++)); do "$DEST/yt-dlp" --version >/dev/null 2>&1 & done
+  wait
+}
+
+warm_up   # the very first launch pays the one-off scan of the freshly written files
+ONE=$(elapsed "$DEST/yt-dlp" --version)
+EIGHT=$(elapsed launch_many 8)
+RATIO=$(awk -v a="$EIGHT" -v b="$ONE" 'BEGIN { printf "%.2f", (b > 0 ? a / b : 99) }')
+echo "Startup: 1 launch ${ONE}s, 8 in parallel ${EIGHT}s (ratio ${RATIO}x)"
+if awk -v r="$RATIO" 'BEGIN { exit !(r > 3) }'; then
+  echo "ERROR: eight launches cost ${RATIO}x one — they are serialising, as the onefile build did." >&2
+  echo "       The tree is meant to keep stable inodes so macOS scans it once." >&2
+  exit 1
+fi
+
 echo "yt-dlp $BUILT ready at $DEST ($(du -sh "$DEST" | cut -f1))"
