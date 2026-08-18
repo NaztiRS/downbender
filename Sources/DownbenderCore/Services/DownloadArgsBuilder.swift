@@ -35,7 +35,8 @@ public enum DownloadArgsBuilder {
         fileNameTemplate: String = FileNameTemplate.defaultValue,
         includeSubtitles: Bool = false,
         detailedDiagnostics: Bool = false,
-        useTVClient: Bool = false
+        useTVClient: Bool = false,
+        useOriginalCodecMKV: Bool = false
     ) -> [String] {
         var args = baseArgs(
             denoURL: denoURL,
@@ -66,7 +67,7 @@ public enum DownloadArgsBuilder {
         }
 
         switch format {
-        case .video(let height) where height <= 1080:
+        case .video(let height) where height <= 1080 && !useOriginalCodecMKV:
             // Compatibility profile. The bundled ffmpeg SIGSEGVs muxing VP9/AV1 into MP4,
             // so qualities up to 1080p retain the proven AVC1 + M4A selector.
             let selector = "bv*[height=\(height)][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=\(height)][vcodec^=avc1]+ba[ext=m4a]/b[height<=\(height)][ext=mp4]/b[height<=\(height)]"
@@ -77,9 +78,9 @@ public enum DownloadArgsBuilder {
                 args += ["--embed-subs", "--sub-langs", "all,-live_chat"]
             }
         case .video(let height):
-            // Quality profile. YouTube commonly serves 1440p+ as VP9/AV1 video with Opus/M4A
-            // audio; MKV preserves those streams without transcoding. Exact-height tiers lead,
-            // followed by the closest lower quality if the source changes after probing.
+            // Original-codec profile: normal for 1440p+, and the safe fallback when a lower
+            // quality has no AVC1 offer. MKV preserves VP9/AV1 without the FFmpeg crash seen
+            // while muxing those codecs to MP4. Exact-height tiers lead, then the closest lower.
             let selector = "bv[height=\(height)]+ba/b[height=\(height)]/bv[height<=\(height)]+ba/b[height<=\(height)]"
             args += [
                 "-f", selector,

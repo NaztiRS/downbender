@@ -402,6 +402,146 @@ import Foundation
 }
 
 @MainActor
+@Test func coordinatorFallsBackToMKVWhenCompatibilityMP4IsUnavailable() async {
+    let runner = FakeProcessRunner(replays: [
+        .init(
+            stderr: "ERROR: [Instagram] post: Requested format is not available. Use --list-formats for a list of available formats",
+            exitCode: 1
+        ),
+        .init(stdoutLines: ["DBPATH /tmp/out/reel.mkv"], exitCode: 0),
+    ])
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(
+        download: download,
+        inspect: { _ in (width: 540, height: 960) },
+        retryDelay: .zero
+    )
+    let item = DownloadItem(
+        url: "https://www.instagram.com/p/post/",
+        title: "Reel",
+        format: .video(height: 960),
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+
+    #expect(item.state == .done)
+    #expect(item.deliveredFileURL == URL(fileURLWithPath: "/tmp/out/reel.mkv"))
+    #expect(item.deliveredNote == "MP4 unavailable; saved as MKV · 540×960")
+    #expect(item.deliveredMismatch == true)
+
+    let calls = runner.recordedArguments.allArguments
+    #expect(calls.count == 2)
+    guard calls.count == 2 else { return }
+    #expect(calls[0].contains("bv*[height=960][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=960][vcodec^=avc1]+ba[ext=m4a]/b[height<=960][ext=mp4]/b[height<=960]"))
+    #expect(calls[0].contains("mp4"))
+    #expect(calls[1].contains("bv[height=960]+ba/b[height=960]/bv[height<=960]+ba/b[height<=960]"))
+    #expect(calls[1].contains("mkv"))
+}
+
+@MainActor
+@Test func coordinatorDoesNotPublishMKVFallbackMetadataWhenPausedDuringInspection() async {
+    let inspections = CallCounter()
+    let runner = FakeProcessRunner(replays: [
+        .init(stderr: "ERROR: Requested format is not available", exitCode: 1),
+        .init(stdoutLines: ["DBPATH /tmp/out/reel.mkv"], exitCode: 0),
+    ])
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(download: download, inspect: { _ in
+        _ = inspections.next()
+        try? await Task.sleep(for: .seconds(5))
+        return nil
+    })
+    let item = DownloadItem(
+        url: "https://www.instagram.com/p/post/",
+        title: "Reel",
+        format: .video(height: 960),
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    let run = Task {
+        await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+    }
+    #expect(await waitForProgressCondition { inspections.count == 1 })
+    item.state = .paused
+    run.cancel()
+    await run.value
+
+    #expect(item.state == .paused)
+    #expect(item.deliveredFileURL == nil)
+    #expect(item.deliveredNote.isEmpty)
+    #expect(item.deliveredMismatch == false)
+}
+
+@MainActor
+@Test func coordinatorFormatFallbackDoesNotConsumeTransientRetryBudget() async {
+    let runner = FakeProcessRunner(replays: [
+        .init(stderr: "ERROR: Requested format is not available", exitCode: 1),
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+        .init(stdoutLines: ["DBPATH /tmp/out/reel.mkv"], exitCode: 0),
+    ])
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(download: download, retryDelay: .zero)
+    let item = DownloadItem(
+        url: "https://www.instagram.com/p/post/",
+        title: "Reel",
+        format: .video(height: 960),
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+
+    #expect(item.state == .done)
+    #expect(runner.calls.count == 4)
+    let calls = runner.recordedArguments.allArguments
+    guard calls.count == 4 else { return }
+    #expect(calls.dropLast().allSatisfy { !$0.contains("youtube:player_client=tv") })
+    #expect(calls[3].contains("youtube:player_client=tv"))
+}
+
+@MainActor
+@Test func coordinatorDiagnosticsReportBothProfilesWhenMKVFallbackAlsoFails() async {
+    let runner = FakeProcessRunner(replays: [
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+        .init(stderr: "ERROR: Requested format is not available", exitCode: 1),
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+        .init(stderr: "HTTP Error 403: Forbidden", exitCode: 1),
+    ])
+    let download = DownloadService(
+        runner: runner,
+        ytdlpURL: URL(fileURLWithPath: "/x"),
+        ffmpegDirectory: URL(fileURLWithPath: "/y")
+    )
+    let coordinator = DownloadCoordinator(download: download, retryDelay: .zero)
+    let item = DownloadItem(
+        url: "https://www.instagram.com/p/post/",
+        title: "Reel",
+        format: .video(height: 960),
+        destination: URL(fileURLWithPath: "/tmp")
+    )
+
+    await coordinator.run(item, tmpDirectory: URL(fileURLWithPath: "/tmp/work"))
+
+    if case .failed = item.state {} else { Issue.record("expected .failed, got \(item.state)") }
+    #expect(runner.calls.count == 4)
+    #expect(item.failureDiagnostics?.attempts.map(\.number) == [2, 3, 4])
+    #expect(item.failureDiagnostics?.outputDescription == "Up to 960p · MP4 → MKV fallback")
+}
+
+@MainActor
 @Test func runPassesCookiesBrowserToYtdlp() async {
     let runner = FakeProcessRunner(stdoutLines: ["DBPATH /tmp/out.mp3"], exitCode: 0)
     let download = DownloadService(runner: runner, ytdlpURL: URL(fileURLWithPath: "/x"), ffmpegDirectory: URL(fileURLWithPath: "/y"))

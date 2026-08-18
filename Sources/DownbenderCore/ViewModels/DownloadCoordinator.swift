@@ -49,10 +49,15 @@ public final class DownloadCoordinator {
         item.state = .downloading
         let fileNameTemplate = item.fileNameTemplate
         var failedAttempts: [FailureAttempt] = []
+        var formatFallbackAttempt: FailureAttempt?
+        var useOriginalCodecMKV = false
         // YouTube 403s are intermittent: a FRESH yt-dlp invocation renegotiates the session's
         // signed URLs from scratch, so the manual retry that used to work is automated here.
-        let maxAttempts = 3
-        for attempt in 1...maxAttempts {
+        let maxTransientAttempts = 3
+        var transientAttempt = 1
+        var invocationNumber = 0
+        while true {
+            invocationNumber += 1
             let progressUpdates = ProgressCoalescer(
                 interval: progressInterval,
                 sleep: progressSleep
@@ -71,12 +76,13 @@ public final class DownloadCoordinator {
                     destination: item.destination,
                     tmpDirectory: tmpDirectory,
                     // The FINAL attempt escalates to the TV client (dodges the persistent PO-token 403).
-                    useTVClient: attempt == maxAttempts,
+                    useTVClient: transientAttempt == maxTransientAttempts,
                     cookiesBrowser: cookiesBrowser,
                     fileNameTemplate: fileNameTemplate,
                     includeSubtitles: item.includeSubtitles,
                     detailedDiagnostics: detailedDiagnostics,
-                    expectedTotalBytes: item.expectedTotalBytes,
+                    useOriginalCodecMKV: useOriginalCodecMKV,
+                    expectedTotalBytes: useOriginalCodecMKV ? nil : item.expectedTotalBytes,
                     onProgress: { progress in
                         progressUpdates.submit(progress)
                     },
@@ -88,24 +94,32 @@ public final class DownloadCoordinator {
                     }
                 )
 
-                // Delivered path is recorded for every format, including extracted audio.
-                if let deliveredURL { item.deliveredFileURL = deliveredURL }
+                // Stage delivery metadata until inspection finishes. A pause/cancel during
+                // ffprobe must not leave a fallback warning attached to an unfinished item.
+                var deliveredNote = useOriginalCodecMKV
+                    ? "MP4 unavailable; saved as MKV"
+                    : ""
+                var deliveredMismatch = useOriginalCodecMKV
 
                 // Honesty check: confirm exact requests and report the actual dimensions for Maximum.
                 if let deliveredURL, let inspect {
                     switch format {
                     case .video(let height):
                         if let dims = await inspect(deliveredURL) {
+                            let dimensionsNote: String
                             if dims.height == height {
-                                item.deliveredNote = "\(dims.width)×\(dims.height)"
+                                dimensionsNote = "\(dims.width)×\(dims.height)"
                             } else {
-                                item.deliveredNote = "Requested \(height)p, got \(dims.height)p"
-                                item.deliveredMismatch = true
+                                dimensionsNote = "Requested \(height)p, got \(dims.height)p"
+                                deliveredMismatch = true
                             }
+                            deliveredNote = useOriginalCodecMKV
+                                ? "\(deliveredNote) · \(dimensionsNote)"
+                                : dimensionsNote
                         }
                     case .maximumVideo:
                         if let dims = await inspect(deliveredURL) {
-                            item.deliveredNote = "\(dims.width)×\(dims.height)"
+                            deliveredNote = "\(dims.width)×\(dims.height)"
                         }
                     case .audioMP3, .audioM4A, .audioOpus:
                         break
@@ -119,6 +133,10 @@ public final class DownloadCoordinator {
                     finishInterrupted(item)
                 } else {
                     progressUpdates.finish()
+                    // Delivered path is recorded for every format, including extracted audio.
+                    if let deliveredURL { item.deliveredFileURL = deliveredURL }
+                    item.deliveredNote = deliveredNote
+                    item.deliveredMismatch = deliveredMismatch
                     item.state = .done
                 }
                 return
@@ -130,12 +148,26 @@ public final class DownloadCoordinator {
                 }
                 let failure = failureAttempt(
                     for: error,
-                    number: attempt,
+                    number: invocationNumber,
                     detailed: detailedDiagnostics
                 )
                 failedAttempts.append(failure)
                 let message = failure.summary
-                if TransientFailure.isTransient(error), attempt < maxAttempts {
+                if shouldFallBackToOriginalCodecMKV(
+                    after: error,
+                    format: format,
+                    alreadyUsingFallback: useOriginalCodecMKV
+                ) {
+                    formatFallbackAttempt = failure
+                    useOriginalCodecMKV = true
+                    item.state = .downloading
+                    item.fraction = 0
+                    item.speedText = ""
+                    item.etaText = ""
+                    continue
+                }
+                if TransientFailure.isTransient(error), transientAttempt < maxTransientAttempts {
+                    transientAttempt += 1
                     // Reset progress AND state: the failed attempt may have reached .merging, and without
                     // returning to .downloading the hop guards would discard all of the retry's progress.
                     item.state = .downloading
@@ -149,14 +181,29 @@ public final class DownloadCoordinator {
                     }
                     continue
                 }
+                // Reports stay bounded at three attempts, but the exact MP4 failure that
+                // triggered the profile switch must survive even if a transient error came
+                // first. Keep that trigger plus the two most recent other failures in order.
+                let attemptsForDiagnostics: [FailureAttempt]
+                if let formatFallbackAttempt, failedAttempts.count > 3 {
+                    let recent = failedAttempts
+                        .filter { $0.number != formatFallbackAttempt.number }
+                        .suffix(2)
+                    attemptsForDiagnostics = ([formatFallbackAttempt] + recent)
+                        .sorted { $0.number < $1.number }
+                } else {
+                    attemptsForDiagnostics = failedAttempts
+                }
                 item.failureDiagnostics = FailureDiagnostics(
                     host: FailureDiagnostics.host(from: item.url),
                     operation: .download,
                     engineChannel: item.lastEngineChannel,
                     engineVersion: item.lastEngineVersion,
-                    outputDescription: "\(format.preferenceLabel) · \(format.containerLabel)",
+                    outputDescription: useOriginalCodecMKV
+                        ? "\(format.preferenceLabel) · MP4 → MKV fallback"
+                        : "\(format.preferenceLabel) · \(format.containerLabel)",
                     includeSubtitles: item.includeSubtitles,
-                    attempts: failedAttempts
+                    attempts: attemptsForDiagnostics
                 )
                 item.state = .failed(message)
                 return
@@ -192,6 +239,22 @@ public final class DownloadCoordinator {
             detailed: detailed,
             summary: message,
             output: message
+        )
+    }
+
+    private func shouldFallBackToOriginalCodecMKV(
+        after error: Error,
+        format: DownloadFormat,
+        alreadyUsingFallback: Bool
+    ) -> Bool {
+        guard !alreadyUsingFallback,
+              case .video(let height) = format,
+              height <= 1080,
+              let downloadError = error as? DownloadError,
+              case .ytdlpFailed(let details) = downloadError
+        else { return false }
+        return details.output.localizedCaseInsensitiveContains(
+            "requested format is not available"
         )
     }
 }

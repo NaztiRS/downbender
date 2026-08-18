@@ -56,6 +56,7 @@ public struct DownloadService: Sendable {
         fileNameTemplate: String = FileNameTemplate.defaultValue,
         includeSubtitles: Bool = false,
         detailedDiagnostics: Bool = false,
+        useOriginalCodecMKV: Bool = false,
         expectedTotalBytes: Int64? = nil,
         stallTimeout: Duration = .seconds(120),
         onProgress: @Sendable @escaping (DownloadProgress) -> Void,
@@ -68,7 +69,8 @@ public struct DownloadService: Sendable {
             fileNameTemplate: fileNameTemplate,
             includeSubtitles: includeSubtitles,
             detailedDiagnostics: detailedDiagnostics,
-            useTVClient: useTVClient
+            useTVClient: useTVClient,
+            useOriginalCodecMKV: useOriginalCodecMKV
         )
         // bv*+ba downloads 2 files, audio-only 1; the tracker fuses the phases into one monotonic bar.
         let tracker = UnifiedProgressTracker(
