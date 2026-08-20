@@ -1,3 +1,3 @@
 public enum Downbender {
-    public static let version = "1.8.2"
+    public static let version = "1.8.3"
 }
