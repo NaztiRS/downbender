@@ -20,8 +20,7 @@ struct WaveProgress: View {
 
                 if let fraction {
                     let clamped = max(0, min(1, fraction))
-                    ProgressCapsule(progress: clamped)
-                        .fill(Theme.accent)
+                    DeterminateProgressFill(fraction: clamped, height: height)
                         .opacity(fillOpacity)
                         .animation(progressAnimation, value: clamped)
                         .animation(pulseAnimation, value: pulse)
@@ -129,22 +128,22 @@ private struct MotionConfiguration: Hashable {
     }
 }
 
-/// Draws the changing fill inside fixed layout bounds. Animating the shape updates
-/// only its path instead of relaying out the row for every progress sample.
-private struct ProgressCapsule: Shape {
-    var progress: Double
+/// Uses an explicit frame so SwiftUI's List renderer cannot reuse a stale custom Shape path.
+private struct DeterminateProgressFill: View {
+    let fraction: Double
+    let height: CGFloat
 
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
+    var body: some View {
+        GeometryReader { geometry in
+            let clamped = max(0, min(1, fraction))
+            let width = clamped > 0
+                ? min(geometry.size.width, max(height, geometry.size.width * clamped))
+                : 0
 
-    func path(in rect: CGRect) -> Path {
-        let clamped = max(0, min(1, progress))
-        guard clamped > 0, rect.width > 0, rect.height > 0 else { return Path() }
-
-        let width = min(rect.width, max(rect.height, rect.width * clamped))
-        let fillRect = CGRect(origin: rect.origin, size: CGSize(width: width, height: rect.height))
-        return RoundedRectangle(cornerRadius: rect.height / 2, style: .continuous).path(in: fillRect)
+            RoundedRectangle(cornerRadius: max(1, height / 2), style: .continuous)
+                .fill(Theme.accent)
+                .frame(width: width, height: height)
+        }
+        .frame(height: height)
     }
 }

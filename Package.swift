@@ -35,5 +35,12 @@ let package = Package(
                 ]),
             ]
         ),
+        .testTarget(
+            name: "DownbenderUITests",
+            dependencies: ["downbender"],
+            swiftSettings: [
+                .unsafeFlags(["-F", testingFrameworkPath]),
+            ]
+        ),
     ]
 )
