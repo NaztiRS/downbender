@@ -83,7 +83,9 @@ public struct DownloadService: Sendable {
             group.addTask { [runner, ytdlpURL] in
                 try await runner.run(executableURL: ytdlpURL, arguments: args) { line in
                     monitor.touch()
-                    if let p = ProgressParser.parse(line: line) {
+                    if let plan = DownloadProgressPlanParser.parse(line: line) {
+                        tracker.configure(with: plan)
+                    } else if let p = ProgressParser.parse(line: line) {
                         monitor.arm()
                         onProgress(tracker.unified(p))
                     } else if line.contains(Self.destinationMarker) {

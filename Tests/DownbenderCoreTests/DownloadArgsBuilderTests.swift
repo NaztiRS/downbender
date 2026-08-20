@@ -101,11 +101,11 @@ private func value(after flag: String, in arguments: [String]) -> String? {
     let a = args(.video(height: 1080))
     #expect(a.contains("--progress"))
 
-    guard let printFlagIndex = a.firstIndex(of: "--print") else {
-        Issue.record("missing --print")
-        return
-    }
-    #expect(a[printFlagIndex + 1] == "after_move:DBPATH %(filepath)s")
+    let printTemplates = a.indices
+        .filter { a[$0] == "--print" }
+        .map { a[$0 + 1] }
+    #expect(printTemplates.contains("after_move:DBPATH %(filepath)s"))
+    #expect(printTemplates.contains(DownloadArgsBuilder.progressPlanTemplate))
 }
 
 // --print implies quiet: without --no-quiet the "[download] Destination:" and "[Merger]" lines disappear (verified against the real binary).

@@ -31,22 +31,35 @@ private func progress(_ fraction: Double, downloaded: Int64? = nil, total: Int64
     #expect(abs(t.unified(progress(0.5)).fraction - 0.8) < 0.0001)
 }
 
-@Test func trackerCapsBelowFullWhilePhasesRemain() {
-    // Short estimate (50 MB) vs. real video (80 MB): without the cap the bar would hit 100% with the audio pending.
+@Test func trackerStaysBelowFullWhilePhasesRemain() {
+    // Short estimate (50 MB) vs. real video (80 MB): the bar cannot hit 100% with audio pending.
     let t = UnifiedProgressTracker(expectedTotalBytes: 50_000_000, expectedPhases: 2)
     let f = t.unified(progress(1.0, downloaded: 80_000_000, total: 80_000_000)).fraction
-    #expect(f <= 0.97)
+    #expect(f < 1)
     t.beginPhase()
     let g = t.unified(progress(1.0, downloaded: 20_000_000, total: 20_000_000)).fraction
     #expect(abs(g - 1.0) < 0.0001)
 }
 
-@Test func trackerWeightsPhasesWithoutBytes() {
+@Test func trackerFallsBackToEvenPhasesWithoutASelectionPlan() {
     let t = UnifiedProgressTracker(expectedTotalBytes: nil, expectedPhases: 2)
-    #expect(abs(t.unified(progress(0.5)).fraction - 0.425) < 0.0001)   // video: 50% of 0.85
-    #expect(abs(t.unified(progress(1.0)).fraction - 0.85) < 0.0001)
+    #expect(abs(t.unified(progress(0.5)).fraction - 0.25) < 0.0001)
+    #expect(abs(t.unified(progress(1.0)).fraction - 0.5) < 0.0001)
     t.beginPhase()  // advances even without bytes: it saw progress in the previous phase
     #expect(abs(t.unified(progress(1.0)).fraction - 1.0) < 0.0001)
+}
+
+@Test func trackerWeightsSelectedPhasesByTheirActualBitrates() {
+    let t = UnifiedProgressTracker(expectedTotalBytes: nil, expectedPhases: 2)
+    t.configure(with: DownloadProgressPlan(phases: [
+        .init(sizeBytes: nil, bitrateKbps: 2_500),
+        .init(sizeBytes: nil, bitrateKbps: 129),
+    ]))
+
+    let videoWeight = 2_500.0 / 2_629.0
+    #expect(abs(t.unified(progress(0.5)).fraction - videoWeight * 0.5) < 0.0001)
+    t.beginPhase()
+    #expect(abs(t.unified(progress(1.0)).fraction - 1) < 0.0001)
 }
 
 @Test func trackerSinglePhasePassesFractionThrough() {

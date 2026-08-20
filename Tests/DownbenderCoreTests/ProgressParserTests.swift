@@ -10,9 +10,12 @@ import Foundation
     line.removeFirst("download:".count)
 
     let substitutions = [
+        "%(progress.status)s": "downloading",
         "%(progress._percent_str)s": " 42.0%",
         "%(progress.downloaded_bytes)s": "4404019",
         "%(progress.total_bytes,progress.total_bytes_estimate)s": "10485760",
+        "%(progress.fragment_index)s": "12",
+        "%(progress.fragment_count)s": "100",
         "%(progress._speed_str)s": " 4.20MiB/s",
         "%(progress._eta_str)s": "00:42",
     ]
@@ -29,6 +32,23 @@ import Foundation
     #expect(p?.totalBytes == 10_485_760)
     #expect(p?.speedText == "4.20MiB/s")
     #expect(p?.etaText == "00:42")
+    #expect(p?.status == .downloading)
+    #expect(p?.fragmentIndex == 12)
+    #expect(p?.fragmentCount == 100)
+}
+
+@Test func progressParserPreservesTheRealHLSBootstrapSignal() {
+    let p = ProgressParser.parse(
+        line: "DBPROG|downloading|100.0%|1024|1024|0|135|Unknown B/s|00:00"
+    )
+
+    #expect(p?.fraction == 1)
+    #expect(p?.downloadedBytes == 1_024)
+    #expect(p?.totalBytes == 1_024)
+    #expect(p?.status == .downloading)
+    #expect(p?.fragmentIndex == 0)
+    #expect(p?.fragmentCount == 135)
+    #expect(p?.speedText == "")
 }
 
 @Test func progressParserReadsValidLine() {

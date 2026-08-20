@@ -1,10 +1,15 @@
 import Foundation
 
 public enum DownloadArgsBuilder {
-    // Field order is coupled to ProgressParser.parse: pct, bytes (down/total), speed, eta.
-    // total_bytes can be None on HLS → falls back to total_bytes_estimate (alternatives syntax).
+    // The explicit status prevents an HLS manifest probe's provisional 100% from being
+    // mistaken for completion. Fragment fields provide a stable denominator for HLS.
     public static let progressTemplate =
-        "download:\(ProgressParser.templateLinePrefix) %(progress._percent_str)s %(progress.downloaded_bytes)s %(progress.total_bytes,progress.total_bytes_estimate)s %(progress._speed_str)s %(progress._eta_str)s"
+        "download:\(ProgressParser.templateLinePrefix)|%(progress.status)s|%(progress._percent_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes,progress.total_bytes_estimate)s|%(progress.fragment_index)s|%(progress.fragment_count)s|%(progress._speed_str)s|%(progress._eta_str)s"
+
+    /// Describes what yt-dlp ACTUALLY selected. `requested_formats` exists for a merge;
+    /// a muxed/progressive selection only populates the direct-format fields.
+    static let progressPlanTemplate =
+        "before_dl:\(DownloadProgressPlanParser.linePrefix)|%(requested_formats.0.format_id)s|%(requested_formats.0.filesize,requested_formats.0.filesize_approx)s|%(requested_formats.0.tbr)s|%(requested_formats.1.format_id)s|%(requested_formats.1.filesize,requested_formats.1.filesize_approx)s|%(requested_formats.1.tbr)s|%(format_id)s|%(filesize,filesize_approx)s|%(tbr)s"
 
     /// Flags common to EVERY yt-dlp invocation (probe and download).
     /// `noPlaylist: false` only when the user explicitly asked to expand a watch+list URL.
@@ -52,6 +57,7 @@ public enum DownloadArgsBuilder {
             "--progress-template", progressTemplate,
             "--progress",
             "--print", "after_move:DBPATH %(filepath)s",
+            "--print", progressPlanTemplate,
             "--retries", "10",
             "--fragment-retries", "10",
             "--ffmpeg-location", ffmpegDirectory.path,

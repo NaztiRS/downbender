@@ -1,9 +1,41 @@
 public enum ProgressParser {
     public static let templateLinePrefix = "DBPROG"
 
-    /// Parses "DBPROG <pct>% <downloaded> <total> <speed> <eta>". Bytes go BEFORE speed/eta
-    /// on purpose: yt-dlp can emit speed with an internal space ("Unknown B/s"), shifting later fields.
+    /// Parses the pipe-delimited progress contract emitted by `DownloadArgsBuilder`.
+    /// A legacy whitespace parser remains for persisted test fixtures and older engine output.
     public static func parse(line: String) -> DownloadProgress? {
+        if line.hasPrefix("\(templateLinePrefix)|") {
+            return parseStructured(line: line)
+        }
+
+        return parseLegacy(line: line)
+    }
+
+    private static func parseStructured(line: String) -> DownloadProgress? {
+        let fields = line.split(separator: "|", omittingEmptySubsequences: false).map(trimmed)
+        guard fields.count == 9, fields[0] == templateLinePrefix,
+              let pct = percentage(fields[2])
+        else { return nil }
+
+        let status: DownloadProgressStatus = switch fields[1] {
+        case "downloading": .downloading
+        case "finished": .finished
+        default: .unknown
+        }
+
+        return DownloadProgress(
+            fraction: pct / 100,
+            speedText: displayValue(fields[7], hiding: ["NA", "Unknown", "Unknown B/s"]),
+            etaText: displayValue(fields[8], hiding: ["NA", "Unknown"]),
+            downloadedBytes: integer(fields[3]),
+            totalBytes: integer(fields[4]),
+            status: status,
+            fragmentIndex: integer(fields[5]).map(Int.init),
+            fragmentCount: integer(fields[6]).map(Int.init)
+        )
+    }
+
+    private static func parseLegacy(line: String) -> DownloadProgress? {
         let parts = line.split(separator: " ", omittingEmptySubsequences: true)
         guard parts.first.map(String.init) == templateLinePrefix, parts.count >= 2 else { return nil }
         let token = parts[1]
@@ -20,5 +52,23 @@ public enum ProgressParser {
             fraction: pct / 100.0, speedText: speed, etaText: eta,
             downloadedBytes: downloaded, totalBytes: total
         )
+    }
+
+    private static func trimmed(_ value: Substring) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func percentage(_ value: String) -> Double? {
+        guard value.hasSuffix("%") else { return nil }
+        return Double(value.dropLast())
+    }
+
+    private static func integer(_ value: String) -> Int64? {
+        guard value != "NA", let number = Double(value), number.isFinite else { return nil }
+        return Int64(number)
+    }
+
+    private static func displayValue(_ value: String, hiding hidden: Set<String>) -> String {
+        hidden.contains(value) ? "" : value
     }
 }
