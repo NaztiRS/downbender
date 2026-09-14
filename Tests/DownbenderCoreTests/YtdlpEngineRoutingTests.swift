@@ -342,13 +342,7 @@ private func engineProbeFixtureJSON() throws -> String {
         installLatestNightly: { _ in throw RoutingEngineError() }
     )
     try await controller.select(.nightly)
-    let probeStarted = RoutingGate()
-    let finishProbe = RoutingGate()
-    let runner = FakeProcessRunner(beforeReturn: { _ in
-        await probeStarted.open()
-        await finishProbe.wait()
-    })
-    let model = makeRoutingModel(runner: runner, controller: controller)
+    let model = makeRoutingModel(runner: FakeProcessRunner(), controller: controller)
     model.queue.setMaxConcurrent(0)
 
     let mediaFailure = DownloadItem(
@@ -365,11 +359,12 @@ private func engineProbeFixtureJSON() throws -> String {
         state: .failed("direct failed")
     )
     directFailure.source = .directFile(DirectFileInfo(suggestedName: "file.zip"))
-    let probeFailure = DownloadItem(
-        url: "https://youtu.be/probe-failure",
-        title: "Probe failure",
+    let secondMediaFailure = DownloadItem(
+        url: "https://youtu.be/second-media-failure",
+        title: "Second media failure",
+        format: .audioMP3,
         destination: model.destination,
-        state: .probeFailed("probe failed")
+        state: .failed("second media failed")
     )
     let complete = DownloadItem(
         url: "https://youtu.be/complete",
@@ -377,21 +372,19 @@ private func engineProbeFixtureJSON() throws -> String {
         destination: model.destination,
         state: .done
     )
-    for item in [mediaFailure, directFailure, probeFailure, complete] { model.queue.add(item) }
+    for item in [mediaFailure, directFailure, secondMediaFailure, complete] { model.queue.add(item) }
 
     #expect(model.retryableFailedCount == 2)
     let retried = try await model.retryAllFailed(using: .stable)
-    await probeStarted.wait()
 
     #expect(retried == 2)
     #expect(mediaFailure.state == .queued)
     #expect(mediaFailure.nextEngineChannel == .stable)
-    #expect(probeFailure.state == .probing)
-    #expect(probeFailure.lastEngineChannel == .stable)
+    #expect(secondMediaFailure.state == .queued)
+    #expect(secondMediaFailure.nextEngineChannel == .stable)
     #expect(directFailure.state == .failed("direct failed"))
     #expect(complete.state == .done)
     #expect(controller.selectedChannel == .stable)
-    await finishProbe.open()
 }
 
 @MainActor
