@@ -324,3 +324,198 @@ private func engineProbeFixtureJSON() throws -> String {
     #expect(item.lastEngineChannel == .stable)
     #expect(controller.selectedChannel == .stable)
 }
+
+@MainActor
+@Test func retryAllFailedWithStableRetriesOnlyFailedMediaItems() async throws {
+    let suite = "engine-routing-retry-all-stable-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stable = URL(fileURLWithPath: "/engines/stable/yt-dlp_macos")
+    let nightly = URL(fileURLWithPath: "/engines/nightly/yt-dlp_macos")
+    let controller = YtdlpEngineController(
+        stableURL: stable,
+        nightlyURL: nightly,
+        defaults: defaults,
+        fileExists: { _ in true },
+        isExecutable: { _ in true },
+        readVersion: { _ in "2026.08.01.010203" },
+        installLatestNightly: { _ in throw RoutingEngineError() }
+    )
+    try await controller.select(.nightly)
+    let probeStarted = RoutingGate()
+    let finishProbe = RoutingGate()
+    let runner = FakeProcessRunner(beforeReturn: { _ in
+        await probeStarted.open()
+        await finishProbe.wait()
+    })
+    let model = makeRoutingModel(runner: runner, controller: controller)
+    model.queue.setMaxConcurrent(0)
+
+    let mediaFailure = DownloadItem(
+        url: "https://youtu.be/media-failure",
+        title: "Media failure",
+        format: .audioMP3,
+        destination: model.destination,
+        state: .failed("media failed")
+    )
+    let directFailure = DownloadItem(
+        url: "https://example.com/file.zip",
+        title: "Direct failure",
+        destination: model.destination,
+        state: .failed("direct failed")
+    )
+    directFailure.source = .directFile(DirectFileInfo(suggestedName: "file.zip"))
+    let probeFailure = DownloadItem(
+        url: "https://youtu.be/probe-failure",
+        title: "Probe failure",
+        destination: model.destination,
+        state: .probeFailed("probe failed")
+    )
+    let complete = DownloadItem(
+        url: "https://youtu.be/complete",
+        title: "Complete",
+        destination: model.destination,
+        state: .done
+    )
+    for item in [mediaFailure, directFailure, probeFailure, complete] { model.queue.add(item) }
+
+    #expect(model.retryableFailedCount == 2)
+    let retried = try await model.retryAllFailed(using: .stable)
+    await probeStarted.wait()
+
+    #expect(retried == 2)
+    #expect(mediaFailure.state == .queued)
+    #expect(mediaFailure.nextEngineChannel == .stable)
+    #expect(probeFailure.state == .probing)
+    #expect(probeFailure.lastEngineChannel == .stable)
+    #expect(directFailure.state == .failed("direct failed"))
+    #expect(complete.state == .done)
+    #expect(controller.selectedChannel == .stable)
+    await finishProbe.open()
+}
+
+@MainActor
+@Test func probeFailureOnlyQueueExposesBatchRecoveryActions() {
+    let suite = "engine-routing-probe-failure-actions-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stable = URL(fileURLWithPath: "/engines/stable/yt-dlp_macos")
+    let nightly = URL(fileURLWithPath: "/engines/nightly/yt-dlp_macos")
+    let controller = YtdlpEngineController(
+        stableURL: stable,
+        nightlyURL: nightly,
+        defaults: defaults,
+        fileExists: { $0 == stable },
+        isExecutable: { $0 == stable },
+        readVersion: { _ in "2026.07.04" },
+        installLatestNightly: { _ in throw RoutingEngineError() }
+    )
+    let model = makeRoutingModel(runner: FakeProcessRunner(), controller: controller)
+    model.queue.add(DownloadItem(
+        url: "https://youtu.be/probe-failure",
+        title: "Probe failure",
+        destination: model.destination,
+        state: .probeFailed("probe failed")
+    ))
+
+    #expect(model.retryableFailedCount == 1)
+    #expect(model.hasVisibleQueueActions)
+}
+
+@MainActor
+@Test func retryAllFailedWithNightlyInstallsBeforeMutatingFailures() async throws {
+    let suite = "engine-routing-retry-all-nightly-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stable = URL(fileURLWithPath: "/engines/stable/yt-dlp_macos")
+    let nightly = URL(fileURLWithPath: "/engines/nightly/yt-dlp_macos")
+    let available = SendableBox(false)
+    let installCount = SendableBox(0)
+    let controller = YtdlpEngineController(
+        stableURL: stable,
+        nightlyURL: nightly,
+        defaults: defaults,
+        fileExists: { url in url == stable || (url == nightly && available.value) },
+        isExecutable: { url in url == stable || (url == nightly && available.value) },
+        readVersion: { _ in "2026.08.01.010203" },
+        installLatestNightly: { _ in
+            installCount.value += 1
+            available.value = true
+            return YtdlpEngineInstallation(
+                executableURL: nightly,
+                version: "2026.08.01.010203"
+            )
+        }
+    )
+    let model = makeRoutingModel(runner: FakeProcessRunner(), controller: controller)
+    model.queue.setMaxConcurrent(0)
+    let first = DownloadItem(
+        url: "https://youtu.be/first-failure",
+        title: "First failure",
+        format: .audioMP3,
+        destination: model.destination,
+        state: .failed("first failed")
+    )
+    let second = DownloadItem(
+        url: "https://youtu.be/second-failure",
+        title: "Second failure",
+        format: .audioMP3,
+        destination: model.destination,
+        state: .failed("second failed")
+    )
+    model.queue.add(first)
+    model.queue.add(second)
+
+    let retried = try await model.retryAllFailed(using: .nightly)
+
+    #expect(retried == 2)
+    #expect(installCount.value == 1)
+    #expect(first.state == .queued)
+    #expect(second.state == .queued)
+    #expect(first.nextEngineChannel == .nightly)
+    #expect(second.nextEngineChannel == .nightly)
+    #expect(controller.selectedChannel == .nightly)
+}
+
+@MainActor
+@Test func failedBulkNightlyInstallLeavesEveryFailureUntouched() async {
+    let suite = "engine-routing-retry-all-nightly-failure-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let stable = URL(fileURLWithPath: "/engines/stable/yt-dlp_macos")
+    let nightly = URL(fileURLWithPath: "/engines/nightly/yt-dlp_macos")
+    let controller = YtdlpEngineController(
+        stableURL: stable,
+        nightlyURL: nightly,
+        defaults: defaults,
+        fileExists: { $0 == stable },
+        isExecutable: { $0 == stable },
+        readVersion: { _ in "2026.07.04" },
+        installLatestNightly: { _ in throw RoutingEngineError() }
+    )
+    let model = makeRoutingModel(runner: FakeProcessRunner(), controller: controller)
+    let first = DownloadItem(
+        url: "https://youtu.be/first-failure",
+        title: "First failure",
+        format: .audioMP3,
+        destination: model.destination,
+        state: .failed("first failed")
+    )
+    let second = DownloadItem(
+        url: "https://youtu.be/second-failure",
+        title: "Second failure",
+        format: .audioMP3,
+        destination: model.destination,
+        state: .failed("second failed")
+    )
+    model.queue.add(first)
+    model.queue.add(second)
+
+    await #expect(throws: YtdlpEngineSelectionError.self) {
+        try await model.retryAllFailed(using: .nightly)
+    }
+
+    #expect(first.state == .failed("first failed"))
+    #expect(second.state == .failed("second failed"))
+    #expect(controller.selectedChannel == .stable)
+}

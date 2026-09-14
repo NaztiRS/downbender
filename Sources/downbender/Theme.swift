@@ -10,6 +10,7 @@ enum Theme {
     static let textPrimary = Color(hex: 0xF4F4F4)
     static let muted = Color(hex: 0x898989)
     static let accent = Color(hex: 0x66D9FF)
+    static let nightly = Color(hex: 0xB493FF)
     static let success = Color(hex: 0x67D391)
     static let warning = Color(hex: 0xF1BA62)
     static let danger = Color(hex: 0xFF6B6B)

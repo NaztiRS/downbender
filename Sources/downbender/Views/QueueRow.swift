@@ -193,7 +193,7 @@ struct QueueRow: View {
         Group {
             if let url = item.thumbnailURL {
                 AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
+                    image.resizable().scaledToFill()
                 } placeholder: {
                     fallbackIcon
                 }

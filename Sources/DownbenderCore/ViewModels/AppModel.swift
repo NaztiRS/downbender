@@ -707,6 +707,41 @@ public final class AppModel {
         return !synthesizedFailures.contains { message.lowercased().contains($0) }
     }
 
+    /// Failed yt-dlp operations that can be replayed with an explicitly selected engine.
+    /// Native direct-download failures are excluded because stable/nightly do not apply to them.
+    public var retryableFailedCount: Int {
+        retryableFailedItems.count
+    }
+
+    /// Keeps the queue action bar available for analysis failures, which are retryable but
+    /// intentionally are not treated as settled by QueueViewModel.
+    public var hasVisibleQueueActions: Bool {
+        queue.cancellableCount > 0 || queue.hasSettledItems || retryableFailedCount > 0
+    }
+
+    /// Selects or installs the requested engine before changing any card, then retries every
+    /// media analysis/download failure that is still present. Each attempt is pinned to the
+    /// requested channel so queueing delays cannot change the user's choice.
+    @discardableResult
+    public func retryAllFailed(using channel: YtdlpEngineChannel) async throws -> Int {
+        let candidates = retryableFailedItems
+        guard !candidates.isEmpty else { return 0 }
+
+        switch channel {
+        case .stable:
+            engineController.useStable()
+        case .nightly:
+            try await engineController.installLatestAndSelect()
+        }
+
+        let currentIDs = Set(queue.items.map(\.id))
+        let targets = candidates.filter { currentIDs.contains($0.id) && isRetryableFailure($0) }
+        for item in targets {
+            retryFailedItem(item, using: channel)
+        }
+        return targets.count
+    }
+
     /// Installs the newest official nightly transactionally, activates it, then retries the
     /// same card. If installation fails, the item and the previous engine choice are untouched.
     public func retryWithLatestFixes(_ item: DownloadItem) async throws {
@@ -757,6 +792,20 @@ public final class AppModel {
             queue.retry(item)
         default:
             break
+        }
+    }
+
+    private var retryableFailedItems: [DownloadItem] {
+        queue.items.filter(isRetryableFailure)
+    }
+
+    private func isRetryableFailure(_ item: DownloadItem) -> Bool {
+        guard item.source == .media else { return false }
+        switch item.state {
+        case .probeFailed, .failed:
+            return true
+        default:
+            return false
         }
     }
 

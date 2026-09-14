@@ -174,7 +174,7 @@ struct PlaylistPanel: View {
     @ViewBuilder private func entryThumbnail(_ entry: PlaylistEntry) -> some View {
         if let url = entry.thumbnailURL {
             AsyncImage(url: url) { image in
-                image.resizable().aspectRatio(contentMode: .fill)
+                image.resizable().scaledToFill()
             } placeholder: {
                 Rectangle().fill(Theme.wash)
             }
@@ -216,7 +216,7 @@ struct PlaylistPanel: View {
                 // Back covers peek out behind the front one, fanned like a hand of cards.
                 let spread = Double(index) - Double(covers.count - 1) / 2
                 AsyncImage(url: url) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
+                    image.resizable().scaledToFill()
                 } placeholder: {
                     Rectangle().fill(Theme.surface)
                 }

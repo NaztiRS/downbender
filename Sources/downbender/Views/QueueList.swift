@@ -4,6 +4,9 @@ import DownbenderCore
 struct QueueList: View {
     @Bindable var model: AppModel
     @State private var confirmingCancelAll = false
+    @State private var selectedFilters: Set<QueueFilter> = []
+    @State private var retryingAllChannel: YtdlpEngineChannel?
+    @State private var bulkRetryError: String?
 
     var body: some View {
         Group {
@@ -39,6 +42,17 @@ struct QueueList: View {
         } message: {
             Text("Queued, downloading, finalizing, and paused downloads will be marked Cancelled. Partial progress may be lost. Finished files won’t be deleted.")
         }
+        .alert(
+            "Couldn’t retry failed downloads",
+            isPresented: Binding(
+                get: { bulkRetryError != nil },
+                set: { if !$0 { bulkRetryError = nil } }
+            )
+        ) {
+            Button("OK") { bulkRetryError = nil }
+        } message: {
+            Text(bulkRetryError ?? "Unknown error")
+        }
     }
 
     private func queueColumn(showsCompactSummary: Bool) -> some View {
@@ -53,20 +67,25 @@ struct QueueList: View {
             }
             queueHeader
             Rectangle().fill(Theme.border).frame(height: 1)
-            List {
-                ForEach(model.queue.items) { item in
-                    QueueRow(item: item, model: model)
-                        .moveDisabled(!model.queue.canReorder(item))
-                        .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+            if visibleItems.isEmpty, !selectedFilters.isEmpty {
+                filteredEmptyState
+            } else {
+                List {
+                    ForEach(visibleItems) { item in
+                        QueueRow(item: item, model: model)
+                            .moveDisabled(!selectedFilters.isEmpty || !model.queue.canReorder(item))
+                            .listRowInsets(EdgeInsets(top: 3, leading: 12, bottom: 3, trailing: 12))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                    .onMove { source, destination in
+                        guard selectedFilters.isEmpty else { return }
+                        model.queue.move(fromOffsets: source, toOffset: destination)
+                    }
                 }
-                .onMove { source, destination in
-                    model.queue.move(fromOffsets: source, toOffset: destination)
-                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
     }
 
@@ -86,16 +105,17 @@ struct QueueList: View {
     }
 
     private var compactSummaryBar: some View {
-        HStack(spacing: 16) {
-            Text("QUEUE")
-                .foregroundStyle(Theme.textPrimary)
-            Text(twoDigit(summary.totalCount))
-                .foregroundStyle(Theme.textPrimary)
-            Spacer(minLength: 4)
-            compactMetric("ACTIVE", value: summary.activeCount, color: Theme.accent)
-            compactMetric("PAUSED", value: summary.pausedCount, color: Theme.warning)
-            compactMetric("DONE", value: summary.completedCount, color: Theme.success)
-            compactMetric("FAILED", value: summary.failedCount, color: Theme.danger)
+        VStack(alignment: .leading, spacing: 7) {
+            filterHeader
+            HStack(spacing: 8) {
+                Text("QUEUE \(twoDigit(summary.totalCount))")
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer(minLength: 4)
+                compactFilter("ACTIVE", value: summary.activeCount, color: Theme.accent, filter: .active)
+                compactFilter("PAUSED", value: summary.pausedCount, color: Theme.warning, filter: .paused)
+                compactFilter("DONE", value: summary.completedCount, color: Theme.success, filter: .complete)
+                compactFilter("FAILED", value: summary.failedCount, color: Theme.danger, filter: .failed)
+            }
         }
         .font(.system(size: 9, weight: .medium, design: .monospaced))
         .tracking(0.5)
@@ -104,14 +124,35 @@ struct QueueList: View {
         .background(Theme.surface)
     }
 
-    private func compactMetric(_ label: String, value: Int, color: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(color).frame(width: 5, height: 5)
-            Text("\(label) \(twoDigit(value))")
-                .foregroundStyle(Theme.muted)
+    private func compactFilter(
+        _ label: String,
+        value: Int,
+        color: Color,
+        filter: QueueFilter
+    ) -> some View {
+        let selected = selectedFilters.contains(filter)
+        return Button { toggle(filter) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
+                    .font(.system(size: selected ? 8 : 5, weight: .bold))
+                    .foregroundStyle(color)
+                    .frame(width: 8)
+                Text("\(label) \(twoDigit(value))")
+                    .foregroundStyle(selected ? Theme.textPrimary : Theme.muted)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(selected ? color.opacity(0.16) : Color.clear)
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(selected ? color.opacity(0.85) : Theme.border)
+            }
         }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label.capitalized): \(value)")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityHint("Toggle this queue filter")
     }
 
     private var summaryRail: some View {
@@ -132,13 +173,16 @@ struct QueueList: View {
                 .foregroundStyle(Theme.muted)
                 .padding(.top, 2)
 
+            filterHeader
+                .padding(.top, 24)
+
             VStack(spacing: 0) {
-                railMetric("ACTIVE", value: summary.activeCount, color: Theme.accent)
-                railMetric("PAUSED", value: summary.pausedCount, color: Theme.warning)
-                railMetric("COMPLETE", value: summary.completedCount, color: Theme.success)
-                railMetric("FAILED", value: summary.failedCount, color: Theme.danger)
+                railFilter("ACTIVE", value: summary.activeCount, color: Theme.accent, filter: .active)
+                railFilter("PAUSED", value: summary.pausedCount, color: Theme.warning, filter: .paused)
+                railFilter("COMPLETE", value: summary.completedCount, color: Theme.success, filter: .complete)
+                railFilter("FAILED", value: summary.failedCount, color: Theme.danger, filter: .failed)
             }
-            .padding(.top, 26)
+            .padding(.top, 7)
 
             Spacer(minLength: 18)
 
@@ -159,28 +203,66 @@ struct QueueList: View {
         .background(Theme.canvas)
     }
 
-    private func railMetric(_ label: String, value: Int, color: Color) -> some View {
-        HStack {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 5, height: 5)
-                Text(label)
+    private func railFilter(
+        _ label: String,
+        value: Int,
+        color: Color,
+        filter: QueueFilter
+    ) -> some View {
+        let selected = selectedFilters.contains(filter)
+        return Button { toggle(filter) } label: {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
+                        .font(.system(size: selected ? 9 : 5, weight: .bold))
+                        .foregroundStyle(color)
+                        .frame(width: 9)
+                    Text(label)
+                }
+                Spacer()
+                Text(twoDigit(value))
+                    .foregroundStyle(selected ? Theme.textPrimary : Theme.muted)
             }
-            Spacer()
-            Text(twoDigit(value))
-                .foregroundStyle(Theme.textPrimary)
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .foregroundStyle(selected ? color : Theme.muted)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 9)
+            .background(selected ? color.opacity(0.14) : Color.clear)
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(selected ? color.opacity(0.85) : Theme.border)
+            }
         }
-        .font(.system(size: 9, weight: .medium, design: .monospaced))
-        .foregroundStyle(Theme.muted)
-        .padding(.vertical, 9)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.border).frame(height: 1)
-        }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label.capitalized): \(value)")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityHint("Toggle this queue filter")
+    }
+
+    private var filterHeader: some View {
+        HStack {
+            Text("FILTERS")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(Theme.muted)
+            Spacer()
+            if !selectedFilters.isEmpty {
+                Button("RESET") { selectedFilters.removeAll() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityLabel("Clear queue filters")
+            }
+        }
     }
 
     private var summary: QueueActivitySummary {
         QueueActivitySummary(items: model.queue.items)
+    }
+
+    private var visibleItems: [DownloadItem] {
+        filteredQueueItems(model.queue.items, filters: selectedFilters)
     }
 
     private var outputLabel: String {
@@ -195,51 +277,67 @@ struct QueueList: View {
     }
 
     private var showsQueueBar: Bool {
-        model.queue.cancellableCount > 0 || model.queue.hasSettledItems
+        model.hasVisibleQueueActions
     }
 
     private var queueActionsBar: some View {
-        HStack(spacing: 14) {
+        VStack(spacing: 8) {
             if model.queue.cancellableCount > 0 {
-                Button {
-                    model.queue.pauseAllActive()
-                } label: {
-                    Label("Pause all", systemImage: "pause.circle.fill")
-                }
-                .disabled(model.queue.pausableCount == 0)
-                .opacity(model.queue.pausableCount == 0 ? 0.45 : 1)
-                .help(batchHelp("Pause", count: model.queue.pausableCount))
-                .accessibilityLabel("Pause all downloads")
-                .accessibilityHint(batchHelp("Pause", count: model.queue.pausableCount))
+                HStack(spacing: 14) {
+                    Button {
+                        model.queue.pauseAllActive()
+                    } label: {
+                        Label("Pause all", systemImage: "pause.circle.fill")
+                    }
+                    .disabled(model.queue.pausableCount == 0)
+                    .opacity(model.queue.pausableCount == 0 ? 0.45 : 1)
+                    .help(batchHelp("Pause", count: model.queue.pausableCount))
+                    .accessibilityLabel("Pause all downloads")
+                    .accessibilityHint(batchHelp("Pause", count: model.queue.pausableCount))
 
-                Button {
-                    model.queue.resumeAllPaused()
-                } label: {
-                    Label("Resume all", systemImage: "play.circle.fill")
-                }
-                .disabled(model.queue.resumableCount == 0)
-                .opacity(model.queue.resumableCount == 0 ? 0.45 : 1)
-                .help(batchHelp("Resume", count: model.queue.resumableCount))
-                .accessibilityLabel("Resume all downloads")
-                .accessibilityHint(batchHelp("Resume", count: model.queue.resumableCount))
+                    Button {
+                        model.queue.resumeAllPaused()
+                    } label: {
+                        Label("Resume all", systemImage: "play.circle.fill")
+                    }
+                    .disabled(model.queue.resumableCount == 0)
+                    .opacity(model.queue.resumableCount == 0 ? 0.45 : 1)
+                    .help(batchHelp("Resume", count: model.queue.resumableCount))
+                    .accessibilityLabel("Resume all downloads")
+                    .accessibilityHint(batchHelp("Resume", count: model.queue.resumableCount))
 
-                Button {
-                    confirmingCancelAll = true
-                } label: {
-                    Label("Cancel all…", systemImage: "xmark.circle.fill")
+                    Button {
+                        confirmingCancelAll = true
+                    } label: {
+                        Label("Cancel all…", systemImage: "xmark.circle.fill")
+                    }
+                    .foregroundStyle(Theme.danger)
+                    .help(batchHelp("Cancel", count: model.queue.cancellableCount))
+                    .accessibilityLabel("Cancel all downloads")
+                    .accessibilityHint(batchHelp("Cancel", count: model.queue.cancellableCount))
+
+                    Spacer()
                 }
-                .foregroundStyle(Theme.danger)
-                .help(batchHelp("Cancel", count: model.queue.cancellableCount))
-                .accessibilityLabel("Cancel all downloads")
-                .accessibilityHint(batchHelp("Cancel", count: model.queue.cancellableCount))
             }
 
-            Spacer()
-
-            if model.queue.hasSettledItems {
-                Button("Clear finished") { model.queue.clearSettled() }
-                    .foregroundStyle(Theme.accent)
-                    .help("Remove finished, failed and cancelled downloads from the list")
+            if model.retryableFailedCount > 0 || model.queue.hasSettledItems {
+                HStack(spacing: 8) {
+                    Spacer()
+                    if model.retryableFailedCount > 0 {
+                        retryAllButton(channel: .stable)
+                        retryAllButton(channel: .nightly)
+                    }
+                    if model.queue.hasSettledItems {
+                        Button {
+                            model.queue.clearSettled()
+                        } label: {
+                            Label("Clear finished", systemImage: "trash")
+                        }
+                        .buttonStyle(QueueBatchActionButtonStyle(color: Theme.warning))
+                        .disabled(retryingAllChannel != nil)
+                        .help("Remove finished, failed and cancelled downloads from the list; downloaded files are kept")
+                    }
+                }
             }
         }
         .buttonStyle(.plain)
@@ -248,6 +346,48 @@ struct QueueList: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
         .background(Theme.surface)
+    }
+
+    private func retryAllButton(channel: YtdlpEngineChannel) -> some View {
+        let isWorking = retryingAllChannel == channel
+        let color = channel == .stable ? Theme.accent : Theme.nightly
+        let symbol = channel == .stable ? "arrow.clockwise" : "sparkles"
+        return Button {
+            retryAllFailed(using: channel)
+        } label: {
+            HStack(spacing: 6) {
+                if isWorking {
+                    ProgressView().controlSize(.small).tint(color)
+                } else {
+                    Image(systemName: symbol)
+                }
+                Text("Retry failed · \(channel.displayName)")
+            }
+        }
+        .buttonStyle(QueueBatchActionButtonStyle(color: color))
+        .disabled(retryingAllChannel != nil)
+        .help("Retry \(model.retryableFailedCount) failed yt-dlp operation\(model.retryableFailedCount == 1 ? "" : "s") with \(channel.displayName)")
+    }
+
+    private func retryAllFailed(using channel: YtdlpEngineChannel) {
+        guard retryingAllChannel == nil else { return }
+        retryingAllChannel = channel
+        Task { @MainActor in
+            defer { retryingAllChannel = nil }
+            do {
+                try await model.retryAllFailed(using: channel)
+            } catch {
+                bulkRetryError = error.localizedDescription
+            }
+        }
+    }
+
+    private func toggle(_ filter: QueueFilter) {
+        if selectedFilters.contains(filter) {
+            selectedFilters.remove(filter)
+        } else {
+            selectedFilters.insert(filter)
+        }
     }
 
     private var cancelAllTitle: String {
@@ -281,6 +421,41 @@ struct QueueList: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var filteredEmptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(Theme.muted)
+            Text("No items match these filters")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.textPrimary)
+            Button("Reset filters") { selectedFilters.removeAll() }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Theme.accent)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct QueueBatchActionButtonStyle: ButtonStyle {
+    let color: Color
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(color.opacity(configuration.isPressed ? 0.22 : 0.11))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(color.opacity(configuration.isPressed ? 1 : 0.7))
+            }
+            .opacity(isEnabled ? 1 : 0.38)
     }
 }
 
