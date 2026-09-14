@@ -31,11 +31,12 @@ import Testing
     )
 
     let visible = filteredQueueItems(items, filters: [.active, .paused, .complete, .failed])
-    #expect(
-        visible.map(\.id)
-            == [queued.id, downloading.id, merging.id, paused.id, complete.id,
-                probeFailure.id, downloadFailure.id]
-    )
+    let visibleIDs: [UUID] = visible.map(\.id)
+    let expectedIDs: [UUID] = [
+        queued.id, downloading.id, merging.id, paused.id, complete.id,
+        probeFailure.id, downloadFailure.id,
+    ]
+    #expect(visibleIDs == expectedIDs)
 }
 
 @MainActor
