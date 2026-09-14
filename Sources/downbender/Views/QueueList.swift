@@ -130,29 +130,14 @@ struct QueueList: View {
         color: Color,
         filter: QueueFilter
     ) -> some View {
-        let selected = selectedFilters.contains(filter)
-        return Button { toggle(filter) } label: {
-            HStack(spacing: 4) {
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
-                    .font(.system(size: selected ? 8 : 5, weight: .bold))
-                    .foregroundStyle(color)
-                    .frame(width: 8)
-                Text("\(label) \(twoDigit(value))")
-                    .foregroundStyle(selected ? Theme.textPrimary : Theme.muted)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 5)
-            .background(selected ? color.opacity(0.16) : Color.clear)
-            .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(selected ? color.opacity(0.85) : Theme.border)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label.capitalized): \(value)")
-        .accessibilityValue(selected ? "Selected" : "Not selected")
-        .accessibilityHint("Toggle this queue filter")
+        QueueFilterButton(
+            label: label,
+            value: value,
+            color: color,
+            selected: selectedFilters.contains(filter),
+            layout: .compact,
+            action: { toggle(filter) }
+        )
     }
 
     private var summaryRail: some View {
@@ -209,35 +194,14 @@ struct QueueList: View {
         color: Color,
         filter: QueueFilter
     ) -> some View {
-        let selected = selectedFilters.contains(filter)
-        return Button { toggle(filter) } label: {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
-                        .font(.system(size: selected ? 9 : 5, weight: .bold))
-                        .foregroundStyle(color)
-                        .frame(width: 9)
-                    Text(label)
-                }
-                Spacer()
-                Text(twoDigit(value))
-                    .foregroundStyle(selected ? Theme.textPrimary : Theme.muted)
-            }
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundStyle(selected ? color : Theme.muted)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 9)
-            .background(selected ? color.opacity(0.14) : Color.clear)
-            .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(selected ? color.opacity(0.85) : Theme.border)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label.capitalized): \(value)")
-        .accessibilityValue(selected ? "Selected" : "Not selected")
-        .accessibilityHint("Toggle this queue filter")
+        QueueFilterButton(
+            label: label,
+            value: value,
+            color: color,
+            selected: selectedFilters.contains(filter),
+            layout: .rail,
+            action: { toggle(filter) }
+        )
     }
 
     private var filterHeader: some View {
@@ -437,6 +401,86 @@ struct QueueList: View {
                 .foregroundStyle(Theme.accent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct QueueFilterButton: View {
+    enum Layout {
+        case compact
+        case rail
+    }
+
+    let label: String
+    let value: Int
+    let color: Color
+    let selected: Bool
+    let layout: Layout
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            switch layout {
+            case .compact:
+                compactLabel
+            case .rail:
+                railLabel
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label.capitalized): \(value)")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityHint("Toggle this queue filter")
+    }
+
+    private var compactLabel: some View {
+        HStack(spacing: 4) {
+            Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
+                .font(.system(size: selected ? 8 : 5, weight: .bold))
+                .foregroundStyle(color)
+                .frame(width: 8)
+            Text("\(label) \(twoDigitValue)")
+                .foregroundStyle(selected ? Theme.textPrimary : Theme.muted)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(minHeight: 24)
+        .contentShape(Rectangle())
+        .background(selected ? color.opacity(0.16) : Color.clear)
+        .overlay { border }
+    }
+
+    private var railLabel: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle.fill")
+                    .font(.system(size: selected ? 9 : 5, weight: .bold))
+                    .foregroundStyle(color)
+                    .frame(width: 9)
+                Text(label)
+            }
+            Spacer()
+            Text(twoDigitValue)
+                .foregroundStyle(selected ? Theme.textPrimary : Theme.muted)
+        }
+        .font(.system(size: 9, weight: .medium, design: .monospaced))
+        .foregroundStyle(selected ? color : Theme.muted)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 32)
+        .contentShape(Rectangle())
+        .background(selected ? color.opacity(0.14) : Color.clear)
+        .overlay { border }
+    }
+
+    private var border: some View {
+        RoundedRectangle(cornerRadius: 4)
+            .strokeBorder(selected ? color.opacity(0.85) : Theme.border)
+            .allowsHitTesting(false)
+    }
+
+    private var twoDigitValue: String {
+        String(format: "%02d", value)
     }
 }
 

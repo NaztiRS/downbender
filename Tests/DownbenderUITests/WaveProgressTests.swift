@@ -58,3 +58,84 @@ private func accentPixelWidth(in bitmap: NSBitmapImageRep) -> Int {
 
     return maximumX >= minimumX ? maximumX - minimumX + 1 : 0
 }
+
+@MainActor
+@Test func queueFilterButtonsAcceptClicksAcrossTheirVisualSurface() throws {
+    let compactClicks = ClickRecorder()
+    let compact = QueueFilterButton(
+        label: "ACTIVE",
+        value: 1,
+        color: .cyan,
+        selected: false,
+        layout: .compact,
+        action: { compactClicks.count += 1 }
+    )
+    .fixedSize()
+
+    let compactSize = try hostedSize(of: compact)
+    try clickHostedView(compact, size: compactSize, at: CGPoint(x: 2, y: compactSize.height / 2))
+    #expect(compactClicks.count == 1, "The compact filter's padded leading edge must be clickable")
+
+    let railClicks = ClickRecorder()
+    let rail = QueueFilterButton(
+        label: "ACTIVE",
+        value: 1,
+        color: .cyan,
+        selected: false,
+        layout: .rail,
+        action: { railClicks.count += 1 }
+    )
+    .frame(width: 132, height: 32)
+
+    try clickHostedView(rail, size: CGSize(width: 132, height: 32), at: CGPoint(x: 66, y: 16))
+    #expect(railClicks.count == 1, "The rail filter's empty center must be clickable")
+}
+
+@MainActor
+private final class ClickRecorder {
+    var count = 0
+}
+
+@MainActor
+private func hostedSize<Content: View>(of view: Content) throws -> CGSize {
+    let hostingView = NSHostingView(rootView: view)
+    let size = hostingView.fittingSize
+    #expect(size.width > 0 && size.height > 0)
+    return size
+}
+
+@MainActor
+private func clickHostedView<Content: View>(
+    _ view: Content,
+    size: CGSize,
+    at point: CGPoint
+) throws {
+    let window = NSWindow(
+        contentRect: CGRect(origin: .zero, size: size),
+        styleMask: [.borderless],
+        backing: .buffered,
+        defer: false
+    )
+    let hostingView = NSHostingView(rootView: view)
+    hostingView.frame = CGRect(origin: .zero, size: size)
+    window.contentView = hostingView
+    window.makeKeyAndOrderFront(nil)
+    hostingView.layoutSubtreeIfNeeded()
+
+    defer { window.orderOut(nil) }
+
+    for eventType in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+        let event = try #require(NSEvent.mouseEvent(
+            with: eventType,
+            location: point,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: eventType == .leftMouseDown ? 1 : 0
+        ))
+        window.sendEvent(event)
+    }
+}
