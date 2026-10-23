@@ -7,7 +7,7 @@
     "build": "swift build",
     "test": "scripts/test.sh",
     "lint": "scripts/lint.sh",
-    "extension:check": "node --check ChromeExtension/background.js && node --check ChromeExtension/content.js && node --check ChromeExtension/url-utils.js && node ChromeExtension/url-utils.test.js && node Tests/ChromeExtensionTests/ManifestTests.js",
+    "extension:check": "node --check ChromeExtension/background.js && node --check ChromeExtension/content.js && node --check ChromeExtension/url-utils.js && node ChromeExtension/url-utils.test.js && node Tests/ChromeExtensionTests/ManifestTests.js && node --test Tests/ChromeExtensionTests/PreviewTests.js",
     "format": "swiftformat .",
     "bundle": "scripts/bundle.sh",
     "dmg": "scripts/make-dmg.sh",
@@ -17,6 +17,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "jsdom": "^30.1.3"
   }
 }

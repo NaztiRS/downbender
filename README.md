@@ -179,6 +179,12 @@ when a sufficiently large video is playing or its hover preview is advancing. Us
 button or **Download with Downbender** in the context menu when a site's player cannot expose
 an overlay.
 
+After updating Downbender, open your browser's extensions page (`chrome://extensions` in
+Chrome), click **Reload** on **Downbender Companion**, then reload your open video tabs.
+The app update supplies the new extension files; reloading the extension alone does not
+download an update. This applies to extensions installed through Downbender. If you loaded
+a separate development folder, update that folder or reinstall through the app's settings.
+
 ## Build from source
 
 Requires macOS 26+ with Command Line Tools; full Xcode is not required. Install the JavaScript

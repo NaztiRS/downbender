@@ -14,6 +14,16 @@ extensions page:
 4. The browser confirms the installation to Downbender's native host, which removes the temporary
    shortcut automatically. Downbender also removes it when the app quits or after one hour.
 
+To update an extension installed through Downbender:
+
+1. Update Downbender and restart the app. This replaces the bundled extension files.
+2. Open the browser's extensions page (`chrome://extensions` in Chrome) and click **Reload**
+   on **Downbender Companion**.
+3. Reload any open video pages, including YouTube tabs.
+
+Reloading the extension alone does not download updates. If you loaded the extension from a
+separate development folder, update that folder or reinstall through Downbender's settings.
+
 The floating control is deliberately singular: it appears only over the video that is playing
 or whose hover preview is advancing. Toolbar and context-menu actions remain available as
 fallbacks. Its close button hides the control for that video until the page reloads.

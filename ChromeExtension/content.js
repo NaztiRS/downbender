@@ -33,6 +33,7 @@
   const dismissedTargets = new Set();
 
   let activeVideo = null;
+  let activeVideoTarget = null;
   let overlayHost = null;
   let overlayButton = null;
   let overlayText = null;
@@ -59,6 +60,7 @@
       lastAdvancedAt: 0,
       lastPlayedAt: 0,
       lastInteractionAt: 0,
+      awaitingData: false,
     });
     return true;
   }
@@ -94,6 +96,12 @@
   function noteVideoEvent(event) {
     if (!(event.target instanceof HTMLVideoElement)) return;
     const state = stateFor(event.target);
+    if (event.type === "emptied" || event.type === "loadstart") {
+      state.awaitingData = true;
+      if (event.target === activeVideo) activeVideoTarget = null;
+    } else if (event.type === "loadeddata" || event.type === "playing") {
+      state.awaitingData = false;
+    }
     const now = performance.now();
     if (event.type === "play" || event.type === "playing") state.lastPlayedAt = now;
     if (event.isTrusted) state.lastInteractionAt = now;
@@ -364,8 +372,21 @@
     if (!video) {
       if (!overlayHovered && overlayHost) overlayHost.style.display = "none";
       activeVideo = overlayHovered ? activeVideo : null;
+      if (!activeVideo) activeVideoTarget = null;
       observeActiveVideoSize(activeVideo);
       return;
+    }
+    if (video !== activeVideo || !matchesActiveVideoTarget(video)) activeVideoTarget = null;
+    const target = targetFor(video);
+    if (target) {
+      // YouTube clears the preview's href and rectangle when the pointer enters our
+      // control. Resolve while the preview is visible, before that teardown happens.
+      activeVideoTarget = {
+        video,
+        url: target,
+        mediaURL: video.currentSrc || video.src,
+        pageURL: location.href,
+      };
     }
     activeVideo = video;
     observeActiveVideoSize(video);
@@ -532,6 +553,8 @@
   }
 
   function targetFor(video) {
+    // A reused preview can retain its previous href during a new media load.
+    if (IS_YOUTUBE_DOCUMENT && stateFor(video).awaitingData) return null;
     const youtube = youtubeCardURL(video);
     if (youtube) return youtube;
     // On a YouTube listing page, falling back to the page URL can enqueue a Mix or playlist.
@@ -548,8 +571,18 @@
     return canonicalDownloadURL(location.href);
   }
 
+  function matchesActiveVideoTarget(video) {
+    return activeVideoTarget?.video === video
+      && activeVideoTarget.mediaURL === (video.currentSrc || video.src)
+      && activeVideoTarget.pageURL === location.href;
+  }
+
+  function activeTargetFor(video) {
+    return targetFor(video) || (matchesActiveVideoTarget(video) ? activeVideoTarget.url : null);
+  }
+
   function dismissalKeyFor(video) {
-    const youtube = youtubeCardURL(video);
+    const youtube = IS_YOUTUBE_DOCUMENT ? activeTargetFor(video) : null;
     if (youtube) return `youtube:${youtube}`;
 
     const enclosingLink = video.closest("a[href]");
@@ -587,6 +620,7 @@
     overlayButton.setAttribute("aria-label", "Download this video with Downbender");
     overlayHovered = false;
     activeVideo = null;
+    activeVideoTarget = null;
     overlayHost.style.display = "none";
     requestEvaluation(true);
   }
@@ -621,7 +655,7 @@
     event.stopPropagation();
     const video = activeVideo;
     if (!video) return;
-    const target = targetFor(video);
+    const target = activeTargetFor(video);
     if (!target) {
       setFeedback("error", "Video not found", "Could not identify this single video");
       return;
@@ -712,7 +746,7 @@
     subtree: true,
   });
 
-  for (const name of ["play", "playing", "pause", "ended", "loadeddata", "timeupdate"]) {
+  for (const name of ["play", "playing", "pause", "ended", "loadeddata", "timeupdate", "emptied", "loadstart"]) {
     document.addEventListener(name, noteVideoEvent, true);
   }
   document.addEventListener("pointermove", (event) => {
@@ -742,6 +776,7 @@
       youtubePointerTimer = null;
       overlayHovered = false;
       activeVideo = null;
+      activeVideoTarget = null;
       if (overlayHost) overlayHost.style.display = "none";
     } else {
       requestEvaluation(true);
