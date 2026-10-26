@@ -185,6 +185,24 @@ The app update supplies the new extension files; reloading the extension alone d
 download an update. This applies to extensions installed through Downbender. If you loaded
 a separate development folder, update that folder or reinstall through the app's settings.
 
+### Safari
+
+Safari is in the same settings screen: choose **Safari** and pick a mode.
+
+- **Permanent** signs the extension with your own free Apple certificate, so Safari keeps it
+  enabled like any other extension. Create the certificate once: install Xcode from the App
+  Store, open **Xcode → Settings → Accounts**, sign in with your Apple Account, then
+  **Manage Certificates… → + → Apple Development**. Xcode can be deleted afterwards; the
+  certificate stays in your keychain for a year. macOS asks once to let Downbender use it:
+  choose **Always Allow**.
+- **Quick** needs no certificate, but Safari only loads it while **Allow unsigned extensions**
+  is on (Safari → Settings → Developer), and Safari turns that off every time it quits.
+
+Then enable **Downbender** in Safari → Settings → Extensions and allow it on your video sites.
+Downbender updates and re-signs the Safari extension automatically after each app update.
+To uninstall it, click **Remove** in Settings before deleting Downbender; otherwise Safari keeps
+an extension that can no longer open the app.
+
 ## Build from source
 
 Requires macOS 26+ with Command Line Tools; full Xcode is not required. Install the JavaScript
