@@ -11,7 +11,9 @@ private final class OpenedLinks {
     }
 }
 
-private let encodedSource = "https://example.com/video?q=a%26b&title=café#part-two"
+/// What Safari reports for a page whose query holds an escaped "&" and "café": browsers percent-encode
+/// non-ASCII characters themselves, so this is the realistic shape of a link from the extension.
+private let encodedSource = "https://example.com/video?q=a%26b&title=caf%C3%A9#part-two"
 
 @MainActor @Test func safariDeliversOnceWithoutClaimingQueueConfirmation() async {
     let opened = OpenedLinks()
@@ -27,8 +29,7 @@ private let encodedSource = "https://example.com/video?q=a%26b&title=café#part-
     _ = await opened.send(["command": "enqueue", "url": encodedSource])
 
     #expect(opened.urls.count == 1)
-    #expect(opened.urls.first.flatMap(BrowserBridge.webURL(from:))?.absoluteString
-        == URL(string: encodedSource)?.absoluteString)
+    #expect(opened.urls.first.flatMap(BrowserBridge.webURL(from:))?.absoluteString == encodedSource)
 }
 
 @MainActor @Test func safariNeverRequestsAFileAcknowledgement() async throws {
