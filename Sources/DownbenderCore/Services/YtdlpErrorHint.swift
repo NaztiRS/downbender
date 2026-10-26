@@ -5,6 +5,7 @@ import Foundation
 public enum YtdlpErrorHint {
     public enum SuggestedAction: Equatable, Sendable {
         case openSettings
+        case openFullDiskAccess
     }
 
     public struct Hint: Equatable, Sendable {
@@ -24,6 +25,17 @@ public enum YtdlpErrorHint {
             return Hint(
                 message: "YouTube wants you to sign in. Pick your browser under “Browser cookies”, then try again.",
                 suggestedAction: .openSettings
+            )
+        }
+        // macOS privacy (TCC) blocked a file: usually Safari's cookies, which only apps with Full
+        // Disk Access can read. Each update re-signs Downbender ad hoc, so an old grant stops
+        // matching and has to be added again.
+        if lower.contains("operation not permitted") {
+            return Hint(
+                message: "macOS blocked Downbender from a protected file (Safari cookies need this). "
+                    + "Turn on Downbender in System Settings → Privacy & Security → Full Disk Access — "
+                    + "if it's already on, remove it with − and add it again — then reopen Downbender.",
+                suggestedAction: .openFullDiskAccess
             )
         }
         // A DNS/name-resolution failure — a transient network or VPN hiccup, not the video itself.

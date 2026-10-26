@@ -162,6 +162,21 @@ struct SettingsView: View {
                     Text("Downbender lets yt-dlp read cookies from the selected browser; macOS may ask for permission once.")
                         .font(.caption)
                         .foregroundStyle(Theme.muted)
+
+                    if model.cookiesBrowser == .safari {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(
+                                "Safari's cookies need Full Disk Access: turn on Downbender there, then reopen it. " +
+                                    "If it stops working after an update, remove it with − and add it again."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            Button("Open Full Disk Access…") { NSWorkspace.shared.open(FullDiskAccess.settingsURL) }
+                                .buttonStyle(CommandButtonStyle(.secondary))
+                        }
+                    }
                 }
                 .commandPanel(padding: 14)
             } header: {

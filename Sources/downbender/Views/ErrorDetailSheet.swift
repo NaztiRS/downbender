@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import DownbenderCore
 
@@ -59,7 +60,7 @@ struct ErrorDetailSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(minHeight: 120, maxHeight: 260)
-            if hint?.suggestedAction == .openSettings || engineRecoveryTitle != nil {
+            if hint?.suggestedAction != nil || engineRecoveryTitle != nil {
                 HStack {
                     if hint?.suggestedAction == .openSettings {
                         Button {
@@ -68,6 +69,14 @@ struct ErrorDetailSheet: View {
                             Label("Open Settings…", systemImage: "gearshape")
                         }
                         .accessibilityHint("Choose a browser under Browser cookies, then try the download again")
+                    }
+                    if hint?.suggestedAction == .openFullDiskAccess {
+                        Button {
+                            NSWorkspace.shared.open(FullDiskAccess.settingsURL)
+                        } label: {
+                            Label("Open Full Disk Access…", systemImage: "lock.open")
+                        }
+                        .accessibilityHint("Turn on Downbender in Full Disk Access, then reopen it")
                     }
 
                     if let engineRecoveryTitle, let onEngineRecovery {
@@ -140,4 +149,9 @@ struct ErrorDetailSheet: View {
         NSPasteboard.general.setString(diagnosticsReport ?? message, forType: .string)
         copied = true
     }
+}
+
+enum FullDiskAccess {
+    // swiftlint:disable:next force_unwrapping
+    static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
 }

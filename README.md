@@ -150,6 +150,9 @@ decisions they need.
 - **Restricted or members-only media:** choose an installed Google Chrome, Brave,
   Microsoft Edge, Chromium, Safari, or Firefox browser under **Settings → Privacy → Browser
   cookies**. Sign in to the site in that browser first; macOS may request permission once.
+  Safari's cookies also need **Full Disk Access**: turn on Downbender in **System Settings →
+  Privacy & Security → Full Disk Access** and reopen it. If it stops working after an update,
+  remove Downbender there with **−** and add it again.
 - **File names:** open **Settings → General → File names** for ready-made templates and a live
   example. **Custom…** accepts safe yt-dlp fields such as title, uploader, and upload date;
   keep `%(ext)s` at the end. Templates affect future media downloads, while direct files keep

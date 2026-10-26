@@ -44,3 +44,17 @@ import Testing
         for: "ERROR: No space left on device"
     ))
 }
+
+@Test func blockedSafariCookiesPointToFullDiskAccess() {
+    let raw = "ERROR: [Errno 1] Operation not permitted: "
+        + "'/Users/someone/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies'"
+    let hint = YtdlpErrorHint.hint(for: raw)
+    #expect(hint?.suggestedAction == .openFullDiskAccess)
+    #expect(hint?.message.contains("Full Disk Access") == true)
+    #expect(!YtdlpErrorHint.shouldOfferLatestFixes(for: raw))
+}
+
+@Test func redactedPrivacyBlockStillPointsToFullDiskAccess() {
+    let hint = YtdlpErrorHint.hint(for: "Summary: ERROR: [Errno 1] Operation not permitted: <path>")
+    #expect(hint?.suggestedAction == .openFullDiskAccess)
+}
