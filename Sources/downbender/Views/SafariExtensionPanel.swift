@@ -78,6 +78,15 @@ struct SafariExtensionPanel: View {
             case .permanent: permanentSetup(state)
             case .quick: quickSetup(state)
             }
+
+            if working {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Theme.accent)
+                    caption("Working… this can take up to a minute.")
+                }
+            }
         }
     }
 
