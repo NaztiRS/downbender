@@ -2,7 +2,8 @@
   // Safari may inject again when website access changes; keep one detector per document.
   if (globalThis.DownbenderContentLoaded) return;
   globalThis.DownbenderContentLoaded = true;
-  const extensionAPI = globalThis.browser || chrome;
+  // In Chromium a page element with id="browser" shows up as globalThis.browser; only Safari's has a runtime.
+  const extensionAPI = globalThis.browser?.runtime?.id ? globalThis.browser : chrome;
   const {
     canonicalDownloadURL,
     isYouTubeURL,

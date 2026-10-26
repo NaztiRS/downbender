@@ -6,8 +6,8 @@ const { JSDOM } = require("jsdom");
 
 const extension = path.join(__dirname, "../../ChromeExtension");
 
-function previewPage(t, url = "https://www.youtube.com/feed/subscriptions") {
-  const dom = new JSDOM(`<!doctype html><ytd-video-preview>
+function previewPage(t, url = "https://www.youtube.com/feed/subscriptions", extraHTML = "") {
+  const dom = new JSDOM(`<!doctype html>${extraHTML}<ytd-video-preview>
     <div class="ytdVideoPreviewMediaContainer">
       <a class="ytdVideoPreviewMediaContainerLink" href="/watch?v=preview123&list=RDpreview123">
         <div class="html5-video-player"><video></video></div>
@@ -97,6 +97,13 @@ test("reinjecting the detector in the same document keeps one usable overlay", a
   await page.download();
   assert.equal(page.messages.length, 1);
   assert.equal(page.messages[0].url, "https://www.youtube.com/watch?v=preview123");
+});
+
+test("a page element named browser cannot replace the Chromium extension API", async (t) => {
+  const page = previewPage(t, undefined, '<div id="browser"></div>');
+  await page.download();
+  assert.equal(page.messages.length, 1);
+  assert.equal(page.button.title, "Video added to Downbender");
 });
 
 test("a reused preview player sends the new video, not the previous target", async (t) => {
