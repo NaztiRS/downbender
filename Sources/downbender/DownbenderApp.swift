@@ -360,6 +360,7 @@ struct DownbenderApp: App {
         let fm = FileManager.default
         let support = Self.appSupportDirectory(fileManager: fm)
         ChromeIntegrationInstaller.prepareIntegration()
+        Task { await SafariIntegration.refreshAtLaunch() }
         try? AppSelfUpdater.finishDeferredCleanup(appSupportDirectory: support, fileManager: fm)
         guard let binaries = BundledBinaries.locate(appSupportDirectory: support) else { return nil }
         let downloads = fm.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
