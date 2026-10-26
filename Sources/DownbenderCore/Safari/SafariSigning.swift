@@ -51,7 +51,9 @@ public enum SafariSigning {
         var seen = Set<String>()
         var result: [SafariSigningIdentity] = []
         for line in lines {
-            guard let match = line.wholeMatch(of: /\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"(.+)"\s*/) else { continue }
+            // Invalid identities end with the reason, e.g. `"Apple Development: …" (CSSMERR_TP_CERT_EXPIRED)`.
+            guard let match = line.wholeMatch(of: /\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"([^"]+)"(?:\s+\(.*\))?\s*/)
+            else { continue }
             let sha1 = String(match.1).uppercased()
             let name = String(match.2)
             guard name.hasPrefix(identityPrefix), seen.insert(sha1).inserted else { continue }

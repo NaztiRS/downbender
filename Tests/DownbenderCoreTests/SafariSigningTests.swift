@@ -112,3 +112,15 @@ private let identity = SafariSigningIdentity(
     }
     #expect(runner.recordedArguments.allArguments.isEmpty)
 }
+
+@Test func parsesInvalidIdentityLinesWithReasonSuffix() async {
+    let expiredLine = developmentLine + " (CSSMERR_TP_CERT_EXPIRED)"
+    #expect(SafariSigning.identities(fromFindIdentityOutput: [expiredLine]) == [identity])
+
+    let runner = FakeProcessRunner(replays: [
+        .init(stdoutLines: ["     0 valid identities found"]),
+        .init(stdoutLines: [expiredLine]),
+        .init(stdoutLines: ["SHA-1 hash: \(SafariSigning.appleWWDRG3SHA1)"]),
+    ])
+    #expect(await SafariSigning.detect(runner: runner) == .unusable)
+}
