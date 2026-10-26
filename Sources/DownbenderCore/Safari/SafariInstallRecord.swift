@@ -89,10 +89,36 @@ public enum SafariStartupPolicy {
         guard let record else { return nil }
         if record.failedRefreshVersion != nil { return .updateFailed }
         guard case .permanent = record.mode else { return nil }
+        // An expired certificate also drops out of the valid identities, so check expiry first.
+        if let expiry = record.certificateExpiry, expiry <= now { return .certificateExpired(expiry) }
         if !identityAvailable { return .certificateMissing }
         guard let expiry = record.certificateExpiry else { return nil }
-        if expiry <= now { return .certificateExpired(expiry) }
         if expiry.timeIntervalSince(now) <= expiryWarning { return .certificateExpiringSoon(expiry) }
         return nil
+    }
+
+    /// The certificate to re-sign with when the recorded one is gone or about to expire: the valid
+    /// identity that expires last, if it outlives the recorded one. Same Apple Account, same team,
+    /// so Safari keeps the extension enabled.
+    public static func renewalIdentity( // swiftlint:disable:this function_parameter_count
+        record: SafariInstallRecord?,
+        currentAppURL: URL,
+        ownerExists: Bool,
+        ready: [SafariSigningIdentity],
+        expiries: [String: Date],
+        now: Date
+    ) -> SafariSigningIdentity? {
+        guard let record, case .permanent(let recorded) = record.mode, !isEphemeralLocation(currentAppURL),
+              record.ownerAppPath == currentAppURL.standardizedFileURL.path || !ownerExists
+        else { return nil }
+        let recordedAvailable = ready.contains { $0.sha1 == recorded }
+        let expiringSoon = record.certificateExpiry.map { $0.timeIntervalSince(now) <= expiryWarning } ?? false
+        guard !recordedAvailable || expiringSoon else { return nil }
+        let floor = max(record.certificateExpiry ?? .distantPast, now)
+        return ready
+            .filter { $0.sha1 != recorded }
+            .compactMap { identity in expiries[identity.sha1].map { (identity, $0) } }
+            .filter { $0.1 > floor }
+            .max { $0.1 < $1.1 }?.0
     }
 }

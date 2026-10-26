@@ -17,6 +17,10 @@ struct SafariExtensionPanel: View {
     @State private var selectedIdentity: String?
     @State private var working = false
 
+    private static let renewalSteps =
+        "Create a new one in Xcode (Settings → Accounts → Manage Certificates… → + → Apple Development); " +
+        "Downbender re-signs the extension with it the next time it opens."
+
     private static let certificateSteps = """
     1. Install Xcode from the App Store (about 10 GB, needed once; you can delete it afterwards).
     2. In Xcode → Settings → Accounts, click + → Apple Account and sign in.
@@ -113,7 +117,9 @@ struct SafariExtensionPanel: View {
         case .ready(let identities):
             if identities.count > 1 {
                 Picker("Certificate", selection: identityBinding(identities)) {
-                    ForEach(identities, id: \.sha1) { Text($0.name).tag($0.sha1) }
+                    ForEach(identities, id: \.sha1) {
+                        Text(identityLabel($0, expiries: state.identityExpiries)).tag($0.sha1)
+                    }
                 }
                 .pickerStyle(.menu)
             }
@@ -171,9 +177,17 @@ struct SafariExtensionPanel: View {
 
     private func resolvedIdentity(_ identities: [SafariSigningIdentity]) -> String {
         if let selectedIdentity, identities.contains(where: { $0.sha1 == selectedIdentity }) { return selectedIdentity }
-        if case .permanent(let installed) = state?.installedMode,
+        // Keep the installed certificate while it is healthy; otherwise offer the one that lasts longest.
+        if case .permanent(let installed) = state?.installedMode, state?.attention == nil,
            identities.contains(where: { $0.sha1 == installed }) { return installed }
-        return identities[0].sha1
+        let expiries = state?.identityExpiries ?? [:]
+        let longest = identities.max { (expiries[$0.sha1] ?? .distantPast) < (expiries[$1.sha1] ?? .distantPast) }
+        return (longest ?? identities[0]).sha1
+    }
+
+    private func identityLabel(_ identity: SafariSigningIdentity, expiries: [String: Date]) -> String {
+        guard let expiry = expiries[identity.sha1] else { return identity.name }
+        return "\(identity.name) · expires \(expiry.formatted(date: .abbreviated, time: .omitted))"
     }
 
     private func identityBinding(_ identities: [SafariSigningIdentity]) -> Binding<String> {
@@ -195,14 +209,13 @@ struct SafariExtensionPanel: View {
         case .updateFailed:
             return "Downbender couldn't update the Safari extension after the last app update. Click Reinstall."
         case .certificateMissing:
-            return "Your Apple Development certificate is missing. The extension keeps working, " +
-                "but updates can't re-sign it until you create a new one."
+            return "Your Apple Development certificate is missing. " + Self.renewalSteps
         case .certificateExpiringSoon(let date):
             return "Your Apple Development certificate expires on \(date.formatted(date: .abbreviated, time: .omitted)). " +
-                "Create a new one in Xcode before then; Downbender will re-sign the extension."
+                "Before then: " + Self.renewalSteps
         case .certificateExpired(let date):
             return "Your Apple Development certificate expired on \(date.formatted(date: .abbreviated, time: .omitted)). " +
-                "Create a new one in Xcode, then click Reinstall."
+                Self.renewalSteps
         }
     }
 

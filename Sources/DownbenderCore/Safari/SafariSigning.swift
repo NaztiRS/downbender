@@ -77,7 +77,8 @@ public enum SafariSigning {
     }
 
     /// `security find-certificate -Z -p` prints each certificate's hashes followed by its PEM.
-    public static func expirationDate(sha1: String, findCertificateOutput lines: [String]) -> Date? {
+    public static func expirationDates(findCertificateOutput lines: [String]) -> [String: Date] {
+        var expiries: [String: Date] = [:]
         var currentSHA1: String?
         var pem: [String]?
         for raw in lines {
@@ -88,18 +89,22 @@ public enum SafariSigning {
                 pem = []
             } else if line == "-----END CERTIFICATE-----" {
                 defer { pem = nil }
-                guard currentSHA1 == sha1.uppercased(),
+                guard let sha1 = currentSHA1,
                       let body = pem,
                       let der = Data(base64Encoded: body.joined()),
                       let certificate = SecCertificateCreateWithData(nil, der as CFData),
                       let date = SecCertificateCopyNotValidAfterDate(certificate)
                 else { continue }
-                return date as Date
+                expiries[sha1] = date as Date
             } else if pem != nil {
                 pem?.append(line)
             }
         }
-        return nil
+        return expiries
+    }
+
+    public static func expirationDate(sha1: String, findCertificateOutput lines: [String]) -> Date? {
+        expirationDates(findCertificateOutput: lines)[sha1.uppercased()]
     }
 
     public static func isGenuineAppleIntermediate(_ data: Data) -> Bool {
@@ -121,8 +126,13 @@ public enum SafariSigning {
         for identity: SafariSigningIdentity,
         runner: ProcessRunning
     ) async -> Date? {
+        await expirationDates(runner: runner)[identity.sha1]
+    }
+
+    /// Expiry of every "Apple Development" certificate in the keychain, keyed by SHA-1.
+    public static func expirationDates(runner: ProcessRunning) async -> [String: Date] {
         let lines = await stdout(runner, ["find-certificate", "-a", "-Z", "-p", "-c", "Apple Development"])
-        return expirationDate(sha1: identity.sha1, findCertificateOutput: lines)
+        return expirationDates(findCertificateOutput: lines)
     }
 
     /// Adds Apple's public WWDR G3 intermediate to the login keychain. Trust settings are untouched;

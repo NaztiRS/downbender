@@ -120,3 +120,81 @@ private func shouldRefresh(
     failed.failedRefreshVersion = "1.9.1"
     #expect(SafariStartupPolicy.attention(record: failed, identityAvailable: true, now: Date()) == .updateFailed)
 }
+
+private let oldIdentity = SafariSigningIdentity(sha1: String(repeating: "A", count: 40), name: "Apple Development: dev@example.com (AAAAAAAAAA)")
+private let newIdentity = SafariSigningIdentity(sha1: String(repeating: "B", count: 40), name: "Apple Development: dev@example.com (AAAAAAAAAA)")
+private let renewalNow = Date(timeIntervalSince1970: 1_800_000_000)
+
+private func renewal(
+    recordedExpiry: Date?,
+    ready: [SafariSigningIdentity],
+    expiries: [String: Date],
+    mode: SafariExtensionMode = .permanent(identitySHA1: oldIdentity.sha1),
+    current: URL = installedApp,
+    ownerExists: Bool = true
+) -> SafariSigningIdentity? {
+    SafariStartupPolicy.renewalIdentity(
+        record: record(mode: mode, owner: installedApp, expiry: recordedExpiry),
+        currentAppURL: current,
+        ownerExists: ownerExists,
+        ready: ready,
+        expiries: expiries,
+        now: renewalNow
+    )
+}
+
+@Test func renewalPicksANewerCertificateWhenRecordedOneIsGone() {
+    let next = renewal(
+        recordedExpiry: renewalNow.addingTimeInterval(-60),
+        ready: [newIdentity],
+        expiries: [newIdentity.sha1: renewalNow.addingTimeInterval(365 * 86_400)]
+    )
+    #expect(next == newIdentity)
+}
+
+@Test func renewalPicksANewerCertificateWhenRecordedOneExpiresSoon() {
+    let next = renewal(
+        recordedExpiry: renewalNow.addingTimeInterval(10 * 86_400),
+        ready: [oldIdentity, newIdentity],
+        expiries: [
+            oldIdentity.sha1: renewalNow.addingTimeInterval(10 * 86_400),
+            newIdentity.sha1: renewalNow.addingTimeInterval(365 * 86_400),
+        ]
+    )
+    #expect(next == newIdentity)
+}
+
+@Test func noRenewalWhileRecordedCertificateIsHealthy() {
+    let next = renewal(
+        recordedExpiry: renewalNow.addingTimeInterval(200 * 86_400),
+        ready: [oldIdentity, newIdentity],
+        expiries: [newIdentity.sha1: renewalNow.addingTimeInterval(365 * 86_400)]
+    )
+    #expect(next == nil)
+}
+
+@Test func noRenewalWithoutALaterCertificate() {
+    let soon = renewalNow.addingTimeInterval(10 * 86_400)
+    #expect(renewal(recordedExpiry: soon, ready: [oldIdentity], expiries: [oldIdentity.sha1: soon]) == nil)
+    #expect(renewal(
+        recordedExpiry: soon,
+        ready: [oldIdentity, newIdentity],
+        expiries: [newIdentity.sha1: renewalNow.addingTimeInterval(5 * 86_400)]
+    ) == nil)
+}
+
+@Test func noRenewalForQuickModeOrAnotherCopy() {
+    let gone = renewalNow.addingTimeInterval(-60)
+    let fresh = [newIdentity.sha1: renewalNow.addingTimeInterval(365 * 86_400)]
+    #expect(renewal(recordedExpiry: gone, ready: [newIdentity], expiries: fresh, mode: .quick) == nil)
+    #expect(renewal(recordedExpiry: gone, ready: [newIdentity], expiries: fresh, current: repoApp) == nil)
+    #expect(renewal(recordedExpiry: gone, ready: [newIdentity], expiries: fresh, current: repoApp, ownerExists: false)
+        == newIdentity)
+}
+
+@Test func attentionReportsExpiredEvenWhenIdentityIsGone() {
+    let past = renewalNow.addingTimeInterval(-60)
+    #expect(SafariStartupPolicy.attention(
+        record: record(mode: .permanent(identitySHA1: "ABC"), expiry: past), identityAvailable: false, now: renewalNow
+    ) == .certificateExpired(past))
+}

@@ -124,3 +124,9 @@ private let identity = SafariSigningIdentity(
     ])
     #expect(await SafariSigning.detect(runner: runner) == .unusable)
 }
+
+@Test func readsEveryExpirationFromFindCertificateOutput() throws {
+    let expiries = SafariSigning.expirationDates(findCertificateOutput: try fixtureLines())
+    #expect(expiries[SafariSigning.appleWWDRG3SHA1] == ISO8601DateFormatter().date(from: "2030-02-20T00:00:00Z"))
+    #expect(expiries["FF6797793A3CD798DC5B2ABEF56F73EDC9F83A64"] == ISO8601DateFormatter().date(from: "2023-02-07T21:48:47Z"))
+}

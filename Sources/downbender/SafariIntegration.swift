@@ -7,6 +7,8 @@ struct SafariIntegrationState: Equatable {
     var certificate: SafariCertificateStatus
     var attention: SafariAttention?
     var certificateExpiry: Date?
+    /// Expiry of each valid Apple Development identity, keyed by SHA-1, for the certificate picker.
+    var identityExpiries: [String: Date] = [:]
     var canInstall: Bool
     var errorMessage: String?
 }
@@ -42,6 +44,8 @@ enum SafariIntegration {
 
     static func status(errorMessage: String? = nil) async -> SafariIntegrationState {
         let certificate = await SafariSigning.detect(runner: runner)
+        var expiries: [String: Date] = [:]
+        if case .ready = certificate { expiries = await SafariSigning.expirationDates(runner: runner) }
         let record = SafariInstallRecord.load(from: layout.recordURL)
         let installed = record != nil && FileManager.default.fileExists(atPath: layout.appURL.path)
         return SafariIntegrationState(
@@ -53,6 +57,7 @@ enum SafariIntegration {
                 now: Date()
             ) : nil,
             certificateExpiry: installed ? record?.certificateExpiry : nil,
+            identityExpiries: expiries,
             canInstall: !SafariStartupPolicy.isEphemeralLocation(currentAppURL) && templateArchive != nil,
             errorMessage: errorMessage
         )
@@ -98,22 +103,45 @@ enum SafariIntegration {
     }
 
     /// After an update, rebuilds the installed copy from this version's template in the same mode,
-    /// so Safari keeps it enabled. Never runs from a DMG and never re-signs ad hoc on its own.
+    /// so Safari keeps it enabled; when the certificate is gone or expiring, re-signs with the newer
+    /// one the user created. Never runs from a DMG and never re-signs ad hoc on its own.
     static func refreshAtLaunch() async {
         let layout = layout
         guard let record = SafariInstallRecord.load(from: layout.recordURL),
-              FileManager.default.fileExists(atPath: layout.appURL.path)
+              FileManager.default.fileExists(atPath: layout.appURL.path),
+              record.failedRefreshVersion != Downbender.version
         else { return }
         let certificate = await SafariSigning.detect(runner: runner)
+        let ownerExists = FileManager.default.fileExists(atPath: record.ownerAppPath)
+        if case .ready(let identities) = certificate {
+            let expiries = await SafariSigning.expirationDates(runner: runner)
+            if let renewal = SafariStartupPolicy.renewalIdentity(
+                record: record,
+                currentAppURL: currentAppURL,
+                ownerExists: ownerExists,
+                ready: identities,
+                expiries: expiries,
+                now: Date()
+            ) {
+                await refresh(record, mode: .permanent(identitySHA1: renewal.sha1))
+                return
+            }
+        }
         guard SafariStartupPolicy.shouldRefresh(
             record: record,
             currentAppURL: currentAppURL,
             currentTemplateVersion: Downbender.version,
-            ownerExists: FileManager.default.fileExists(atPath: record.ownerAppPath),
+            ownerExists: ownerExists,
             identityAvailable: identityAvailable(for: record, in: certificate)
         ) else { return }
+        await refresh(record, mode: record.mode)
+    }
+
+    /// A failure (e.g. a denied keychain prompt) is recorded so this version is not retried on
+    /// every launch; Settings then offers Reinstall.
+    private static func refresh(_ record: SafariInstallRecord, mode: SafariExtensionMode) async {
         do {
-            try await performInstall(mode: record.mode, ownerAppPath: currentAppURL.path)
+            try await performInstall(mode: mode, ownerAppPath: currentAppURL.path)
         } catch {
             var failed = record
             failed.failedRefreshVersion = Downbender.version
