@@ -60,7 +60,7 @@ function previewPage(t, url = "https://www.youtube.com/feed/subscriptions") {
       media.paused = true;
       video.dispatchEvent(new window.Event("pause"));
     },
-    async download() { button.click(); await Promise.resolve(); },
+    async download() { button.click(); await new Promise(setImmediate); },
   };
 }
 
@@ -79,6 +79,24 @@ test("normal watch playback continues to send the page video", async (t) => {
   const page = previewPage(t, "https://www.youtube.com/watch?v=watch123&list=RDwatch123");
   await page.download();
   assert.equal(page.messages[0]?.url, "https://www.youtube.com/watch?v=watch123");
+  assert.equal(page.button.title, "Video added to Downbender");
+});
+
+test("Safari delivery does not claim that the app confirmed enqueue", async (t) => {
+  const page = previewPage(t);
+  page.window.chrome.runtime.sendMessage = async () => ({ ok: true, confirmed: false });
+  await page.download();
+  assert.equal(page.button.title, "Link sent to Downbender");
+  assert.match(page.button.textContent, /Sent/);
+});
+
+test("reinjecting the detector in the same document keeps one usable overlay", async (t) => {
+  const page = previewPage(t);
+  page.window.eval(fs.readFileSync(path.join(extension, "content.js"), "utf8"));
+  assert.equal(page.document.querySelectorAll("#downbender-active-video-control").length, 1);
+  await page.download();
+  assert.equal(page.messages.length, 1);
+  assert.equal(page.messages[0].url, "https://www.youtube.com/watch?v=preview123");
 });
 
 test("a reused preview player sends the new video, not the previous target", async (t) => {

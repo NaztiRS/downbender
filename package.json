@@ -7,7 +7,7 @@
     "build": "swift build",
     "test": "scripts/test.sh",
     "lint": "scripts/lint.sh",
-    "extension:check": "node --check ChromeExtension/background.js && node --check ChromeExtension/content.js && node --check ChromeExtension/url-utils.js && node ChromeExtension/url-utils.test.js && node Tests/ChromeExtensionTests/ManifestTests.js && node --test Tests/ChromeExtensionTests/PreviewTests.js",
+    "extension:check": "node --check ChromeExtension/background.js && node --check ChromeExtension/content.js && node --check ChromeExtension/url-utils.js && node ChromeExtension/url-utils.test.js && node Tests/ChromeExtensionTests/ManifestTests.js && node --test Tests/ChromeExtensionTests/PreviewTests.js Tests/ChromeExtensionTests/BackgroundTests.js",
     "format": "swiftformat .",
     "bundle": "scripts/bundle.sh",
     "dmg": "scripts/make-dmg.sh",

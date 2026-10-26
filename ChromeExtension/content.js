@@ -1,4 +1,8 @@
 (() => {
+  // Safari may inject again when website access changes; keep one detector per document.
+  if (globalThis.DownbenderContentLoaded) return;
+  globalThis.DownbenderContentLoaded = true;
+  const extensionAPI = globalThis.browser || chrome;
   const {
     canonicalDownloadURL,
     isYouTubeURL,
@@ -274,7 +278,7 @@
     const mark = document.createElement("span");
     mark.className = "mark";
     const appIcon = document.createElement("img");
-    appIcon.src = chrome.runtime.getURL("icons/icon-128.png");
+    appIcon.src = extensionAPI.runtime.getURL("icons/icon-128.png");
     appIcon.alt = "";
     mark.append(appIcon);
     overlayText = document.createElement("span");
@@ -662,7 +666,7 @@
     }
     setFeedback("sending", "Sending…", "Sending this video to Downbender");
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await extensionAPI.runtime.sendMessage({
         type: "downbender-enqueue",
         url: target,
         source: "active-video-overlay",
@@ -671,7 +675,11 @@
         mediaURL: /^https?:/i.test(video.currentSrc || "") ? video.currentSrc : null,
       });
       if (!response?.ok) throw new Error(response?.message || "Could not reach Downbender.");
-      setFeedback("sent", "Added", "Video added to Downbender");
+      if (response.confirmed === false) {
+        setFeedback("sent", "Sent", "Link sent to Downbender");
+      } else {
+        setFeedback("sent", "Added", "Video added to Downbender");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not reach Downbender.";
       setFeedback("error", "Not confirmed", message);
