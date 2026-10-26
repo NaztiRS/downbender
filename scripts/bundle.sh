@@ -24,6 +24,11 @@ chmod +x "$APP/Contents/MacOS/downbender-native-host"
 # GPL compliance travels inside the bundle, keeping the DMG window clean.
 cp LICENSE NOTICE "$APP/Contents/Resources/"
 cp -R ChromeExtension "$APP/Contents/Resources/ChromeExtension"
+# Safari's extension travels zipped so Launch Services never registers this ad hoc template;
+# Downbender extracts and signs a copy when the user installs it from Settings.
+mkdir -p "$APP/Contents/Resources/SafariExtension"
+scripts/build-safari-extension.sh "$APP/Contents/Resources/SafariExtension/DownbenderSafari.zip"
+cp SafariExtension/Sandbox.entitlements SafariExtension/AppleWWDRCAG3.cer "$APP/Contents/Resources/SafariExtension/"
 
 for b in ffmpeg ffprobe deno; do
   if [ -f "Resources/binaries/$b" ]; then

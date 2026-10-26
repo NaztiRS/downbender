@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleExecutable</key><string>DownbenderSafariExtension</string>
+    <key>CFBundleIdentifier</key><string>com.naztirs.downbender.safari.extension</string>
+    <key>CFBundleName</key><string>Downbender</string>
+    <key>CFBundleDisplayName</key><string>Downbender</string>
+    <key>CFBundlePackageType</key><string>XPC!</string>
+    <key>CFBundleShortVersionString</key><string>0</string>
+    <key>CFBundleVersion</key><string>0</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
+    <key>NSExtension</key><dict>
+        <key>NSExtensionPointIdentifier</key><string>com.apple.Safari.web-extension</string>
+        <key>NSExtensionPrincipalClass</key><string>SafariWebExtensionHandler</string>
+    </dict>
+</dict></plist>

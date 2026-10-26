@@ -3,11 +3,12 @@
   "private": true,
   "packageManager": "pnpm@11.8.0",
   "scripts": {
-    "check": "pnpm lint && pnpm extension:check && pnpm build && pnpm test",
+    "check": "pnpm lint && pnpm extension:check && pnpm safari:check && pnpm build && pnpm test",
     "build": "swift build",
     "test": "scripts/test.sh",
     "lint": "scripts/lint.sh",
     "extension:check": "node --check ChromeExtension/background.js && node --check ChromeExtension/content.js && node --check ChromeExtension/url-utils.js && node ChromeExtension/url-utils.test.js && node Tests/ChromeExtensionTests/ManifestTests.js && node --test Tests/ChromeExtensionTests/PreviewTests.js Tests/ChromeExtensionTests/BackgroundTests.js",
+    "safari:check": "scripts/check-safari-extension.sh",
     "format": "swiftformat .",
     "bundle": "scripts/bundle.sh",
     "dmg": "scripts/make-dmg.sh",
