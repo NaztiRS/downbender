@@ -107,3 +107,16 @@ private func shouldRefresh(
     #expect(SafariInstallRecord.load(from: url) == original)
     #expect(SafariInstallRecord.load(from: url.appendingPathExtension("missing")) == nil)
 }
+
+@Test func refreshIsNotRetriedForAVersionThatAlreadyFailed() {
+    var failed = record(version: "1.9.0")
+    failed.failedRefreshVersion = "1.9.1"
+    #expect(!shouldRefresh(failed, version: "1.9.1"))
+    #expect(shouldRefresh(failed, version: "1.9.2"))
+}
+
+@Test func attentionReportsFailedUpdate() {
+    var failed = record(mode: .quick)
+    failed.failedRefreshVersion = "1.9.1"
+    #expect(SafariStartupPolicy.attention(record: failed, identityAvailable: true, now: Date()) == .updateFailed)
+}

@@ -13,12 +13,22 @@ public struct SafariInstallRecord: Codable, Equatable, Sendable {
     public var mode: SafariExtensionMode
     public var ownerAppPath: String
     public var certificateExpiry: Date?
+    /// App version whose launch-time refresh failed (e.g. the keychain prompt was denied). That
+    /// version is not retried on later launches, so the user is not prompted on every launch.
+    public var failedRefreshVersion: String?
 
-    public init(templateVersion: String, mode: SafariExtensionMode, ownerAppPath: String, certificateExpiry: Date?) {
+    public init(
+        templateVersion: String,
+        mode: SafariExtensionMode,
+        ownerAppPath: String,
+        certificateExpiry: Date?,
+        failedRefreshVersion: String? = nil
+    ) {
         self.templateVersion = templateVersion
         self.mode = mode
         self.ownerAppPath = ownerAppPath
         self.certificateExpiry = certificateExpiry
+        self.failedRefreshVersion = failedRefreshVersion
     }
 
     public static func load(from url: URL) -> SafariInstallRecord? {
@@ -38,6 +48,7 @@ public struct SafariInstallRecord: Codable, Equatable, Sendable {
 }
 
 public enum SafariAttention: Equatable, Sendable {
+    case updateFailed
     case certificateMissing
     case certificateExpiringSoon(Date)
     case certificateExpired(Date)
@@ -61,7 +72,9 @@ public enum SafariStartupPolicy {
         ownerExists: Bool,
         identityAvailable: Bool
     ) -> Bool {
-        guard let record, !isEphemeralLocation(currentAppURL) else { return false }
+        guard let record, !isEphemeralLocation(currentAppURL),
+              record.failedRefreshVersion != currentTemplateVersion
+        else { return false }
         if case .permanent = record.mode, !identityAvailable { return false }
         if record.ownerAppPath == currentAppURL.standardizedFileURL.path {
             return AppUpdateChecker.isNewer(latestTag: currentTemplateVersion, than: record.templateVersion)
@@ -73,7 +86,9 @@ public enum SafariStartupPolicy {
     }
 
     public static func attention(record: SafariInstallRecord?, identityAvailable: Bool, now: Date) -> SafariAttention? {
-        guard let record, case .permanent = record.mode else { return nil }
+        guard let record else { return nil }
+        if record.failedRefreshVersion != nil { return .updateFailed }
+        guard case .permanent = record.mode else { return nil }
         if !identityAvailable { return .certificateMissing }
         guard let expiry = record.certificateExpiry else { return nil }
         if expiry <= now { return .certificateExpired(expiry) }

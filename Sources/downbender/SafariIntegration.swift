@@ -112,7 +112,13 @@ enum SafariIntegration {
             ownerExists: FileManager.default.fileExists(atPath: record.ownerAppPath),
             identityAvailable: identityAvailable(for: record, in: certificate)
         ) else { return }
-        try? await performInstall(mode: record.mode, ownerAppPath: currentAppURL.path)
+        do {
+            try await performInstall(mode: record.mode, ownerAppPath: currentAppURL.path)
+        } catch {
+            var failed = record
+            failed.failedRefreshVersion = Downbender.version
+            try? failed.save(to: layout.recordURL)
+        }
     }
 
     /// Safari only lets the extension's own container open its settings pane, so open Safari and

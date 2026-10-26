@@ -192,6 +192,8 @@ struct SafariExtensionPanel: View {
 
     private func attentionText(_ attention: SafariAttention) -> String {
         switch attention {
+        case .updateFailed:
+            return "Downbender couldn't update the Safari extension after the last app update. Click Reinstall."
         case .certificateMissing:
             return "Your Apple Development certificate is missing. The extension keeps working, " +
                 "but updates can't re-sign it until you create a new one."
