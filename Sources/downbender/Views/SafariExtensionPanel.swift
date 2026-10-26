@@ -162,7 +162,11 @@ struct SafariExtensionPanel: View {
     }
 
     private func refresh() async {
+        // A keychain prompt reactivates the app mid-install; refreshing then would race the install
+        // and could erase its error message.
+        guard !working else { return }
         let refreshed = await SafariIntegration.status()
+        guard !working else { return }
         if state == nil, let installed = refreshed.installedMode { mode = Self.mode(of: installed) }
         state = refreshed
     }
