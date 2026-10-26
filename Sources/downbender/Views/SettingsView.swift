@@ -173,7 +173,7 @@ struct SettingsView: View {
                     Label {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Downbender browser extension")
-                            Text("Send videos from Google Chrome, Brave, Microsoft Edge, or Chromium")
+                            Text("Send videos from Safari, Google Chrome, Brave, Microsoft Edge, or Chromium")
                                 .font(.caption)
                                 .foregroundStyle(Theme.muted)
                         }
@@ -184,9 +184,9 @@ struct SettingsView: View {
 
                     CommandRule(inset: 0)
 
-                    let browsers = browserInventory.chromiumBrowsers.map(\.browserKind)
+                    let browsers = extensionBrowsers(in: browserInventory)
                     if browsers.isEmpty {
-                        Label("Install a supported Chromium browser first", systemImage: "info.circle")
+                        Label("Install Safari or a supported Chromium browser first", systemImage: "info.circle")
                             .foregroundStyle(Theme.muted)
                     } else {
                         Picker("Browser", selection: browserSelection(for: browsers)) {
@@ -198,7 +198,9 @@ struct SettingsView: View {
                         .pickerStyle(.menu)
                         .disabled(chromeIntegration?.isInstalling == true)
 
-                        if let message = chromeIntegration?.errorMessage {
+                        if resolvedBrowser(from: browsers) == .safari {
+                            SafariExtensionPanel()
+                        } else if let message = chromeIntegration?.errorMessage {
                             Label("Extension unavailable", systemImage: "exclamationmark.triangle.fill")
                                 .foregroundStyle(Theme.warning)
                             Text(message)
@@ -322,9 +324,14 @@ struct SettingsView: View {
             model.cookiesBrowser = nil
         }
 
-        let extensionBrowsers = inventory.chromiumBrowsers.map(\.browserKind)
+        let extensionBrowsers = extensionBrowsers(in: inventory)
         if let selectedBrowser, extensionBrowsers.contains(selectedBrowser) { return }
         selectedBrowser = extensionBrowsers.first
+    }
+
+    /// Chromium browsers share the unpacked extension; Safari has its own signed one.
+    private func extensionBrowsers(in inventory: BrowserInventory) -> [BrowserKind] {
+        inventory.chromiumBrowsers.map(\.browserKind) + (inventory.installed.contains(.safari) ? [.safari] : [])
     }
 
     private func resolvedBrowser(from browsers: [BrowserKind]) -> BrowserKind? {
@@ -844,13 +851,13 @@ private struct CommandRule: View {
     }
 }
 
-private enum CommandButtonEmphasis {
+enum CommandButtonEmphasis {
     case primary
     case secondary
     case danger
 }
 
-private struct CommandButtonStyle: ButtonStyle {
+struct CommandButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     let emphasis: CommandButtonEmphasis
 
