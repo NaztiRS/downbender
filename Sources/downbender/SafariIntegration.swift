@@ -108,9 +108,11 @@ enum SafariIntegration {
     static func refreshAtLaunch() async {
         let layout = layout
         guard let record = SafariInstallRecord.load(from: layout.recordURL),
-              FileManager.default.fileExists(atPath: layout.appURL.path),
-              record.failedRefreshVersion != Downbender.version
+              FileManager.default.fileExists(atPath: layout.appURL.path)
         else { return }
+        // A restart can make macOS forget the extension; Safari only needs it registered again.
+        await installer.ensureRegistered()
+        guard record.failedRefreshVersion != Downbender.version else { return }
         let certificate = await SafariSigning.detect(runner: runner)
         let ownerExists = FileManager.default.fileExists(atPath: record.ownerAppPath)
         if case .ready(let identities) = certificate {

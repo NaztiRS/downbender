@@ -159,7 +159,7 @@ public enum SafariSigning {
 }
 
 /// Collects stdout lines delivered on the runner's reader queue.
-private final class LineCollector: @unchecked Sendable {
+final class LineCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String] = []
 

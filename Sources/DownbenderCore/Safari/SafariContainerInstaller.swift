@@ -115,8 +115,7 @@ public struct SafariContainerInstaller: Sendable {
         } else {
             try fileManager.moveItem(at: stagedApp, to: layout.appURL)
         }
-        _ = try? await run(Self.lsregister, ["-f", "-R", layout.appURL.path])
-        _ = try? await run(Self.pluginkit, ["-a", layout.extensionURL.path])
+        await register()
 
         let record = SafariInstallRecord(
             templateVersion: templateVersion,
@@ -126,6 +125,23 @@ public struct SafariContainerInstaller: Sendable {
         )
         try record.save(to: layout.recordURL)
         return record
+    }
+
+    /// macOS can forget an extension whose app lives outside /Applications: the macOS 27.2 update
+    /// restart did, and Safari stopped listing it. Registering again needs no new signature, and
+    /// Safari keeps it enabled.
+    public func ensureRegistered() async {
+        guard FileManager.default.fileExists(atPath: layout.appURL.path) else { return }
+        let lines = LineCollector()
+        _ = try? await runner.run(
+            executableURL: Self.pluginkit,
+            arguments: ["-m", "-i", SafariContainerLayout.extensionBundleID],
+            onStdoutLine: lines.append
+        )
+        let listed = lines.lines.contains {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix(SafariContainerLayout.extensionBundleID + "(")
+        }
+        if !listed { await register() }
     }
 
     public func remove() async throws {
@@ -150,6 +166,11 @@ public struct SafariContainerInstaller: Sendable {
         for path in paths {
             _ = removexattr(path, "com.apple.quarantine", XATTR_NOFOLLOW)
         }
+    }
+
+    private func register() async {
+        _ = try? await run(Self.lsregister, ["-f", "-R", layout.appURL.path])
+        _ = try? await run(Self.pluginkit, ["-a", layout.extensionURL.path])
     }
 
     private func unregister() async {

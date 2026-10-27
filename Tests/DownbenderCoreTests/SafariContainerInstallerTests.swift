@@ -212,3 +212,39 @@ private final class Observed: @unchecked Sendable {
     #expect(!FileManager.default.fileExists(atPath: sandbox.layout.appURL.path))
     #expect(SafariInstallRecord.load(from: sandbox.layout.recordURL) == nil)
 }
+
+@Test func ensureRegisteredLeavesAVisibleExtensionAlone() async throws {
+    let sandbox = try Sandbox()
+    defer { sandbox.cleanUp() }
+    _ = try sandbox.makeInstalledCopy()
+    let runner = FakeProcessRunner(stdoutLines: ["     \(SafariContainerLayout.extensionBundleID)(1.9.0)"])
+
+    await sandbox.installer(runner).ensureRegistered()
+
+    #expect(runner.recordedArguments.allArguments == [["-m", "-i", SafariContainerLayout.extensionBundleID]])
+}
+
+@Test func ensureRegisteredRestoresAnExtensionMacOSForgot() async throws {
+    let sandbox = try Sandbox()
+    defer { sandbox.cleanUp() }
+    _ = try sandbox.makeInstalledCopy()
+    let runner = FakeProcessRunner()
+
+    await sandbox.installer(runner).ensureRegistered()
+
+    #expect(runner.recordedArguments.allExecutableURLs.map(\.path) == ["/usr/bin/pluginkit", lsregister, "/usr/bin/pluginkit"])
+    #expect(runner.recordedArguments.allArguments.suffix(2) == [
+        ["-f", "-R", sandbox.layout.appURL.path],
+        ["-a", sandbox.layout.extensionURL.path],
+    ])
+}
+
+@Test func ensureRegisteredDoesNothingWithoutAnInstalledCopy() async throws {
+    let sandbox = try Sandbox()
+    defer { sandbox.cleanUp() }
+    let runner = FakeProcessRunner()
+
+    await sandbox.installer(runner).ensureRegistered()
+
+    #expect(runner.recordedArguments.allArguments.isEmpty)
+}
